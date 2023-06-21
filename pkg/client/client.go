@@ -42,24 +42,25 @@ func (c *Client) Connect() error {
 
 	defer log.InfoMsg("Connection to %s closed\n", conn.RemoteAddr())
 
+	connCtl, connData, err := mux.OpenChannels(conn)
+	if err != nil {
+		return fmt.Errorf("mux.OpenChannels(conn): %s", err)
+	}
+
+	defer connCtl.Close()
+	defer connData.Close()
+	defer conn.Close()
+
 	if c.cfg.Pty {
-		c.handleWithPTY(conn)
+		c.handleWithPTY(connCtl, connData)
 	} else {
-		c.handlePlain(conn)
+		c.handlePlain(connData)
 	}
 
 	return nil
 }
 
-func (c *Client) handleWithPTY(conn net.Conn) error {
-	connCtl, connData, err := mux.OpenChannels(conn)
-	if err != nil {
-		return fmt.Errorf("mux.OpenChannels(conn): %s", err)
-	}
-	defer connCtl.Close()
-	defer connData.Close()
-	defer conn.Close()
-
+func (c *Client) handleWithPTY(connCtl, connData net.Conn) error {
 	if c.cfg.LogFile != "" {
 		var err error
 		connData, err = log.NewLoggedConn(connData, c.cfg.LogFile)

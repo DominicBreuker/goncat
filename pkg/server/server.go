@@ -73,14 +73,6 @@ func (s *Server) handle(conn net.Conn) {
 	log.InfoMsg("New connection from %s\n", conn.RemoteAddr())
 	defer log.InfoMsg("Connection from %s lost\n", conn.RemoteAddr())
 
-	if s.cfg.Pty {
-		s.handleWithPTY(conn)
-	} else {
-		s.handlePlain(conn)
-	}
-}
-
-func (s *Server) handleWithPTY(conn net.Conn) {
 	connCtl, connData, err := mux.AcceptChannels(conn)
 	if err != nil {
 		log.ErrorMsg("Handling %s: mux.AcceptChannels(conn): %s\n", conn.RemoteAddr(), err)
@@ -90,41 +82,55 @@ func (s *Server) handleWithPTY(conn net.Conn) {
 	defer connData.Close()
 	defer conn.Close()
 
+	if s.cfg.Pty {
+		if err := s.handleWithPTY(connCtl, connData); err != nil {
+			log.ErrorMsg("Handling %s with PTY: %s\n", conn.RemoteAddr(), err)
+		}
+	} else {
+		if err := s.handlePlain(connData); err != nil {
+			log.ErrorMsg("Handling %s: %s\n", conn.RemoteAddr(), err)
+		}
+	}
+}
+
+func (s *Server) handleWithPTY(connCtl, connData net.Conn) error {
 	if s.cfg.LogFile != "" {
 		var err error
 		connData, err = log.NewLoggedConn(connData, s.cfg.LogFile)
 		if err != nil {
-			log.ErrorMsg("Handling %s: enabling logging to %s: %s\n", conn.RemoteAddr(), s.cfg.LogFile, err)
-			return
+			return fmt.Errorf("enabling logging to %s: %s", s.cfg.LogFile, err)
 		}
 	}
 
 	if s.cfg.Exec != "" {
 		if err := exec.RunWithPTY(connCtl, connData, s.cfg.Exec, s.cfg.Verbose); err != nil {
-			log.ErrorMsg("Handling %s: exec.RunWithPTY(...): %s\n", conn.RemoteAddr(), err)
+			return fmt.Errorf("exec.RunWithPTY(...): %s", err)
 		}
 	} else {
 		if err := terminal.PipeWithPTY(connCtl, connData, s.cfg.Verbose); err != nil {
-			log.ErrorMsg("Handling %s: terminal.PipeWithPTY(...): %s\n", conn.RemoteAddr(), err)
+			return fmt.Errorf("terminal.PipeWithPTY(...): %s", err)
 		}
 	}
+
+	return nil
 }
 
-func (s *Server) handlePlain(conn net.Conn) {
+func (s *Server) handlePlain(conn net.Conn) error {
 	if s.cfg.LogFile != "" {
 		var err error
 		conn, err = log.NewLoggedConn(conn, s.cfg.LogFile)
 		if err != nil {
-			log.ErrorMsg("Handling %s: enabling logging to %s: %s\n", conn.RemoteAddr(), s.cfg.LogFile, err)
-			return
+			return fmt.Errorf("enabling logging to %s: %s", s.cfg.LogFile, err)
 		}
 	}
 
 	if s.cfg.Exec != "" {
 		if err := exec.Run(conn, s.cfg.Exec); err != nil {
-			log.ErrorMsg("Handling %s: exec.Run(conn, %s): %s\n", conn.RemoteAddr(), s.cfg.Exec, err)
+			return fmt.Errorf("exec.Run(conn, %s): %s", s.cfg.Exec, err)
 		}
 	} else {
 		terminal.Pipe(conn, s.cfg.Verbose)
 	}
+
+	return nil
 }
