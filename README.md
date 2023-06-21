@@ -11,9 +11,10 @@ Finally, it can clean up after itself so you don't leave your binaries behind wh
 
 ## Install
 
-You can run `go install github.com/local/goncat` to install goncat to the `bin` folder in your GOPATH, usually `~/go/bin`.
+You can run `go install github.com/dominicbreuker/goncat` to install goncat to the `bin` folder in your GOPATH, usually `~/go/bin`.
 Alternatively, download the pre-built binary for your system and architecture.
-Download are available in the [release section](TODO).
+Download will be made available in the [release section](https://github.com/DominicBreuker/goncat/releases)
+once this tool is out of alpha and the interface is stable.
 
 ## Getting started
 
