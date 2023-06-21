@@ -2,7 +2,7 @@ KEY_SALT = $(shell openssl rand -hex 16)
 VERSION = "0.0.1"
 
 .PHONY: build
-build: build-linux build-windows # build-darwin
+build: build-linux build-windows build-darwin
 
 .PHONY: build-linux
 build-linux:

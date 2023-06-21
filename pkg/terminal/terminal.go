@@ -14,7 +14,7 @@ import (
 )
 
 func Pipe(conn net.Conn, verbose bool) {
-	pipeio.Pipe(pipeio.Stdio, conn, func(err error) {
+	pipeio.Pipe(pipeio.NewStdio(), conn, func(err error) {
 		if verbose {
 			log.ErrorMsg("Pipe(stdio, conn): %s\n", err)
 		}

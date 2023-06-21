@@ -4,7 +4,7 @@ import (
 	"dominicbreuker/goncat/cmd/connect"
 	"dominicbreuker/goncat/cmd/listen"
 	"dominicbreuker/goncat/cmd/version"
-	"fmt"
+	"dominicbreuker/goncat/pkg/log"
 	"os"
 
 	"github.com/urfave/cli/v3"
@@ -22,6 +22,6 @@ func main() {
 	}
 
 	if err := app.Run(os.Args); err != nil {
-		fmt.Printf("[!] Error: %s\n", err)
+		log.ErrorMsg("Run: %s\n", err)
 	}
 }
