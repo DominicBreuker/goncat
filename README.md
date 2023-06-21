@@ -48,7 +48,7 @@ In addition to these basic features, there is:
   For example, you can use that to document everything you did through a reverse shell.
 - PTY support: add `--pty` on both ends to enable pseudoterminal support.
   Only makes sense if you expose shells with `--exec`.
-  I've tested this on Linux and Windows but expect that MacOS should work too.
+  Works on Linux, Windows and MacOS.
   goncat handles all the details automatically, so there is no need for `stty raw -echo` or row and column size adjustments.
   It also restores your terminal when the connection terminates.
 - Cleanup: you can pass `--cleanup` to make goncat delete itself on process termination.
