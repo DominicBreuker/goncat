@@ -39,9 +39,14 @@ func generateCertificate(caCertPEM, caKeyPEM []byte) (tls.Certificate, error) {
 		return out, fmt.Errorf("failed to generate key pair: %v", err)
 	}
 
+	commonName, err := generateRandomString(8, getRandReader(""))
+	if err != nil {
+		return out, fmt.Errorf("generating random common name: %s", err)
+	}
+
 	tmpl := x509.Certificate{
 		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "client"},
+		Subject:      pkix.Name{CommonName: commonName},
 		NotBefore:    time.Now().AddDate(-1, 0, 0), // 1 year ago
 		NotAfter:     time.Now().AddDate(1, 0, 0),  // 1 year ahead
 		KeyUsage:     x509.KeyUsageDigitalSignature,

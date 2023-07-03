@@ -109,6 +109,10 @@ func dialTLS(addr string, key string) (net.Conn, error) {
 
 // customVerifier verifies the certificate but cares only about the root certificate, not SANs
 func customVerifier(caCert *x509.CertPool, rawCerts [][]byte) error {
+	if len(rawCerts) != 1 {
+		return fmt.Errorf("unexpected number of rawCerts: %d", len(rawCerts))
+	}
+
 	cert, err := x509.ParseCertificate(rawCerts[0])
 	if err != nil {
 		return fmt.Errorf("x509.ParseCertificate(rawCert): %s", err)

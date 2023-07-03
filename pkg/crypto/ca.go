@@ -19,7 +19,7 @@ func generateKeyPair(seed string) ([]byte, []byte, error) {
 		return nil, nil, fmt.Errorf("generateKey(%s): %s", seed, err)
 	}
 
-	cert, err := generateCACertificate(key)
+	cert, err := generateCACertificate(key, seed)
 	if err != nil {
 		return nil, nil, fmt.Errorf("generateCertificate(key): %s", err)
 	}
@@ -39,11 +39,7 @@ func generateKeyPair(seed string) ([]byte, []byte, error) {
 }
 
 func generateCAKey(seed string) (*ecdsa.PrivateKey, error) {
-	r := rand.Reader
-	if seed != "" {
-		r = newDRand(seed)
-	}
-	priv, err := ecdsa.GenerateKey(elliptic.P256(), r)
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), getRandReader(seed))
 	if err != nil {
 		return nil, err
 	}
@@ -51,14 +47,26 @@ func generateCAKey(seed string) (*ecdsa.PrivateKey, error) {
 	return priv, nil
 }
 
-func generateCACertificate(key *ecdsa.PrivateKey) ([]byte, error) {
+func generateCACertificate(key *ecdsa.PrivateKey, seed string) ([]byte, error) {
+	rng := getRandReader(seed)
+
+	cn, err := generateRandomString(8, rng)
+	if err != nil {
+		return nil, fmt.Errorf("generating random common name: %s", err)
+	}
+
+	org, err := generateRandomString(8, rng)
+	if err != nil {
+		return nil, fmt.Errorf("generating random organization: %s", err)
+	}
+
 	tml := x509.Certificate{
 		NotBefore:    time.Now(),
 		NotAfter:     time.Now().AddDate(5, 0, 0),
 		SerialNumber: big.NewInt(mrand.Int63()),
 		Subject: pkix.Name{
-			CommonName:   "goncat",
-			Organization: []string{"goncat"},
+			CommonName:   cn,
+			Organization: []string{org},
 		},
 		BasicConstraintsValid: true,
 		IsCA:                  true,

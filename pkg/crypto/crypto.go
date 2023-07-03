@@ -14,9 +14,9 @@ func GenerateCertificates(seed string) (*x509.CertPool, tls.Certificate, error) 
 
 	// if seed is unspecified we use a random one
 	if seed == "" {
-		seed, err = GenerateRandomString(32)
+		seed, err = generateRandomString(32, getRandReader(seed))
 		if err != nil {
-			return caCert, cert, fmt.Errorf("GenerateRandomString(32): %s", err)
+			return caCert, cert, fmt.Errorf("GenerateRandomString(32, getRandReader(seed)): %s", err)
 		}
 	}
 
