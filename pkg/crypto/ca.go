@@ -61,8 +61,8 @@ func generateCACertificate(key *ecdsa.PrivateKey, seed string) ([]byte, error) {
 	}
 
 	tml := x509.Certificate{
-		NotBefore:    time.Now(),
-		NotAfter:     time.Now().AddDate(5, 0, 0),
+		NotBefore:    time.Date(1970, 0, 0, 0, 0, 0, 0, time.UTC),
+		NotAfter:     time.Date(2063, 4, 5, 11, 0, 0, 0, time.UTC),
 		SerialNumber: big.NewInt(mrand.Int63()),
 		Subject: pkix.Name{
 			CommonName:   cn,

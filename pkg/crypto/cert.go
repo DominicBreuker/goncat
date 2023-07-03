@@ -47,8 +47,8 @@ func generateCertificate(caCertPEM, caKeyPEM []byte) (tls.Certificate, error) {
 	tmpl := x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject:      pkix.Name{CommonName: commonName},
-		NotBefore:    time.Now().AddDate(-1, 0, 0), // 1 year ago
-		NotAfter:     time.Now().AddDate(1, 0, 0),  // 1 year ahead
+		NotBefore:    time.Date(1970, 0, 0, 0, 0, 0, 0, time.UTC),
+		NotAfter:     time.Date(2063, 4, 5, 11, 0, 0, 0, time.UTC),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
 	}
 
