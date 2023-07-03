@@ -1,6 +1,7 @@
 package terminal
 
 import (
+	"context"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/pipeio"
 	"dominicbreuker/goncat/pkg/pty"
@@ -13,6 +14,7 @@ import (
 	"golang.org/x/term"
 )
 
+// Pipe ...
 func Pipe(conn net.Conn, verbose bool) {
 	pipeio.Pipe(pipeio.NewStdio(), conn, func(err error) {
 		if verbose {
@@ -21,39 +23,51 @@ func Pipe(conn net.Conn, verbose bool) {
 	})
 }
 
+// PipeWithPTY ...
 func PipeWithPTY(connCtl, connData net.Conn, verbose bool) error {
+	log.InfoMsg("Enabling raw mode\n")
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
 		return fmt.Errorf("setting terminal to raw mode: %s", err)
 	}
+
 	defer func() {
 		log.InfoMsg("Disabling raw mode\n")
 		term.Restore(int(os.Stdin.Fd()), oldState)
 		fmt.Printf("\033[2K\r") // clear line
 	}()
 
-	go syncTerminalSize(connCtl)
+	ctx, cancel := context.WithCancel(context.TODO())
+	go syncTerminalSize(ctx, connCtl)
+
 	Pipe(connData, verbose)
+	cancel()
 
 	return nil
 }
 
-func syncTerminalSize(connCtl net.Conn) {
+func syncTerminalSize(ctx context.Context, connCtl net.Conn) {
 	enc := gob.NewEncoder(connCtl)
+	ticker := time.NewTicker(1 * time.Second)
 
 	sizeRemote := pty.TerminalSize{}
 	for {
-		time.Sleep(1 * time.Second)
-		size, err := pty.GetTerminalSize()
-		if err != nil {
-			log.ErrorMsg("can't identify terminal size: %s", err)
-		}
-
-		if size != sizeRemote {
-			if err = enc.Encode(size); err != nil {
-				log.ErrorMsg("can't send new Terminal size: %s", err)
+		select {
+		case <-ticker.C:
+			size, err := pty.GetTerminalSize()
+			if err != nil {
+				log.ErrorMsg("can't identify terminal size: %s", err)
 			}
-			sizeRemote = size
+
+			if size != sizeRemote {
+				if err = enc.Encode(size); err != nil {
+					log.ErrorMsg("can't send new Terminal size: %s", err)
+					continue
+				}
+				sizeRemote = size
+			}
+		case <-ctx.Done():
+			return
 		}
 	}
 }

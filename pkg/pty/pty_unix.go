@@ -41,15 +41,6 @@ func NewPty() (*os.File, *os.File, error) {
 	return ptm, pts, nil
 }
 
-func openPtm() (*os.File, error) {
-	ptm, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
-	if err != nil {
-		return nil, fmt.Errorf("os.OpenFile(/dev/ptmx): %s", err)
-	}
-
-	return ptm, nil
-}
-
 func openPts(ptsName string) (*os.File, error) {
 	pts, err := os.OpenFile(ptsName, os.O_RDWR|syscall.O_NOCTTY, 0)
 	if err != nil {

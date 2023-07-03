@@ -1,8 +1,8 @@
 package main
 
 import (
-	"dominicbreuker/goncat/cmd/connect"
-	"dominicbreuker/goncat/cmd/listen"
+	"dominicbreuker/goncat/cmd/master"
+	"dominicbreuker/goncat/cmd/slave"
 	"dominicbreuker/goncat/cmd/version"
 	"dominicbreuker/goncat/pkg/log"
 	"os"
@@ -15,8 +15,8 @@ func main() {
 		Name:  "goncat",
 		Usage: "netcat-like tool for reverse shells",
 		Commands: []*cli.Command{
-			connect.GetCommand(),
-			listen.GetCommand(),
+			master.GetCommand(),
+			slave.GetCommand(),
 			version.GetCommand(),
 		},
 	}

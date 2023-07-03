@@ -4,18 +4,14 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-const categoryCommon = "Common"
+const categoryCommon = "common"
 
 const SSLFlag = "ssl"
 const KeyFlag = "key"
-const ExecFlag = "exec"
-const PtyFlag = "pty"
-const LogFileFlag = "log"
-const CleanupFlag = "cleanup"
 const VerboseFlag = "verbose"
 
 // GetFlags ...
-func GetFlags() []cli.Flag {
+func GetCommonFlags() []cli.Flag {
 	return []cli.Flag{
 		&cli.BoolFlag{
 			Name:     SSLFlag,
@@ -33,11 +29,79 @@ func GetFlags() []cli.Flag {
 			Value:    "",
 			Required: false,
 		},
+		&cli.BoolFlag{
+			Name:     VerboseFlag,
+			Aliases:  []string{"v"},
+			Usage:    "Verbose error logging",
+			Category: categoryCommon,
+			Value:    false,
+			Required: false,
+		},
+	}
+}
+
+const categoryConnect = "connect"
+
+const HostFlag = "host"
+const PortFlag = "port"
+
+// GetConnectFlags ...
+func GetConnectFlags() []cli.Flag {
+	return []cli.Flag{
+		&cli.StringFlag{
+			Name:     HostFlag,
+			Aliases:  []string{},
+			Usage:    "Remote host (name or IP)",
+			Category: categoryConnect,
+			Required: true,
+		},
+		&cli.IntFlag{
+			Name:     PortFlag,
+			Aliases:  []string{"p"},
+			Usage:    "Remote port",
+			Category: categoryConnect,
+			Required: true,
+		},
+	}
+}
+
+const categoryListen = "listen"
+
+// GetListenFlags ...
+func GetListenFlags() []cli.Flag {
+	return []cli.Flag{
+		&cli.StringFlag{
+			Name:     HostFlag,
+			Aliases:  []string{},
+			Usage:    "Local interface, leave empty for all interfaces",
+			Category: categoryListen,
+			Value:    "",
+			Required: false,
+		},
+		&cli.IntFlag{
+			Name:     PortFlag,
+			Aliases:  []string{"p"},
+			Usage:    "Local port",
+			Category: categoryListen,
+			Required: true,
+		},
+	}
+}
+
+const categoryMaster = "master"
+
+const ExecFlag = "exec"
+const PtyFlag = "pty"
+const LogFileFlag = "log"
+
+// GetMasterFlags ...
+func GetMasterFlags() []cli.Flag {
+	return []cli.Flag{
 		&cli.StringFlag{
 			Name:     ExecFlag,
 			Aliases:  []string{"e"},
 			Usage:    "Execute program",
-			Category: categoryCommon,
+			Category: categoryMaster,
 			Value:    "",
 			Required: false,
 		},
@@ -45,7 +109,7 @@ func GetFlags() []cli.Flag {
 			Name:     PtyFlag,
 			Aliases:  []string{},
 			Usage:    "Enable Pty mode",
-			Category: categoryCommon,
+			Category: categoryMaster,
 			Value:    false,
 			Required: false,
 		},
@@ -53,23 +117,24 @@ func GetFlags() []cli.Flag {
 			Name:     LogFileFlag,
 			Aliases:  []string{"l"},
 			Usage:    "Log file",
-			Category: categoryCommon,
+			Category: categoryMaster,
 			Value:    "",
 			Required: false,
 		},
+	}
+}
+
+const categorySlave = "slave"
+
+const CleanupFlag = "cleanup"
+
+func GetSlaveFlags() []cli.Flag {
+	return []cli.Flag{
 		&cli.BoolFlag{
 			Name:     CleanupFlag,
 			Aliases:  []string{"c"},
 			Usage:    "Clean up after running",
-			Category: categoryCommon,
-			Value:    false,
-			Required: false,
-		},
-		&cli.BoolFlag{
-			Name:     VerboseFlag,
-			Aliases:  []string{"v"},
-			Usage:    "Verbose error logging",
-			Category: categoryCommon,
+			Category: categorySlave,
 			Value:    false,
 			Required: false,
 		},

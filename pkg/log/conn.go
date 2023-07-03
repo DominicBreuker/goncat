@@ -15,8 +15,7 @@ type loggedConn struct {
 func (lc *loggedConn) Read(b []byte) (int, error) {
 	n, err := lc.conn.Read(b)
 	if n > 0 {
-		timestamp := time.Now().Format("2006-01-02 15:04:05")
-		_, err = fmt.Fprintf(lc.logFile, "%s <- %d bytes (%s <- %s)\n%s", timestamp, n, lc.conn.LocalAddr(), lc.conn.RemoteAddr(), string(b[:n]))
+		_, err = lc.logFile.Write(b[:n])
 		if err != nil {
 			return 0, fmt.Errorf("reading: %s", err)
 		}
@@ -27,8 +26,7 @@ func (lc *loggedConn) Read(b []byte) (int, error) {
 func (lc *loggedConn) Write(b []byte) (int, error) {
 	n, err := lc.conn.Write(b)
 	if n > 0 {
-		timestamp := time.Now().Format("2006-01-02 15:04:05")
-		_, err = fmt.Fprintf(lc.logFile, "%s -> %d bytes (%s -> %s)\n%s", timestamp, n, lc.conn.LocalAddr(), lc.conn.RemoteAddr(), string(b))
+		_, err = lc.logFile.Write(b[:n])
 		if err != nil {
 			return 0, fmt.Errorf("writing: %s", err)
 		}

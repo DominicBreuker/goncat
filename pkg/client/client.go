@@ -5,98 +5,51 @@ import (
 	"crypto/x509"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/crypto"
-	"dominicbreuker/goncat/pkg/exec"
 	"dominicbreuker/goncat/pkg/log"
-	"dominicbreuker/goncat/pkg/mux"
-	"dominicbreuker/goncat/pkg/terminal"
 	"fmt"
 	"net"
 )
 
 // Client ...
 type Client struct {
-	cfg config.Config
+	cfg *config.Shared
+
+	conn net.Conn
 }
 
 // New ...
-func New(cfg config.Config) *Client {
+func New(cfg *config.Shared) *Client {
 	return &Client{
 		cfg: cfg,
 	}
+}
+
+// Close ...
+func (c *Client) Close() error {
+	log.InfoMsg("Connection to %s closed\n", c.conn.RemoteAddr())
+
+	return c.conn.Close()
+}
+
+// GetConnection ...
+func (c *Client) GetConnection() net.Conn {
+	return c.conn
 }
 
 // Connect ...
 func (c *Client) Connect() error {
 	addr := fmt.Sprintf("%s:%d", c.cfg.Host, c.cfg.Port)
 
-	var conn net.Conn
+	log.InfoMsg("Connecting to %s\n", addr)
+
 	var err error
 	if c.cfg.SSL {
-		conn, err = dialTLS(addr, c.cfg.GetKey())
+		c.conn, err = dialTLS(addr, c.cfg.GetKey())
 	} else {
-		conn, err = dialTCP(addr)
+		c.conn, err = dialTCP(addr)
 	}
 	if err != nil {
 		return fmt.Errorf("dial: %s", err)
-	}
-
-	defer log.InfoMsg("Connection to %s closed\n", conn.RemoteAddr())
-
-	connCtl, connData, err := mux.OpenChannels(conn)
-	if err != nil {
-		return fmt.Errorf("mux.OpenChannels(conn): %s", err)
-	}
-
-	defer connCtl.Close()
-	defer connData.Close()
-	defer conn.Close()
-
-	if c.cfg.Pty {
-		c.handleWithPTY(connCtl, connData)
-	} else {
-		c.handlePlain(connData)
-	}
-
-	return nil
-}
-
-func (c *Client) handleWithPTY(connCtl, connData net.Conn) error {
-	if c.cfg.LogFile != "" {
-		var err error
-		connData, err = log.NewLoggedConn(connData, c.cfg.LogFile)
-		if err != nil {
-			return fmt.Errorf("enabling logging to %s: %s", c.cfg.LogFile, err)
-		}
-	}
-
-	if c.cfg.Exec != "" {
-		if err := exec.RunWithPTY(connCtl, connData, c.cfg.Exec, c.cfg.Verbose); err != nil {
-			return fmt.Errorf("exec.RunWithPTY(...): %s", err)
-		}
-	} else {
-		if err := terminal.PipeWithPTY(connCtl, connData, c.cfg.Verbose); err != nil {
-			return fmt.Errorf("terminal.PipeWithPTY(connCtl, connData): %s", err)
-		}
-	}
-
-	return nil
-}
-
-func (c *Client) handlePlain(conn net.Conn) error {
-	if c.cfg.LogFile != "" {
-		var err error
-		conn, err = log.NewLoggedConn(conn, c.cfg.LogFile)
-		if err != nil {
-			return fmt.Errorf("enabling logging to %s: %s", c.cfg.LogFile, err)
-		}
-	}
-
-	if c.cfg.Exec != "" {
-		if err := exec.Run(conn, c.cfg.Exec); err != nil {
-			return fmt.Errorf("exec.Run(conn, %s): %s", c.cfg.Exec, err)
-		}
-	} else {
-		terminal.Pipe(conn, c.cfg.Verbose)
 	}
 
 	return nil

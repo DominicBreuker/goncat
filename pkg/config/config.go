@@ -2,20 +2,17 @@ package config
 
 import "fmt"
 
-type Config struct {
+type Shared struct {
 	Host    string
 	Port    int
 	SSL     bool
 	Key     string
-	Exec    string
-	Pty     bool
-	LogFile string
 	Verbose bool
 }
 
 var KeySalt = "bn6ySqbg2BgmHaljx3mhg94DOybkBF3G" // overwrite with custom value during release build
 
-func (c *Config) Validate() []error {
+func (c *Shared) Validate() []error {
 	var errors []error
 
 	if !c.SSL && c.Key != "" {
@@ -29,7 +26,7 @@ func (c *Config) Validate() []error {
 	return errors
 }
 
-func (c *Config) GetKey() string {
+func (c *Shared) GetKey() string {
 	if c.Key == "" {
 		return ""
 	}

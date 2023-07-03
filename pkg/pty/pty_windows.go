@@ -22,6 +22,7 @@ var (
 // compare github.com/UserExistsError/conpty
 // compare https://devblogs.microsoft.com/commandline/windows-command-line-introducing-the-windows-pseudo-console-conpty/
 
+// ConPTY ...
 type ConPTY struct {
 	hPC windows.Handle
 
@@ -30,11 +31,11 @@ type ConPTY struct {
 	cmdIn  windows.Handle
 	cmdOut windows.Handle
 
-	siEx StartupInfoEx
+	siEx startupInfoEx
 	pi   *windows.ProcessInformation
 }
 
-type StartupInfoEx struct {
+type startupInfoEx struct {
 	startupInfo   windows.StartupInfo
 	attributeList []byte
 }
@@ -51,8 +52,9 @@ func (cpty *ConPTY) Write(data []byte) (int, error) {
 	return int(n), err
 }
 
+// Close ...
 func (cpty *ConPTY) Close() error {
-	if err := cpty.CloseHandles(); err != nil {
+	if err := cpty.closeHandles(); err != nil {
 		return err
 	}
 
@@ -64,7 +66,7 @@ func (cpty *ConPTY) Close() error {
 	return nil
 }
 
-func (cpty *ConPTY) CloseHandles() error {
+func (cpty *ConPTY) closeHandles() error {
 	var errs []error
 
 	for _, h := range []windows.Handle{
@@ -108,6 +110,7 @@ func closeHandle(h windows.Handle) error {
 // ############ Setup of ConPTY ########################
 // #####################################################
 
+// Create ...
 func Create() (*ConPTY, error) {
 	cpty := &ConPTY{}
 
@@ -138,7 +141,7 @@ func Create() (*ConPTY, error) {
 }
 
 func (cpty *ConPTY) err(err error) (*ConPTY, error) {
-	cpty.CloseHandles()
+	cpty.closeHandles()
 	return nil, err
 }
 
@@ -165,7 +168,7 @@ func (cpty *ConPTY) createPseudoConsole() error {
 	}
 
 	ret, _, err := createPseudoConsole.Call(
-		size.Serialize(),
+		size.serialize(),
 		uintptr(cpty.ptyIn),
 		uintptr(cpty.ptyOut),
 		0,
@@ -218,6 +221,7 @@ func (cpty *ConPTY) updateProcThreadAttribute() error {
 // ############ Execute program ########################
 // #####################################################
 
+// Execute ...
 func (cpty *ConPTY) Execute(program string) error {
 	cmd, err := windows.UTF16PtrFromString(program)
 	if err != nil {
@@ -245,6 +249,7 @@ func (cpty *ConPTY) Execute(program string) error {
 	return nil
 }
 
+// Wait ...
 func (cpty *ConPTY) Wait() error {
 	var exitCode uint32
 
@@ -261,14 +266,16 @@ func (cpty *ConPTY) Wait() error {
 	}
 }
 
+// KillProcess ...
 func (cpty *ConPTY) KillProcess() {
 	if cpty.pi != nil {
 		windows.TerminateProcess(cpty.pi.Process, 0)
 	}
 }
 
+// SetTerminalSize ...
 func (cpty *ConPTY) SetTerminalSize(size TerminalSize) error {
-	ret, _, _ := resizePseudoConsole.Call(uintptr(cpty.hPC), size.Serialize())
+	ret, _, _ := resizePseudoConsole.Call(uintptr(cpty.hPC), size.serialize())
 	if ret != uintptr(0) {
 		return fmt.Errorf("ResizePseudoConsole failed with status 0x%x", ret)
 	}
@@ -280,10 +287,11 @@ func (cpty *ConPTY) SetTerminalSize(size TerminalSize) error {
 // ############ Terminal size ########################
 // ###################################################
 
-func (size *TerminalSize) Serialize() uintptr {
+func (size *TerminalSize) serialize() uintptr {
 	return uintptr((int32(size.Rows) << 16) | int32(size.Cols))
 }
 
+// GetTerminalSize ...
 func GetTerminalSize() (size TerminalSize, err error) {
 	var csbi windows.ConsoleScreenBufferInfo
 	hConsole, err := windows.GetStdHandle(windows.STD_OUTPUT_HANDLE)

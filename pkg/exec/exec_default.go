@@ -16,6 +16,7 @@ import (
 	"syscall"
 )
 
+// RunWithPTY ...
 func RunWithPTY(connCtl, connData net.Conn, program string, verbose bool) error {
 	cmd := exec.Command(program)
 

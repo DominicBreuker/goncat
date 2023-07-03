@@ -12,6 +12,15 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+func openPtm() (*os.File, error) {
+	ptm, err := os.OpenFile("/dev/ptmx", os.O_RDWR, 0)
+	if err != nil {
+		return nil, fmt.Errorf("os.OpenFile(/dev/ptmx): %s", err)
+	}
+
+	return ptm, nil
+}
+
 func ptsname(f *os.File) (string, error) {
 	n, err := unix.IoctlGetInt(int(f.Fd()), unix.TIOCGPTN)
 	return fmt.Sprintf("/dev/pts/%d", n), err

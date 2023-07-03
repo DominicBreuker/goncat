@@ -1,20 +1,16 @@
-package connect
+package slaveconnect
 
 import (
 	"dominicbreuker/goncat/cmd/shared"
 	"dominicbreuker/goncat/pkg/clean"
 	"dominicbreuker/goncat/pkg/client"
 	"dominicbreuker/goncat/pkg/config"
+	"dominicbreuker/goncat/pkg/handler/slave"
 	"dominicbreuker/goncat/pkg/log"
 	"fmt"
 
 	"github.com/urfave/cli/v3"
 )
-
-const categoryConnect = "connect"
-
-const hostFlag = "host"
-const portFlag = "port"
 
 // GetCommand ...
 func GetCommand() *cli.Command {
@@ -30,18 +26,15 @@ func GetCommand() *cli.Command {
 				defer delFunc()
 			}
 
-			cfg := config.Config{
-				Host:    cCtx.String(hostFlag),
-				Port:    cCtx.Int(portFlag),
+			cfg := &config.Shared{
+				Host:    cCtx.String(shared.HostFlag),
+				Port:    cCtx.Int(shared.PortFlag),
 				SSL:     cCtx.Bool(shared.SSLFlag),
 				Key:     cCtx.String(shared.KeyFlag),
-				Exec:    cCtx.String(shared.ExecFlag),
-				Pty:     cCtx.Bool(shared.PtyFlag),
-				LogFile: cCtx.String(shared.LogFileFlag),
 				Verbose: cCtx.Bool(shared.VerboseFlag),
 			}
 
-			if errors := cfg.Validate(); len(errors) > 0 {
+			if errors := config.Validate(cfg); len(errors) > 0 {
 				log.ErrorMsg("Argument validation errors:\n")
 				for _, err := range errors {
 					log.ErrorMsg(" - %s\n", err)
@@ -49,30 +42,34 @@ func GetCommand() *cli.Command {
 				return fmt.Errorf("exiting")
 			}
 
-			log.InfoMsg("Connecting to %s:%d\n", cfg.Host, cfg.Port)
-
 			c := client.New(cfg)
 			if err := c.Connect(); err != nil {
 				return fmt.Errorf("connecting: %s", err)
 			}
+			defer c.Close()
+
+			h, err := slave.New(cfg, c.GetConnection())
+			if err != nil {
+				return fmt.Errorf("slave.New(): %s", err)
+			}
+			defer h.Close()
+
+			if err := h.Handle(); err != nil {
+				return fmt.Errorf("handling: %s", err)
+			}
 
 			return nil
 		},
-		Flags: append([]cli.Flag{
-			&cli.StringFlag{
-				Name:     hostFlag,
-				Aliases:  []string{},
-				Usage:    "Remote host (name or IP)",
-				Category: categoryConnect,
-				Required: true,
-			},
-			&cli.IntFlag{
-				Name:     portFlag,
-				Aliases:  []string{"p"},
-				Usage:    "Remote port",
-				Category: categoryConnect,
-				Required: true,
-			},
-		}, shared.GetFlags()...),
+		Flags: getFlags(),
 	}
+}
+
+func getFlags() []cli.Flag {
+	flags := []cli.Flag{}
+
+	flags = append(flags, shared.GetCommonFlags()...)
+	flags = append(flags, shared.GetSlaveFlags()...)
+	flags = append(flags, shared.GetConnectFlags()...)
+
+	return flags
 }

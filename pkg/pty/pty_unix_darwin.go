@@ -16,6 +16,14 @@ import (
 // https://opensource.apple.com/source/xnu/xnu-792.2.4/bsd/sys/ioccom.h.auto.html
 // https://opensource.apple.com/source/Libc/Libc-825.26/stdlib/grantpt.c.auto.html
 
+func openPtm() (*os.File, error) {
+	ptmFd, err := syscall.Open("/dev/ptmx", syscall.O_RDWR|syscall.O_CLOEXEC, 0)
+	if err != nil {
+		return nil, fmt.Errorf(" syscall.Open(/dev/ptmx): %s", err)
+	}
+	return os.NewFile(uintptr(ptmFd), "/dev/ptmx"), nil
+}
+
 const _IOCPARM_MASK = 0x1fff
 const _IOCPARM_LEN = (syscall.TIOCPTYGNAME >> 16) & _IOCPARM_MASK
 

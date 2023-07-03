@@ -13,6 +13,7 @@ import (
 	"net"
 )
 
+// RunWithPTY ...
 func RunWithPTY(connCtl, connData net.Conn, program string, verbose bool) error {
 	cpty, err := pty.Create()
 	if err != nil {
