@@ -1,4 +1,4 @@
-KEY_SALT:=$(shell openssl rand -hex 16)
+KEY_SALT:=$(shell openssl rand -hex 64)
 VERSION=0.0.1
 GOBIN=go
 

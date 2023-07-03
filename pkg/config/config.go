@@ -10,7 +10,7 @@ type Shared struct {
 	Verbose bool
 }
 
-var KeySalt = "bn6ySqbg2BgmHaljx3mhg94DOybkBF3G" // overwrite with custom value during release build
+var KeySalt = "98263df478dbb76e25eed7e71750e59dbffcb1f401413472f9b128f10bb3cc01af3942a17980a24cd1a26bd3ab87a0fec835faf59aa4f1a1dc7f2416c5765e9e" // overwrite with custom value during release build
 
 func (c *Shared) Validate() []error {
 	var errors []error
