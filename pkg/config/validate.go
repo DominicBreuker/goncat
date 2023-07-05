@@ -1,5 +1,7 @@
 package config
 
+import "fmt"
+
 // ValidatableConfig ...
 type ValidatableConfig interface {
 	Validate() []error
@@ -14,4 +16,12 @@ func Validate(cfgs ...ValidatableConfig) []error {
 	}
 
 	return out
+}
+
+func validatePort(port int) error {
+	if port < 1 || port > 65535 {
+		return fmt.Errorf("%d not in [1, 65535]", port)
+	}
+
+	return nil
 }

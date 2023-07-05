@@ -14,7 +14,10 @@ func Pipe(rwc1 io.ReadWriteCloser, rwc2 io.ReadWriteCloser, logfunc func(error))
 	var wg sync.WaitGroup
 	var o sync.Once
 
+	closed := false
 	close := func() {
+		closed = true
+
 		rwc1.Close()
 		rwc2.Close()
 
@@ -26,7 +29,7 @@ func Pipe(rwc1 io.ReadWriteCloser, rwc2 io.ReadWriteCloser, logfunc func(error))
 		var err error
 		_, err = io.Copy(rwc1, rwc2)
 		if err != nil {
-			if !errors.Is(err, cancelreader.ErrCanceled) {
+			if !closed && !errors.Is(err, cancelreader.ErrCanceled) {
 				logfunc(fmt.Errorf("io.Copy(rwc1, rwc2): %s", err))
 			}
 		}
@@ -38,7 +41,7 @@ func Pipe(rwc1 io.ReadWriteCloser, rwc2 io.ReadWriteCloser, logfunc func(error))
 		var err error
 		_, err = io.Copy(rwc2, rwc1)
 		if err != nil {
-			if !errors.Is(err, cancelreader.ErrCanceled) {
+			if !closed && !errors.Is(err, cancelreader.ErrCanceled) {
 				logfunc(fmt.Errorf("io.Copy(rwc2, rwc1): %s", err))
 			}
 		}

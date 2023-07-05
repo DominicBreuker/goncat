@@ -37,7 +37,7 @@ func PipeWithPTY(connCtl, connData net.Conn, verbose bool) error {
 		fmt.Printf("\033[2K\r") // clear line
 	}()
 
-	ctx, cancel := context.WithCancel(context.TODO())
+	ctx, cancel := context.WithCancel(context.Background())
 	go syncTerminalSize(ctx, connCtl)
 
 	Pipe(connData, verbose)

@@ -26,7 +26,11 @@ func (s *session) Close() error {
 
 func config() *yamux.Config {
 	cfg := yamux.DefaultConfig()
+
+	//cfg.StreamOpenTimeout = 5 * time.Second // default=75s, yamux timeout will close the entire session, without reconnect we might as well terminate the program in that case
+
 	cfg.LogOutput = nil
 	cfg.Logger = log.New(ioutil.Discard, "", log.LstdFlags) // discard all console logging in yamux
+
 	return cfg
 }

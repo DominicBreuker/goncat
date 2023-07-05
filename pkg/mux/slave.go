@@ -58,5 +58,4 @@ func (s *SlaveSession) Receive() (msg.Message, error) {
 	var m msg.Message
 	err := s.dec.Decode(&m)
 	return m, err
-
 }

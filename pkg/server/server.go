@@ -23,6 +23,14 @@ func New(cfg *config.Shared) *Server {
 	}
 }
 
+// Close ...
+func (s *Server) Close() error {
+	if s.l != nil {
+		return s.l.Close()
+	}
+	return nil
+}
+
 // Serve ...
 func (s *Server) Serve() error {
 	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
@@ -73,27 +81,3 @@ func (s *Server) Accept() (net.Conn, error) {
 
 	return conn, nil
 }
-
-//func (s *Server) Handle(conn net.Conn) {
-//	defer log.InfoMsg("Connection from %s lost\n", conn.RemoteAddr())
-//
-//	connCtl, connData, err := mux.AcceptChannels(conn)
-//	if err != nil {
-//		log.ErrorMsg("Handling %s: mux.AcceptChannels(conn): %s\n", conn.RemoteAddr(), err)
-//		return
-//	}
-//	defer connCtl.Close()
-//	defer connData.Close()
-//	defer conn.Close()
-//
-//	if s.cfg.Pty {
-//		if err := s.handleWithPTY(connCtl, connData); err != nil {
-//			log.ErrorMsg("Handling %s with PTY: %s\n", conn.RemoteAddr(), err)
-//		}
-//	} else {
-//		if err := s.handlePlain(connData); err != nil {
-//			log.ErrorMsg("Handling %s: %s\n", conn.RemoteAddr(), err)
-//		}
-//	}
-//}
-//

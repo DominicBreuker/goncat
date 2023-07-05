@@ -2,6 +2,7 @@ package config
 
 import "fmt"
 
+// Shared ...
 type Shared struct {
 	Host    string
 	Port    int
@@ -10,8 +11,10 @@ type Shared struct {
 	Verbose bool
 }
 
+// KeySalt ...
 var KeySalt = "98263df478dbb76e25eed7e71750e59dbffcb1f401413472f9b128f10bb3cc01af3942a17980a24cd1a26bd3ab87a0fec835faf59aa4f1a1dc7f2416c5765e9e" // overwrite with custom value during release build
 
+// Validate ...
 func (c *Shared) Validate() []error {
 	var errors []error
 
@@ -19,13 +22,14 @@ func (c *Shared) Validate() []error {
 		errors = append(errors, fmt.Errorf("You must use '--ssl' to use '--key'"))
 	}
 
-	if c.Port < 1 || c.Port > 65535 {
-		errors = append(errors, fmt.Errorf("'--port' must be in [1, 65535]"))
+	if err := validatePort(c.Port); err != nil {
+		errors = append(errors, fmt.Errorf("'--port': %s", err))
 	}
 
 	return errors
 }
 
+// GetKey ...
 func (c *Shared) GetKey() string {
 	if c.Key == "" {
 		return ""

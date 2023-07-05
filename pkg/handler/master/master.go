@@ -1,6 +1,7 @@
 package master
 
 import (
+	"context"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/mux"
 	"fmt"
@@ -39,7 +40,13 @@ func (mst *Master) Close() error {
 func (mst *Master) Handle() error {
 	var wg sync.WaitGroup
 
-	mst.startForegroundJob(&wg)
+	ctx, cancel := context.WithCancel(context.Background())
+
+	for _, lpf := range mst.mCfg.LocalPortForwarding {
+		mst.startLocalPortFwdJobJob(ctx, &wg, lpf)
+	}
+
+	mst.startForegroundJob(&wg, cancel) // foreground job must cancel when it terminates
 
 	wg.Wait()
 

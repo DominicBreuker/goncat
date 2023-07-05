@@ -41,6 +41,7 @@ func (slv *Slave) Handle() error {
 		m, err := slv.sess.Receive()
 		if err != nil {
 			if err == io.EOF {
+				log.InfoMsg("Slave handle EOF\n")
 				return nil
 			}
 
@@ -51,6 +52,8 @@ func (slv *Slave) Handle() error {
 		switch message := m.(type) {
 		case msg.Foreground:
 			slv.handleForegroundAsync(message)
+		case msg.Connect:
+			slv.handleConnectAsync(message)
 		default:
 			return fmt.Errorf("unsupported message type '%s', this is a bug", m.MsgType())
 		}

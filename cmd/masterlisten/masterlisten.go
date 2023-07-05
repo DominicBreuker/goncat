@@ -32,6 +32,8 @@ func GetCommand() *cli.Command {
 				LogFile: cCtx.String(shared.LogFileFlag),
 			}
 
+			mCfg.ParseLocalPortForwardingSpecs(cCtx.StringSlice(shared.LocalPortForwardingFlag))
+
 			if errors := config.Validate(cfg, mCfg); len(errors) > 0 {
 				log.ErrorMsg("Argument validation errors:\n")
 				for _, err := range errors {
@@ -44,6 +46,7 @@ func GetCommand() *cli.Command {
 			if err := s.Serve(); err != nil {
 				return fmt.Errorf("serving: %s", err)
 			}
+			defer s.Close()
 
 			for {
 				conn, err := s.Accept()
