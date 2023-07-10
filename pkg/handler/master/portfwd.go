@@ -81,3 +81,12 @@ func (mst *Master) handleLocalPortForwardingConn(lpf *config.LocalPortForwarding
 
 	return nil
 }
+
+func (mst *Master) startRemotePortFwdJobJob(ctx context.Context, wg *sync.WaitGroup, rpf *config.RemotePortForwardingCfg) {
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+
+		log.ErrorMsg("Remote port forwarding (%s): not implemented yet\n", rpf)
+	}()
+}

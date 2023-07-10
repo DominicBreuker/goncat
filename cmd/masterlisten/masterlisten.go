@@ -33,6 +33,7 @@ func GetCommand() *cli.Command {
 			}
 
 			mCfg.ParseLocalPortForwardingSpecs(cCtx.StringSlice(shared.LocalPortForwardingFlag))
+			mCfg.ParseRemotePortForwardingSpecs(cCtx.StringSlice(shared.RemotePortForwardingFlag))
 
 			if errors := config.Validate(cfg, mCfg); len(errors) > 0 {
 				log.ErrorMsg("Argument validation errors:\n")

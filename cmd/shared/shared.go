@@ -94,6 +94,7 @@ const ExecFlag = "exec"
 const PtyFlag = "pty"
 const LogFileFlag = "log"
 const LocalPortForwardingFlag = "local"
+const RemotePortForwardingFlag = "remote"
 
 // GetMasterFlags ...
 func GetMasterFlags() []cli.Flag {
@@ -126,6 +127,14 @@ func GetMasterFlags() []cli.Flag {
 			Name:     LocalPortForwardingFlag,
 			Aliases:  []string{"L"},
 			Usage:    "Local port forwarding, format: -L <local-host>:<local-port>:<remote-host>:<rempote-port> (local-host optional)",
+			Category: categoryMaster,
+			Value:    []string{},
+			Required: false,
+		},
+		&cli.StringSliceFlag{
+			Name:     RemotePortForwardingFlag,
+			Aliases:  []string{"R"},
+			Usage:    "Remote port forwarding, format: -R <remote-host>:<remote-port>:<local-host>:<local-port> (remote-host optional)",
 			Category: categoryMaster,
 			Value:    []string{},
 			Required: false,

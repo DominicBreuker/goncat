@@ -41,7 +41,6 @@ func (slv *Slave) Handle() error {
 		m, err := slv.sess.Receive()
 		if err != nil {
 			if err == io.EOF {
-				log.InfoMsg("Slave handle EOF\n")
 				return nil
 			}
 

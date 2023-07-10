@@ -45,6 +45,9 @@ func (mst *Master) Handle() error {
 	for _, lpf := range mst.mCfg.LocalPortForwarding {
 		mst.startLocalPortFwdJobJob(ctx, &wg, lpf)
 	}
+	for _, rpf := range mst.mCfg.RemotePortForwarding {
+		mst.startRemotePortFwdJobJob(ctx, &wg, rpf)
+	}
 
 	mst.startForegroundJob(&wg, cancel) // foreground job must cancel when it terminates
 
