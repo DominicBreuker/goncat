@@ -4,6 +4,7 @@
 package exec
 
 import (
+	"context"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/pipeio"
 	"dominicbreuker/goncat/pkg/pty"
@@ -17,7 +18,7 @@ import (
 )
 
 // RunWithPTY ...
-func RunWithPTY(connCtl, connData net.Conn, program string, verbose bool) error {
+func RunWithPTY(ctx context.Context, connCtl, connData net.Conn, program string, verbose bool) error {
 	cmd := exec.Command(program)
 
 	pty, tty, err := pty.NewPty()
@@ -51,7 +52,7 @@ func RunWithPTY(connCtl, connData net.Conn, program string, verbose bool) error 
 	go syncTerminalSize(pty, connCtl, verbose)
 
 	go func() {
-		pipeio.Pipe(pty, connData, func(err error) {
+		pipeio.Pipe(ctx, pty, connData, func(err error) {
 			if verbose {
 				log.ErrorMsg("Pipe(pty, conn): %s\n", err)
 			}

@@ -15,7 +15,9 @@ type MasterSession struct {
 	sess *session
 
 	enc *gob.Encoder
-	mu  sync.Mutex
+	dec *gob.Decoder
+
+	mu sync.Mutex
 }
 
 // Close ...
@@ -35,22 +37,27 @@ func OpenSession(conn net.Conn) (*MasterSession, error) {
 		return nil, fmt.Errorf("yamux.Client(conn): %s", err)
 	}
 
-	out.sess.connCtl, err = out.openNewChannel()
+	out.sess.ctlMasterToSlave, err = out.openNewChannel()
 	if err != nil {
-		return nil, fmt.Errorf("out.OpenNewChannel(): %s", err)
+		return nil, fmt.Errorf("out.OpenNewChannel() for ctlMasterToSlave: %s", err)
 	}
+	out.enc = gob.NewEncoder(out.sess.ctlMasterToSlave)
 
-	out.enc = gob.NewEncoder(out.sess.connCtl)
+	out.sess.ctlSlaveToMaster, err = out.openNewChannel()
+	if err != nil {
+		return nil, fmt.Errorf("out.OpenNewChannel() for ctlSlaveToMaster: %s", err)
+	}
+	out.dec = gob.NewDecoder(out.sess.ctlSlaveToMaster)
 
 	return &out, nil
 }
 
-// SendAndOpenOneChannel ...
-func (s *MasterSession) SendAndOpenOneChannel(m msg.Message) (net.Conn, error) {
+// SendAndGetOneChannel ...
+func (s *MasterSession) SendAndGetOneChannel(m msg.Message) (net.Conn, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.send(m); err != nil {
+	if err := s.Send(m); err != nil {
 		return nil, fmt.Errorf("send(m): %s", err)
 	}
 
@@ -62,12 +69,12 @@ func (s *MasterSession) SendAndOpenOneChannel(m msg.Message) (net.Conn, error) {
 	return conn, nil
 }
 
-// SendAndOpenTwoChannels ...
-func (s *MasterSession) SendAndOpenTwoChannels(m msg.Message) (net.Conn, net.Conn, error) {
+// SendAndGetTwoChannels ...
+func (s *MasterSession) SendAndGetTwoChannels(m msg.Message) (net.Conn, net.Conn, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.send(m); err != nil {
+	if err := s.Send(m); err != nil {
 		return nil, nil, fmt.Errorf("send(m): %s", err)
 	}
 
@@ -85,6 +92,11 @@ func (s *MasterSession) SendAndOpenTwoChannels(m msg.Message) (net.Conn, net.Con
 	return conn1, conn2, nil
 }
 
+// GetOneChannel ...
+func (s *MasterSession) GetOneChannel() (net.Conn, error) {
+	return s.openNewChannel()
+}
+
 // OpenNewChannel ...
 func (s *MasterSession) openNewChannel() (net.Conn, error) {
 	out, err := s.sess.mux.Open()
@@ -96,10 +108,17 @@ func (s *MasterSession) openNewChannel() (net.Conn, error) {
 }
 
 // Send ...
-func (s *MasterSession) send(m msg.Message) error {
+func (s *MasterSession) Send(m msg.Message) error {
 	if err := s.enc.Encode(&m); err != nil {
 		return fmt.Errorf("sending msg: %s", err)
 	}
 
 	return nil
+}
+
+// Receive ...
+func (s *MasterSession) Receive() (msg.Message, error) {
+	var m msg.Message
+	err := s.dec.Decode(&m)
+	return m, err
 }

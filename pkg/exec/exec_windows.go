@@ -4,6 +4,7 @@
 package exec
 
 import (
+	"context"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/pipeio"
 	"dominicbreuker/goncat/pkg/pty"
@@ -14,7 +15,7 @@ import (
 )
 
 // RunWithPTY ...
-func RunWithPTY(connCtl, connData net.Conn, program string, verbose bool) error {
+func RunWithPTY(ctx context.Context, connCtl, connData net.Conn, program string, verbose bool) error {
 	cpty, err := pty.Create()
 	if err != nil {
 		return fmt.Errorf("failed to spawn a pty: %s", err)
@@ -35,7 +36,7 @@ func RunWithPTY(connCtl, connData net.Conn, program string, verbose bool) error 
 	go syncTerminalSize(cpty, connCtl, verbose)
 
 	go func() {
-		pipeio.Pipe(cpty, connData, func(err error) {
+		pipeio.Pipe(ctx, cpty, connData, func(err error) {
 			if verbose {
 				log.ErrorMsg("Pipe(cpty, conn): %s\n", err)
 			}

@@ -12,13 +12,18 @@ import (
 type session struct {
 	mux *yamux.Session
 
-	connCtl net.Conn
+	ctlMasterToSlave net.Conn
+	ctlSlaveToMaster net.Conn
 }
 
 // Close ...
 func (s *session) Close() error {
-	if s.connCtl != nil {
-		s.connCtl.Close() // best effort
+	if s.ctlMasterToSlave != nil {
+		s.ctlMasterToSlave.Close() // best effort
+	}
+
+	if s.ctlSlaveToMaster != nil {
+		s.ctlSlaveToMaster.Close() // best effort
 	}
 
 	return s.mux.Close()

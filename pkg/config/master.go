@@ -12,6 +12,14 @@ type Master struct {
 
 	LocalPortForwarding  []*LocalPortForwardingCfg
 	RemotePortForwarding []*RemotePortForwardingCfg
+	rpfDestinations      map[string]struct{}
+}
+
+func (mCfg *Master) getRpfDestinations() map[string]struct{} {
+	if mCfg.rpfDestinations == nil {
+		mCfg.rpfDestinations = make(map[string]struct{})
+	}
+	return mCfg.rpfDestinations
 }
 
 // ParseLocalPortForwardingSpecs ...
@@ -33,7 +41,18 @@ func (mCfg *Master) ParseRemotePortForwardingSpecs(specs []string) {
 }
 
 func (mCfg *Master) addRemotePortForwardingSpec(spec string) {
-	mCfg.RemotePortForwarding = append(mCfg.RemotePortForwarding, newRemotePortForwardingCfg(spec))
+	rpf := newRemotePortForwardingCfg(spec)
+	mCfg.RemotePortForwarding = append(mCfg.RemotePortForwarding, rpf)
+
+	dests := mCfg.getRpfDestinations()
+	dests[fmt.Sprintf("%s:%d", rpf.LocalHost, rpf.LocalPort)] = struct{}{}
+}
+
+// IsAllowedRemotePortForwardingDestination validates that remote port forwarding to the given host and port was actually requested
+func (mCfg *Master) IsAllowedRemotePortForwardingDestination(host string, port int) bool {
+	dests := mCfg.getRpfDestinations()
+	_, ok := dests[fmt.Sprintf("%s:%d", host, port)]
+	return ok
 }
 
 // Validate ...

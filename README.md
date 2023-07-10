@@ -7,6 +7,8 @@ First, goncat supports encryption with mutual authentication
 so you don't have to write on one page of your pentest report that administrative access to servers without encryption or authentication is a problem
 while writing on the next page how you did exactly that.
 Second, it has automatic cross-platform PTY support for your convenience. 
+Third, it can be used for tunneling.
+For now it supports local and remote port forwarding.
 Lastly, there are a few other convenience features such as session logging 
 and automatic cleanup.
 
@@ -39,6 +41,10 @@ Advanced features can be enabled with additional flags:
 - Encryption: add `--ssl` on both ends to enable TLS
 - Authentication: add `--key mypassword` on both ends to ensure no unexpected clients can connect (requires `--ssl`)
 - PTY: as master, add `--pty` to get a fully interactive shell (make sure you also execute a shell with `--exec`)
+- Local port forwarding: as master, add `-L 8443:google.com:443` to open a local port 8443 on the master side, any connection to it will
+  be forwarded through the slave to `google.com:443`
+- Remote port forwarding: as master, add `-R 8443:google.com:443` to open a local port 8443 on the slave side, any connection to it will
+  be forwarded through the master to `google.com:443`
 - Logging: as master, add `--log /tmp/log.txt` to log the session to a file
 - Cleanup: as slave, add `--clean` to make goncat delete itself after execution
 

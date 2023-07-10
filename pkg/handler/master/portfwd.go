@@ -3,11 +3,9 @@ package master
 import (
 	"context"
 	"dominicbreuker/goncat/pkg/config"
+	"dominicbreuker/goncat/pkg/handler/portfwd"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
-	"dominicbreuker/goncat/pkg/pipeio"
-	"fmt"
-	"net"
 	"sync"
 )
 
@@ -16,70 +14,17 @@ func (mst *Master) startLocalPortFwdJobJob(ctx context.Context, wg *sync.WaitGro
 	go func() {
 		defer wg.Done()
 
-		if err := mst.handleLocalPortForwarding(ctx, lpf); err != nil {
+		cfg := portfwd.Config{
+			LocalHost:  lpf.LocalHost,
+			LocalPort:  lpf.LocalPort,
+			RemoteHost: lpf.RemoteHost,
+			RemotePort: lpf.RemotePort,
+		}
+		h := portfwd.NewServer(ctx, cfg, mst.sess)
+		if err := h.Handle(); err != nil {
 			log.ErrorMsg("Local port forwarding: %s: %s\n", lpf, err)
 		}
 	}()
-}
-
-func (mst *Master) handleLocalPortForwarding(ctx context.Context, lpf *config.LocalPortForwardingCfg) error {
-	addr := fmt.Sprintf("%s:%d", lpf.LocalHost, lpf.LocalPort)
-
-	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %s", addr, err)
-	}
-
-	l, err := net.ListenTCP("tcp", tcpAddr)
-	if err != nil {
-		return fmt.Errorf("listen(tcp, %s): %s", addr, err)
-	}
-
-	go func() {
-		<-ctx.Done()
-		l.Close()
-	}()
-
-	for {
-		conn, err := l.Accept()
-		if err != nil {
-			if ctx.Err() != nil {
-				return nil // cancelled
-			}
-
-			log.ErrorMsg("Local port forwarding %s: Accept(): %s\n", lpf, err)
-			continue
-		}
-
-		go func() {
-			defer conn.Close()
-
-			if err := mst.handleLocalPortForwardingConn(lpf, conn); err != nil {
-				log.ErrorMsg("Local port forwarding %s: handling connection: %s", lpf, err)
-			}
-		}()
-	}
-}
-
-func (mst *Master) handleLocalPortForwardingConn(lpf *config.LocalPortForwardingCfg, connLocal net.Conn) error {
-	m := msg.Connect{
-		RemoteHost: lpf.RemoteHost,
-		RemotePort: lpf.RemotePort,
-	}
-
-	connRemote, err := mst.sess.SendAndOpenOneChannel(m)
-	if err != nil {
-		return fmt.Errorf("SendAndOpenOneChannel() for conn: %s", err)
-	}
-	defer connRemote.Close()
-
-	pipeio.Pipe(connLocal, connRemote, func(err error) {
-		if mst.cfg.Verbose {
-			log.ErrorMsg("Pipe(stdio, conn): %s\n", err)
-		}
-	})
-
-	return nil
 }
 
 func (mst *Master) startRemotePortFwdJobJob(ctx context.Context, wg *sync.WaitGroup, rpf *config.RemotePortForwardingCfg) {
@@ -87,6 +32,24 @@ func (mst *Master) startRemotePortFwdJobJob(ctx context.Context, wg *sync.WaitGr
 	go func() {
 		defer wg.Done()
 
-		log.ErrorMsg("Remote port forwarding (%s): not implemented yet\n", rpf)
+		m := msg.PortFwd{
+			LocalHost:  rpf.LocalHost,
+			LocalPort:  rpf.LocalPort,
+			RemoteHost: rpf.RemoteHost,
+			RemotePort: rpf.RemotePort,
+		}
+
+		if err := mst.sess.Send(m); err != nil {
+			log.ErrorMsg("Setting up remote port forwarding: %s: %s\n", rpf, err)
+		}
+	}()
+}
+
+func (mst *Master) handleConnectAsync(ctx context.Context, m msg.Connect) {
+	go func() {
+		h := portfwd.NewClient(ctx, m, mst.sess)
+		if err := h.Handle(); err != nil {
+			log.ErrorMsg("Running connect job: %s", err)
+		}
 	}()
 }

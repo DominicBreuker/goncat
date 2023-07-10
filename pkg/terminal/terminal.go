@@ -15,8 +15,8 @@ import (
 )
 
 // Pipe ...
-func Pipe(conn net.Conn, verbose bool) {
-	pipeio.Pipe(pipeio.NewStdio(), conn, func(err error) {
+func Pipe(ctx context.Context, conn net.Conn, verbose bool) {
+	pipeio.Pipe(ctx, pipeio.NewStdio(), conn, func(err error) {
 		if verbose {
 			log.ErrorMsg("Pipe(stdio, conn): %s\n", err)
 		}
@@ -24,7 +24,7 @@ func Pipe(conn net.Conn, verbose bool) {
 }
 
 // PipeWithPTY ...
-func PipeWithPTY(connCtl, connData net.Conn, verbose bool) error {
+func PipeWithPTY(ctx context.Context, connCtl, connData net.Conn, verbose bool) error {
 	log.InfoMsg("Enabling raw mode\n")
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
@@ -40,7 +40,7 @@ func PipeWithPTY(connCtl, connData net.Conn, verbose bool) error {
 	ctx, cancel := context.WithCancel(context.Background())
 	go syncTerminalSize(ctx, connCtl)
 
-	Pipe(connData, verbose)
+	Pipe(ctx, connData, verbose)
 	cancel()
 
 	return nil

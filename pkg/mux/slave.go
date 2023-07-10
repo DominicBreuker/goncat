@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"net"
+	"sync"
 
 	"github.com/hashicorp/yamux"
 )
@@ -14,10 +15,13 @@ type SlaveSession struct {
 	sess *session
 
 	dec *gob.Decoder
+	enc *gob.Encoder
+
+	mu sync.Mutex
 }
 
 // Close ...
-func (s SlaveSession) Close() error {
+func (s *SlaveSession) Close() error {
 	return s.sess.Close()
 }
 
@@ -33,14 +37,41 @@ func AcceptSession(conn net.Conn) (*SlaveSession, error) {
 		return nil, fmt.Errorf("yamux.Server(conn): %s", err)
 	}
 
-	out.sess.connCtl, err = out.AcceptNewChannel()
+	out.sess.ctlMasterToSlave, err = out.AcceptNewChannel()
+	if err != nil {
+		return nil, fmt.Errorf("AcceptNewChannel() for ctlMasterToSlave: %s", err)
+	}
+	out.dec = gob.NewDecoder(out.sess.ctlMasterToSlave)
+
+	out.sess.ctlSlaveToMaster, err = out.AcceptNewChannel()
+	if err != nil {
+		return nil, fmt.Errorf("AcceptNewChannel() for ctlSlaveToMaster: %s", err)
+	}
+	out.enc = gob.NewEncoder(out.sess.ctlSlaveToMaster)
+
+	return &out, nil
+}
+
+// SendAndGetOneChannel ...
+func (s *SlaveSession) SendAndGetOneChannel(m msg.Message) (net.Conn, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if err := s.send(m); err != nil {
+		return nil, fmt.Errorf("send(m): %s", err)
+	}
+
+	conn, err := s.AcceptNewChannel()
 	if err != nil {
 		return nil, fmt.Errorf("AcceptNewChannel(): %s", err)
 	}
 
-	out.dec = gob.NewDecoder(out.sess.connCtl)
+	return conn, nil
+}
 
-	return &out, nil
+// GetOneChannel ...
+func (s *SlaveSession) GetOneChannel() (net.Conn, error) {
+	return s.AcceptNewChannel()
 }
 
 // AcceptNewChannel ...
@@ -58,4 +89,13 @@ func (s *SlaveSession) Receive() (msg.Message, error) {
 	var m msg.Message
 	err := s.dec.Decode(&m)
 	return m, err
+}
+
+// Send ...
+func (s *SlaveSession) send(m msg.Message) error {
+	if err := s.enc.Encode(&m); err != nil {
+		return fmt.Errorf("sending msg: %s", err)
+	}
+
+	return nil
 }

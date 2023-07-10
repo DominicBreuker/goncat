@@ -1,6 +1,7 @@
 package slave
 
 import (
+	"context"
 	"dominicbreuker/goncat/pkg/exec"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
@@ -8,15 +9,15 @@ import (
 	"fmt"
 )
 
-func (slv *Slave) handleForegroundAsync(m msg.Foreground) {
+func (slv *Slave) handleForegroundAsync(ctx context.Context, m msg.Foreground) {
 	go func() {
-		if err := slv.handleForeground(m); err != nil {
+		if err := slv.handleForeground(ctx, m); err != nil {
 			log.ErrorMsg("Running foreground job: %s", err)
 		}
 	}()
 }
 
-func (slv *Slave) handleForeground(m msg.Foreground) error {
+func (slv *Slave) handleForeground(ctx context.Context, m msg.Foreground) error {
 	conn, err := slv.sess.AcceptNewChannel()
 	if err != nil {
 		return fmt.Errorf("AcceptNewChannel(): %s", err)
@@ -24,7 +25,7 @@ func (slv *Slave) handleForeground(m msg.Foreground) error {
 	defer conn.Close()
 
 	if m.Exec == "" {
-		terminal.Pipe(conn, slv.cfg.Verbose)
+		terminal.Pipe(ctx, conn, slv.cfg.Verbose)
 	} else {
 		if m.Pty {
 			connPtyCtl, err := slv.sess.AcceptNewChannel()
@@ -33,11 +34,11 @@ func (slv *Slave) handleForeground(m msg.Foreground) error {
 			}
 			defer connPtyCtl.Close()
 
-			if err := exec.RunWithPTY(connPtyCtl, conn, m.Exec, slv.cfg.Verbose); err != nil {
+			if err := exec.RunWithPTY(ctx, connPtyCtl, conn, m.Exec, slv.cfg.Verbose); err != nil {
 				return fmt.Errorf("exec.RunWithPTY(...): %s", err)
 			}
 		} else {
-			if err := exec.Run(conn, m.Exec); err != nil {
+			if err := exec.Run(ctx, conn, m.Exec); err != nil {
 				return fmt.Errorf("exec.Run(conn, %s): %s", m.Exec, err)
 			}
 		}

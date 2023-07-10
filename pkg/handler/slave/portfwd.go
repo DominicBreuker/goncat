@@ -1,48 +1,34 @@
 package slave
 
 import (
+	"context"
+	"dominicbreuker/goncat/pkg/handler/portfwd"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
-	"dominicbreuker/goncat/pkg/pipeio"
-	"fmt"
-	"net"
 )
 
-func (slv *Slave) handleConnectAsync(m msg.Connect) {
+func (slv *Slave) handleConnectAsync(ctx context.Context, m msg.Connect) {
 	go func() {
-		if err := slv.handleConnect(m); err != nil {
+		h := portfwd.NewClient(ctx, m, slv.sess)
+		if err := h.Handle(); err != nil {
 			log.ErrorMsg("Running connect job: %s", err)
 		}
 	}()
 }
 
-func (slv *Slave) handleConnect(m msg.Connect) error {
-	connRemote, err := slv.sess.AcceptNewChannel()
-	if err != nil {
-		return fmt.Errorf("AcceptNewChannel(): %s", err)
-	}
-	defer connRemote.Close()
-
-	addr := fmt.Sprintf("%s:%d", m.RemoteHost, m.RemotePort)
-
-	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
-	if err != nil {
-		return fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %s", addr, err)
-	}
-
-	connLocal, err := net.DialTCP("tcp", nil, tcpAddr)
-	if err != nil {
-		return fmt.Errorf("net.Dial(tcp, %s): %s", addr, err)
-	}
-	defer connLocal.Close()
-
-	connLocal.SetKeepAlive(true)
-
-	pipeio.Pipe(connRemote, connLocal, func(err error) {
-		if slv.cfg.Verbose {
-			log.ErrorMsg("Handling connect to %s: %s", addr, err)
+func (slv *Slave) handlePortFwdAsync(ctx context.Context, m msg.PortFwd) {
+	go func() {
+		// Flip the settings, because remote port forwarding is like local port forwarding from the perspective of the slave
+		cfg := portfwd.Config{
+			LocalHost:  m.RemoteHost,
+			LocalPort:  m.RemotePort,
+			RemoteHost: m.LocalHost,
+			RemotePort: m.LocalPort,
 		}
-	})
 
-	return nil
+		h := portfwd.NewServer(ctx, cfg, slv.sess)
+		if err := h.Handle(); err != nil {
+			log.ErrorMsg("Remote port forwarding: %s: %s\n", cfg, err)
+		}
+	}()
 }

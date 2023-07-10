@@ -1,6 +1,7 @@
 package exec
 
 import (
+	"context"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/pipeio"
 	"fmt"
@@ -9,7 +10,7 @@ import (
 )
 
 // Run ...
-func Run(conn net.Conn, program string) error {
+func Run(ctx context.Context, conn net.Conn, program string) error {
 	cmd := exec.Command(program)
 
 	stdout, err := cmd.StdoutPipe()
@@ -42,7 +43,7 @@ func Run(conn net.Conn, program string) error {
 	}()
 
 	go func() {
-		pipeio.Pipe(cmdio, conn, func(err error) {
+		pipeio.Pipe(ctx, cmdio, conn, func(err error) {
 			log.ErrorMsg("Run Pipe(pty, conn): %s\n", err)
 		})
 		cmd.Process.Kill()

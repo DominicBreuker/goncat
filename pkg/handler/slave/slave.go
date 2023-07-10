@@ -1,6 +1,7 @@
 package slave
 
 import (
+	"context"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux"
@@ -37,6 +38,9 @@ func (slv *Slave) Close() error {
 
 // Handle ...
 func (slv *Slave) Handle() error {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	for {
 		m, err := slv.sess.Receive()
 		if err != nil {
@@ -50,9 +54,11 @@ func (slv *Slave) Handle() error {
 
 		switch message := m.(type) {
 		case msg.Foreground:
-			slv.handleForegroundAsync(message)
+			slv.handleForegroundAsync(ctx, message)
 		case msg.Connect:
-			slv.handleConnectAsync(message)
+			slv.handleConnectAsync(ctx, message)
+		case msg.PortFwd:
+			slv.handlePortFwdAsync(ctx, message)
 		default:
 			return fmt.Errorf("unsupported message type '%s', this is a bug", m.MsgType())
 		}
