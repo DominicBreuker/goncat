@@ -13,6 +13,8 @@ type Master struct {
 	LocalPortForwarding  []*LocalPortForwardingCfg
 	RemotePortForwarding []*RemotePortForwardingCfg
 	rpfDestinations      map[string]struct{}
+
+	Socks *SocksCfg
 }
 
 func (mCfg *Master) getRpfDestinations() map[string]struct{} {
@@ -55,6 +57,11 @@ func (mCfg *Master) IsAllowedRemotePortForwardingDestination(host string, port i
 	return ok
 }
 
+// IsSocksEnabled returns true if the SOCKS proxy feature is enabled
+func (mCfg *Master) IsSocksEnabled() bool {
+	return mCfg.Socks != nil
+}
+
 // Validate ...
 func (mCfg *Master) Validate() []error {
 	var errors []error
@@ -78,6 +85,16 @@ func (mCfg *Master) Validate() []error {
 
 		for _, err := range rpf.validate() {
 			errors = append(errors, fmt.Errorf("Remote port forwarding: %s: %s", rpf, err))
+		}
+	}
+
+	if mCfg.IsSocksEnabled() {
+		if mCfg.Socks.parsingErr != nil {
+			errors = append(errors, fmt.Errorf("Socks: %s: parsing error: %s", mCfg.Socks, mCfg.Socks.parsingErr))
+		} else {
+			for _, err := range mCfg.Socks.validate() {
+				errors = append(errors, fmt.Errorf("SOCKS: %s", err))
+			}
 		}
 	}
 

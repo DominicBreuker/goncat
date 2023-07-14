@@ -52,6 +52,10 @@ func (mst *Master) Handle() error {
 		mst.startRemotePortFwdJobJob(ctx, &wg, rpf)
 	}
 
+	if mst.mCfg.IsSocksEnabled() {
+		mst.startSocksProxyJob(ctx, &wg)
+	}
+
 	mst.startForegroundJob(ctx, &wg, cancel) // foreground job must cancel when it terminates
 
 	go func() {

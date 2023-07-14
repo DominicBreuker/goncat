@@ -95,6 +95,7 @@ const PtyFlag = "pty"
 const LogFileFlag = "log"
 const LocalPortForwardingFlag = "local"
 const RemotePortForwardingFlag = "remote"
+const SocksFlag = "socks"
 
 // GetMasterFlags ...
 func GetMasterFlags() []cli.Flag {
@@ -137,6 +138,14 @@ func GetMasterFlags() []cli.Flag {
 			Usage:    "Remote port forwarding, format: -R <remote-host>:<remote-port>:<local-host>:<local-port> (remote-host optional)",
 			Category: categoryMaster,
 			Value:    []string{},
+			Required: false,
+		},
+		&cli.StringFlag{
+			Name:     SocksFlag,
+			Aliases:  []string{"D"},
+			Usage:    "SOCKS proxy, format: -D <local-host>:<local-port> (local-host optional and defaults to 127.0.0.1, specify :<local-port> to listen on all interfaces)",
+			Category: categoryMaster,
+			Value:    "",
 			Required: false,
 		},
 	}

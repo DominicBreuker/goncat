@@ -8,7 +8,7 @@ so you don't have to write on one page of your pentest report that administrativ
 while writing on the next page how you did exactly that.
 Second, it has automatic cross-platform PTY support for your convenience. 
 Third, it can be used for tunneling.
-For now it supports local and remote port forwarding.
+For now it supports local and remote port forwarding as well as barebones SOCKS (TCP only, no authentication).
 Lastly, there are a few other convenience features such as session logging 
 and automatic cleanup.
 
@@ -45,6 +45,7 @@ Advanced features can be enabled with additional flags:
   be forwarded through the slave to `google.com:443`
 - Remote port forwarding: as master, add `-R 8443:google.com:443` to open a local port 8443 on the slave side, any connection to it will
   be forwarded through the master to `google.com:443`
+- SOCKS proxy: as master, add `-D 127.0.0.1:1080` to create a SOCKS proxy, through which you can use the slave side
 - Logging: as master, add `--log /tmp/log.txt` to log the session to a file
 - Cleanup: as slave, add `--clean` to make goncat delete itself after execution
 
