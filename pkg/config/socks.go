@@ -59,10 +59,5 @@ func (sCfg *SocksCfg) validate() []error {
 		errors = append(errors, fmt.Errorf("port: %s", err))
 	}
 
-	// TODO: needed?
-	//if len(sCfg.Host) == 0 {
-	//	errors = append(errors, fmt.Errorf("host: must not be empty"))
-	//}
-
 	return errors
 }
