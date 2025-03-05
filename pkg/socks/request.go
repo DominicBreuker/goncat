@@ -1,10 +1,10 @@
 package socks
 
 import (
-	"encoding/binary"
 	"fmt"
 	"io"
 	"net"
+	"net/netip"
 )
 
 // ################### Request ######################### //
@@ -21,16 +21,17 @@ import (
 type Request struct {
 	Ver     byte
 	Cmd     Cmd
-	DstAddr addr
-	DstPort int
+	DstAddr Addr
+	DstPort uint16
 }
 
 // ReadRequest reads a complete SOCKS request from r
 func ReadRequest(r io.Reader) (*Request, error) {
 	var out Request
+	var err error
 
 	b := []byte{0}
-	if _, err := r.Read(b); err != nil {
+	if _, err = r.Read(b); err != nil {
 		return nil, fmt.Errorf("parsing version: %s", err)
 	}
 	out.Ver = b[0]
@@ -39,90 +40,51 @@ func ReadRequest(r io.Reader) (*Request, error) {
 		return nil, fmt.Errorf("requested version was %d but only SOCKS5 (%d) supported", out.Ver, VersionSocks5)
 	}
 
-	if _, err := r.Read(b); err != nil {
+	if _, err = r.Read(b); err != nil {
 		return nil, fmt.Errorf("parsing command: %s", err)
 	}
 
 	switch b[0] {
 	case byte(CommandConnect):
 		out.Cmd = CommandConnect
+	case byte(CommandAssociate):
+		out.Cmd = CommandAssociate
 	default:
 		return nil, ErrCommandNotSupported
 	}
 
-	if _, err := r.Read(b); err != nil {
+	if _, err = r.Read(b); err != nil {
 		return nil, fmt.Errorf("parsing reserved (RSV): %s", err)
 	}
 	if b[0] != RSV {
 		return nil, fmt.Errorf("parsing reserved (RSV): unexpected value: %x != %x", b, RSV)
 	}
 
-	if _, err := r.Read(b); err != nil {
-		return nil, fmt.Errorf("parsing address type: %s", err)
+	out.DstAddr, out.DstPort, err = parseAddrAndPort(r)
+	if err != nil {
+		return nil, fmt.Errorf("parsing address and port: %s", err)
 	}
-
-	switch b[0] {
-	case byte(AddressTypeIPv4):
-		ip, err := readIPv4(r)
-		if err != nil {
-			return nil, fmt.Errorf("reading IPv4 address: %s", err)
-		}
-		out.DstAddr = addrIPv4{IP: ip}
-	case byte(AddressTypeFQDN):
-		fqdn, err := readFQDN(r)
-		if err != nil {
-			return nil, fmt.Errorf("reading FQDN address: %s", err)
-		}
-		out.DstAddr = addrFQDN{FQDN: fqdn}
-	case byte(AddressTypeIPv6):
-		ip, err := readIPv6(r)
-		if err != nil {
-			return nil, fmt.Errorf("reading IPv6 address: %s", err)
-		}
-		out.DstAddr = addrIPv6{IP: ip}
-	default:
-		return nil, ErrAddressTypeNotSupported
-	}
-
-	port := make([]byte, 2)
-	if _, err := io.ReadFull(r, port); err != nil {
-		return nil, fmt.Errorf("reading port: %s", err)
-	}
-	out.DstPort = int(binary.BigEndian.Uint16(port))
 
 	return &out, nil
 }
 
-func readIPv4(r io.Reader) (net.IP, error) {
-	ip := make([]byte, 4) // IPv4
-	if _, err := io.ReadFull(r, ip); err != nil {
-		return nil, fmt.Errorf("reading ip: %s", err)
+// DstToUDPAddr is a helper function to turn DstAddr and DstPort into a Go UDP Addr
+func (r *Request) DstToUDPAddr() (*net.UDPAddr, error) {
+	ip := r.DstAddr.ToNetipAddr()
+	if (ip == netip.Addr{}) {
+		return nil, fmt.Errorf("%s.ToNetipAddr() is nil", r.DstAddr)
 	}
 
-	return net.IPv4(ip[0], ip[1], ip[2], ip[3]), nil
-}
-
-func readIPv6(r io.Reader) (net.IP, error) {
-	ip := make([]byte, 16) // IPv6
-	if _, err := io.ReadFull(r, ip); err != nil {
-		return nil, fmt.Errorf("reading ip: %s", err)
+	ap := netip.AddrPortFrom(ip, r.DstPort)
+	if (ap == netip.AddrPort{}) {
+		return nil, fmt.Errorf("netip.AddrPortFrom(%s, %d) is empty", ip, r.DstPort)
 	}
 
-	return net.IP(ip), nil
-}
-
-func readFQDN(r io.Reader) (string, error) {
-	size := []byte{0}
-	if _, err := r.Read(size); err != nil {
-		return "", fmt.Errorf("parsing FQDN size: %s", err)
+	if !ap.IsValid() {
+		return nil, fmt.Errorf("%s is invalid", ap)
 	}
 
-	fqdn := make([]byte, int(size[0]))
-	if _, err := io.ReadFull(r, fqdn); err != nil {
-		return "", fmt.Errorf("reading FQDN of size %d: %s", len(fqdn), err)
-	}
-
-	return string(fqdn), nil
+	return net.UDPAddrFromAddrPort(ap), nil
 }
 
 // ######## Response ######## //
@@ -141,7 +103,7 @@ func readFQDN(r io.Reader) (string, error) {
 type Reply struct {
 	Ver     byte
 	Rep     Rep
-	BndAddr addr
+	BndAddr Addr
 	BndPort int
 }
 
@@ -167,39 +129,42 @@ func (sr Reply) serialize() []byte {
 // Since we only support the command CONNECT for now, this is always a success reply to that command.
 // CONNECT replies contain the SOCKS server's IP and port which it has bound for the connection.
 // In our case, this is the local address of the slave bound for the connection.
-func WriteReplySuccess(w io.Writer, localAddr net.Addr) error {
-	var ip net.IP
-	var a addr
-	var port int
+func WriteReplySuccessConnect(w io.Writer, localAddr net.Addr) error {
+	var a Addr
 	var atyp Atyp
+	var ap netip.AddrPort
 
 	if tcpAddr, ok := localAddr.(*net.TCPAddr); ok && tcpAddr != nil {
-		ip = tcpAddr.IP
-		port = tcpAddr.Port
+		ap = tcpAddr.AddrPort()
+	} else if udpAddr, ok := localAddr.(*net.UDPAddr); ok && udpAddr != nil {
+		ap = udpAddr.AddrPort()
 	} else {
 		return fmt.Errorf("address has unexpected type, neither TCP nor UDP: %s", localAddr)
 	}
 
-	if ip.To4() != nil {
+	addr := ap.Addr()
+	port := ap.Port()
+
+	if addr.Is4() {
 		atyp = AddressTypeIPv4
-		a = addrIPv4{IP: ip}
-	} else if ip.To16() != nil {
+		a = addrIPv4{IP: addr}
+	} else if addr.Is6() {
 		atyp = AddressTypeIPv6
-		a = addrIPv6{IP: ip}
+		a = addrIPv6{IP: addr}
 	} else {
-		return fmt.Errorf("IP %s was neither IPv4 nor IPv6", ip)
+		return fmt.Errorf("IP %s was neither IPv4 nor IPv6", addr)
 	}
 
-	return writeReply(w, ReplySuccess, atyp, a, port)
+	return writeReply(w, ReplySuccess, atyp, a, int(port))
 }
 
 // WriteReplyError writes a complete error reply to w.
 // The error code is contained in rep.
 func WriteReplyError(w io.Writer, rep Rep) error {
-	return writeReply(w, rep, AddressTypeIPv4, addrIPv4{IP: net.IPv4zero}, 0)
+	return writeReply(w, rep, AddressTypeIPv4, addrIPv4{IP: netip.Addr{}}, 0)
 }
 
-func writeReply(w io.Writer, rep Rep, atyp Atyp, bndAddr addr, bndPort int) error {
+func writeReply(w io.Writer, rep Rep, atyp Atyp, bndAddr Addr, bndPort int) error {
 	resp := Reply{
 		Ver:     VersionSocks5,
 		Rep:     rep,

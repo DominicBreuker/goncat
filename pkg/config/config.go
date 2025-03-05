@@ -4,11 +4,12 @@ import "fmt"
 
 // Shared ...
 type Shared struct {
-	Host    string
-	Port    int
-	SSL     bool
-	Key     string
-	Verbose bool
+	Host      string
+	Port      int
+	SSL       bool
+	WebSocket bool
+	Key       string
+	Verbose   bool
 }
 
 // KeySalt ...
@@ -19,7 +20,7 @@ func (c *Shared) Validate() []error {
 	var errors []error
 
 	if !c.SSL && c.Key != "" {
-		errors = append(errors, fmt.Errorf("You must use '--ssl' to use '--key'"))
+		errors = append(errors, fmt.Errorf("you must use '--ssl' to use '--key'"))
 	}
 
 	if err := validatePort(c.Port); err != nil {

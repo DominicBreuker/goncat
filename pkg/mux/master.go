@@ -12,7 +12,7 @@ import (
 
 // MasterSession ...
 type MasterSession struct {
-	sess *session
+	sess *Session
 
 	enc *gob.Encoder
 	dec *gob.Decoder
@@ -28,7 +28,7 @@ func (s *MasterSession) Close() error {
 // OpenSession ...
 func OpenSession(conn net.Conn) (*MasterSession, error) {
 	out := MasterSession{
-		sess: &session{},
+		sess: &Session{},
 	}
 	var err error
 
@@ -37,17 +37,17 @@ func OpenSession(conn net.Conn) (*MasterSession, error) {
 		return nil, fmt.Errorf("yamux.Client(conn): %s", err)
 	}
 
-	out.sess.ctlMasterToSlave, err = out.openNewChannel()
+	out.sess.ctlClientToServer, err = out.openNewChannel()
 	if err != nil {
-		return nil, fmt.Errorf("out.OpenNewChannel() for ctlMasterToSlave: %s", err)
+		return nil, fmt.Errorf("out.OpenNewChannel() for ctlClientToServer: %s", err)
 	}
-	out.enc = gob.NewEncoder(out.sess.ctlMasterToSlave)
+	out.enc = gob.NewEncoder(out.sess.ctlClientToServer)
 
-	out.sess.ctlSlaveToMaster, err = out.openNewChannel()
+	out.sess.ctlServerToClient, err = out.openNewChannel()
 	if err != nil {
-		return nil, fmt.Errorf("out.OpenNewChannel() for ctlSlaveToMaster: %s", err)
+		return nil, fmt.Errorf("out.OpenNewChannel() for ctlServerToClient: %s", err)
 	}
-	out.dec = gob.NewDecoder(out.sess.ctlSlaveToMaster)
+	out.dec = gob.NewDecoder(out.sess.ctlServerToClient)
 
 	return &out, nil
 }

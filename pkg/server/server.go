@@ -4,10 +4,13 @@ import (
 	"crypto/tls"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/crypto"
+	"dominicbreuker/goncat/pkg/format"
 	"dominicbreuker/goncat/pkg/log"
 	"fmt"
 	"net"
 )
+
+// Idea: add WebSocket as connection method based on https://pkg.go.dev/github.com/coder/websocket#NetConn
 
 // Server ...
 type Server struct {
@@ -33,7 +36,7 @@ func (s *Server) Close() error {
 
 // Serve ...
 func (s *Server) Serve() error {
-	addr := fmt.Sprintf("%s:%d", s.cfg.Host, s.cfg.Port)
+	addr := format.Addr(s.cfg.Host, s.cfg.Port)
 
 	if s.cfg.SSL {
 		caCert, cert, err := crypto.GenerateCertificates(s.cfg.GetKey())
