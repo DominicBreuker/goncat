@@ -19,11 +19,12 @@ func GetCommand() *cli.Command {
 		Usage: "Listen for connections",
 		Action: func(cCtx *cli.Context) error {
 			cfg := &config.Shared{
-				Host:    cCtx.String(shared.HostFlag),
-				Port:    cCtx.Int(shared.PortFlag),
-				SSL:     cCtx.Bool(shared.SSLFlag),
-				Key:     cCtx.String(shared.KeyFlag),
-				Verbose: cCtx.Bool(shared.VerboseFlag),
+				Host:      cCtx.String(shared.HostFlag),
+				Port:      cCtx.Int(shared.PortFlag),
+				SSL:       cCtx.Bool(shared.SSLFlag),
+				WebSocket: cCtx.Bool(shared.WebSocketFlag),
+				Key:       cCtx.String(shared.KeyFlag),
+				Verbose:   cCtx.Bool(shared.VerboseFlag),
 			}
 
 			mCfg := &config.Master{

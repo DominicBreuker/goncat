@@ -5,6 +5,7 @@ import (
 	"crypto/x509"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/crypto"
+	"dominicbreuker/goncat/pkg/format"
 	"dominicbreuker/goncat/pkg/log"
 	"fmt"
 	"net"
@@ -38,7 +39,7 @@ func (c *Client) GetConnection() net.Conn {
 
 // Connect ...
 func (c *Client) Connect() error {
-	addr := fmt.Sprintf("%s:%d", c.cfg.Host, c.cfg.Port)
+	addr := format.Addr(c.cfg.Host, c.cfg.Port)
 
 	log.InfoMsg("Connecting to %s\n", addr)
 

@@ -2,6 +2,7 @@ package portfwd
 
 import (
 	"context"
+	"dominicbreuker/goncat/pkg/format"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"dominicbreuker/goncat/pkg/pipeio"
@@ -38,7 +39,7 @@ func (h *Client) Handle() error {
 	}
 	defer connRemote.Close()
 
-	addr := fmt.Sprintf("%s:%d", h.m.RemoteHost, h.m.RemotePort)
+	addr := format.Addr(h.m.RemoteHost, h.m.RemotePort)
 
 	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {

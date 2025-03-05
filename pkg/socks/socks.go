@@ -2,7 +2,7 @@ package socks
 
 import (
 	"errors"
-	"net"
+	"net/netip"
 )
 
 // #############################
@@ -45,11 +45,22 @@ type Cmd byte
 // CommandConnect and ... are the commands we support
 const (
 	CommandConnect   Cmd = 0x01
-	CommandAssociate Cmd = 0x03 // TODO: support this
+	CommandAssociate Cmd = 0x03
 )
 
 // ErrCommandNotSupported is an error indicating that the command is not supported
 var ErrCommandNotSupported = errors.New("command not supported")
+
+func (cmd Cmd) String() string {
+	switch cmd {
+	case CommandConnect:
+		return "CONNECT"
+	case CommandAssociate:
+		return "UDP ASSOCIATE"
+	default:
+		return "unexpected"
+	}
+}
 
 // ###################################
 // ########## Address Types ##########
@@ -68,14 +79,19 @@ const (
 // ErrAddressTypeNotSupported is an error indicating that the address type is not supported
 var ErrAddressTypeNotSupported = errors.New("address type not supported")
 
-type addr interface {
+// ErrFragmentationNotSupported indicates that a datagram was fragmented, but we don't support that
+var ErrFragmentationNotSupported = errors.New("fragmentation not supported")
+
+type Addr interface {
 	String() string
 	Bytes() []byte
 	Atyp() Atyp
+	ToNetipAddr() netip.Addr
 }
 
 type addrIPv4 struct {
-	IP net.IP
+	//IP net.IP
+	IP netip.Addr
 }
 
 func (a addrIPv4) String() string {
@@ -83,11 +99,17 @@ func (a addrIPv4) String() string {
 }
 
 func (a addrIPv4) Bytes() []byte {
-	return a.IP.To4()
+	return a.IP.AsSlice()
 }
 
 func (a addrIPv4) Atyp() Atyp {
 	return AddressTypeIPv4
+}
+
+func (a addrIPv4) ToNetipAddr() netip.Addr {
+	return a.IP
+	//ipv4 := ([4]byte)(a.Bytes()) // TODO: could panic, check bounds
+	//return netip.AddrFrom4(ipv4)
 }
 
 type addrFQDN struct {
@@ -106,8 +128,13 @@ func (a addrFQDN) Atyp() Atyp {
 	return AddressTypeFQDN
 }
 
+func (a addrFQDN) ToNetipAddr() netip.Addr {
+	return netip.Addr{} // TODO: consider resolving to IP, not sure if required
+}
+
 type addrIPv6 struct {
-	IP net.IP
+	//IP net.IP
+	IP netip.Addr
 }
 
 func (a addrIPv6) String() string {
@@ -115,11 +142,18 @@ func (a addrIPv6) String() string {
 }
 
 func (a addrIPv6) Bytes() []byte {
-	return a.IP.To16()
+	//return a.IP.To16()
+	return a.IP.AsSlice()
 }
 
 func (a addrIPv6) Atyp() Atyp {
 	return AddressTypeIPv6
+}
+
+func (a addrIPv6) ToNetipAddr() netip.Addr {
+	return a.IP
+	//ipv6 := ([16]byte)(a.Bytes()) // TODO: could panic, check bounds
+	//return netip.AddrFrom16(ipv6)
 }
 
 // #############################

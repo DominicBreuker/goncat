@@ -7,6 +7,7 @@ import (
 const categoryCommon = "common"
 
 const SSLFlag = "ssl"
+const WebSocketFlag = "websocket"
 const KeyFlag = "key"
 const VerboseFlag = "verbose"
 
@@ -17,6 +18,14 @@ func GetCommonFlags() []cli.Flag {
 			Name:     SSLFlag,
 			Aliases:  []string{"s"},
 			Usage:    "Use TLS encryption",
+			Category: categoryCommon,
+			Value:    false,
+			Required: false,
+		},
+		&cli.BoolFlag{
+			Name:     WebSocketFlag,
+			Aliases:  []string{"w"},
+			Usage:    "Use WebSocket connection (placeholder, not yet working...)",
 			Category: categoryCommon,
 			Value:    false,
 			Required: false,

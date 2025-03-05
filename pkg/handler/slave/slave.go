@@ -61,6 +61,8 @@ func (slv *Slave) Handle() error {
 			slv.handlePortFwdAsync(ctx, message)
 		case msg.SocksConnect:
 			slv.handleSocksConnectAsync(ctx, message)
+		case msg.SocksAssociate:
+			slv.handleSocksAsociateAsync(ctx, message)
 		default:
 			return fmt.Errorf("unsupported message type '%s', this is a bug", m.MsgType())
 		}

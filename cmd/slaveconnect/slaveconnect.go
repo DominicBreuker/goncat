@@ -27,11 +27,12 @@ func GetCommand() *cli.Command {
 			}
 
 			cfg := &config.Shared{
-				Host:    cCtx.String(shared.HostFlag),
-				Port:    cCtx.Int(shared.PortFlag),
-				SSL:     cCtx.Bool(shared.SSLFlag),
-				Key:     cCtx.String(shared.KeyFlag),
-				Verbose: cCtx.Bool(shared.VerboseFlag),
+				Host:      cCtx.String(shared.HostFlag),
+				Port:      cCtx.Int(shared.PortFlag),
+				SSL:       cCtx.Bool(shared.SSLFlag),
+				WebSocket: cCtx.Bool(shared.WebSocketFlag),
+				Key:       cCtx.String(shared.KeyFlag),
+				Verbose:   cCtx.Bool(shared.VerboseFlag),
 			}
 
 			if errors := config.Validate(cfg); len(errors) > 0 {

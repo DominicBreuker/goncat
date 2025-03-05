@@ -53,7 +53,9 @@ func (mst *Master) Handle() error {
 	}
 
 	if mst.mCfg.IsSocksEnabled() {
-		mst.startSocksProxyJob(ctx, &wg)
+		if err := mst.startSocksProxyJob(ctx, &wg); err != nil {
+			log.ErrorMsg("Starting SOCKS proxy: %s", err)
+		}
 	}
 
 	mst.startForegroundJob(ctx, &wg, cancel) // foreground job must cancel when it terminates
@@ -75,12 +77,13 @@ func (mst *Master) Handle() error {
 
 			switch message := m.(type) {
 			case msg.Connect:
-				// Important: always validate messages from the slave to make sure we only ever forward to destintions specified in master configuration
+				// validate messages from slave to ensure we only forward to destintions specified in master configuration
 				if !mst.mCfg.IsAllowedRemotePortForwardingDestination(message.RemoteHost, message.RemotePort) {
 					log.ErrorMsg("Remote port forwarding: slave requested unexpected destination: %s:%d\n", message.RemoteHost, message.RemotePort)
 					continue
 				}
 				mst.handleConnectAsync(ctx, message)
+
 			default:
 				log.ErrorMsg("Received unsupported message type '%s', this is a bug\n", m.MsgType())
 			}

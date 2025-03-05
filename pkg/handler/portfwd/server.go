@@ -2,6 +2,7 @@ package portfwd
 
 import (
 	"context"
+	"dominicbreuker/goncat/pkg/format"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"dominicbreuker/goncat/pkg/pipeio"
@@ -45,7 +46,7 @@ func NewServer(ctx context.Context, cfg Config, sessCtl ServerControlSession) *S
 
 // Handle ...
 func (srv *Server) Handle() error {
-	addr := fmt.Sprintf("%s:%d", srv.cfg.LocalHost, srv.cfg.LocalPort)
+	addr := format.Addr(srv.cfg.LocalHost, srv.cfg.LocalPort)
 
 	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {

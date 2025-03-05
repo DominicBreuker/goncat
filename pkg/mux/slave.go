@@ -12,7 +12,7 @@ import (
 
 // SlaveSession ...
 type SlaveSession struct {
-	sess *session
+	sess *Session
 
 	dec *gob.Decoder
 	enc *gob.Encoder
@@ -28,7 +28,7 @@ func (s *SlaveSession) Close() error {
 // AcceptSession ...
 func AcceptSession(conn net.Conn) (*SlaveSession, error) {
 	out := SlaveSession{
-		sess: &session{},
+		sess: &Session{},
 	}
 	var err error
 
@@ -37,17 +37,17 @@ func AcceptSession(conn net.Conn) (*SlaveSession, error) {
 		return nil, fmt.Errorf("yamux.Server(conn): %s", err)
 	}
 
-	out.sess.ctlMasterToSlave, err = out.AcceptNewChannel()
+	out.sess.ctlClientToServer, err = out.AcceptNewChannel()
 	if err != nil {
-		return nil, fmt.Errorf("AcceptNewChannel() for ctlMasterToSlave: %s", err)
+		return nil, fmt.Errorf("AcceptNewChannel() for ctlClientToServer: %s", err)
 	}
-	out.dec = gob.NewDecoder(out.sess.ctlMasterToSlave)
+	out.dec = gob.NewDecoder(out.sess.ctlClientToServer)
 
-	out.sess.ctlSlaveToMaster, err = out.AcceptNewChannel()
+	out.sess.ctlServerToClient, err = out.AcceptNewChannel()
 	if err != nil {
-		return nil, fmt.Errorf("AcceptNewChannel() for ctlSlaveToMaster: %s", err)
+		return nil, fmt.Errorf("AcceptNewChannel() for ctlServerToClient: %s", err)
 	}
-	out.enc = gob.NewEncoder(out.sess.ctlSlaveToMaster)
+	out.enc = gob.NewEncoder(out.sess.ctlServerToClient)
 
 	return &out, nil
 }
@@ -57,7 +57,7 @@ func (s *SlaveSession) SendAndGetOneChannel(m msg.Message) (net.Conn, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.send(m); err != nil {
+	if err := s.Send(m); err != nil {
 		return nil, fmt.Errorf("send(m): %s", err)
 	}
 
@@ -92,7 +92,7 @@ func (s *SlaveSession) Receive() (msg.Message, error) {
 }
 
 // Send ...
-func (s *SlaveSession) send(m msg.Message) error {
+func (s *SlaveSession) Send(m msg.Message) error {
 	if err := s.enc.Encode(&m); err != nil {
 		return fmt.Errorf("sending msg: %s", err)
 	}
