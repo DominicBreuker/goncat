@@ -1,6 +1,7 @@
 package slaveconnect
 
 import (
+	"context"
 	"dominicbreuker/goncat/cmd/shared"
 	"dominicbreuker/goncat/pkg/clean"
 	"dominicbreuker/goncat/pkg/client"
@@ -8,6 +9,7 @@ import (
 	"dominicbreuker/goncat/pkg/handler/slave"
 	"dominicbreuker/goncat/pkg/log"
 	"fmt"
+	"strings"
 
 	"github.com/urfave/cli/v3"
 )
@@ -17,8 +19,8 @@ func GetCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "connect",
 		Usage: "Connect to a remote host",
-		Action: func(cCtx *cli.Context) error {
-			if cCtx.Bool(shared.CleanupFlag) {
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			if cmd.Bool(shared.CleanupFlag) {
 				delFunc, err := clean.EnsureDeletion()
 				if err != nil {
 					return fmt.Errorf("clean.EnsureDeletion(): %s", err)
@@ -26,13 +28,26 @@ func GetCommand() *cli.Command {
 				defer delFunc()
 			}
 
+			args := cmd.Args()
+			if args.Len() != 1 {
+				return fmt.Errorf("must provide exactly one argument, got %d (%s)", args.Len(), strings.Join(args.Slice(), ", "))
+			}
+
+			proto, host, port, err := shared.ParseTransport(args.Get(0))
+			if err != nil {
+				return fmt.Errorf("parsing transport: %s", err)
+			}
+			if host == "" {
+				return fmt.Errorf("parsing transport: %s: specify a host", args.Get(0))
+			}
+
 			cfg := &config.Shared{
-				Host:      cCtx.String(shared.HostFlag),
-				Port:      cCtx.Int(shared.PortFlag),
-				SSL:       cCtx.Bool(shared.SSLFlag),
-				WebSocket: cCtx.Bool(shared.WebSocketFlag),
-				Key:       cCtx.String(shared.KeyFlag),
-				Verbose:   cCtx.Bool(shared.VerboseFlag),
+				Protocol: proto,
+				Host:     host,
+				Port:     port,
+				SSL:      cmd.Bool(shared.SSLFlag),
+				Key:      cmd.String(shared.KeyFlag),
+				Verbose:  cmd.Bool(shared.VerboseFlag),
 			}
 
 			if errors := config.Validate(cfg); len(errors) > 0 {
@@ -43,13 +58,13 @@ func GetCommand() *cli.Command {
 				return fmt.Errorf("exiting")
 			}
 
-			c := client.New(cfg)
+			c := client.New(ctx, cfg)
 			if err := c.Connect(); err != nil {
 				return fmt.Errorf("connecting: %s", err)
 			}
 			defer c.Close()
 
-			h, err := slave.New(cfg, c.GetConnection())
+			h, err := slave.New(ctx, cfg, c.GetConnection())
 			if err != nil {
 				return fmt.Errorf("slave.New(): %s", err)
 			}

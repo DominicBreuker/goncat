@@ -4,12 +4,33 @@ import "fmt"
 
 // Shared ...
 type Shared struct {
-	Host      string
-	Port      int
-	SSL       bool
-	WebSocket bool
-	Key       string
-	Verbose   bool
+	Protocol Protocol
+	Host     string
+	Port     int
+	SSL      bool
+	Key      string
+	Verbose  bool
+}
+
+type Protocol int
+
+const (
+	ProtoTCP = 1
+	ProtoWS  = 2
+	ProtoWSS = 3
+)
+
+func (p Protocol) String() string {
+	switch p {
+	case ProtoTCP:
+		return "tcp"
+	case ProtoWS:
+		return "ws"
+	case ProtoWSS:
+		return "wss"
+	default:
+		return ""
+	}
 }
 
 // KeySalt ...

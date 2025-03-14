@@ -1,15 +1,29 @@
 package shared
 
 import (
+	"strings"
+
 	"github.com/urfave/cli/v3"
 )
 
 const categoryCommon = "common"
 
 const SSLFlag = "ssl"
-const WebSocketFlag = "websocket"
 const KeyFlag = "key"
 const VerboseFlag = "verbose"
+
+func GetBaseDescription() string {
+	return strings.Join([]string{
+		"Specify transport like this: tcp://127.0.0.1:123 (supports tcp|ws|wss)",
+		"You can omit the host when listening to bind to all interfaces.",
+	}, "\n")
+}
+
+func GetArgsUsage() string {
+	return strings.Join([]string{
+		"transport",
+	}, " ")
+}
 
 // GetFlags ...
 func GetCommonFlags() []cli.Flag {
@@ -18,14 +32,6 @@ func GetCommonFlags() []cli.Flag {
 			Name:     SSLFlag,
 			Aliases:  []string{"s"},
 			Usage:    "Use TLS encryption",
-			Category: categoryCommon,
-			Value:    false,
-			Required: false,
-		},
-		&cli.BoolFlag{
-			Name:     WebSocketFlag,
-			Aliases:  []string{"w"},
-			Usage:    "Use WebSocket connection (placeholder, not yet working...)",
 			Category: categoryCommon,
 			Value:    false,
 			Required: false,
@@ -51,50 +57,16 @@ func GetCommonFlags() []cli.Flag {
 
 const categoryConnect = "connect"
 
-const HostFlag = "host"
-const PortFlag = "port"
-
 // GetConnectFlags ...
 func GetConnectFlags() []cli.Flag {
-	return []cli.Flag{
-		&cli.StringFlag{
-			Name:     HostFlag,
-			Aliases:  []string{},
-			Usage:    "Remote host (name or IP)",
-			Category: categoryConnect,
-			Required: true,
-		},
-		&cli.IntFlag{
-			Name:     PortFlag,
-			Aliases:  []string{"p"},
-			Usage:    "Remote port",
-			Category: categoryConnect,
-			Required: true,
-		},
-	}
+	return []cli.Flag{}
 }
 
 const categoryListen = "listen"
 
 // GetListenFlags ...
 func GetListenFlags() []cli.Flag {
-	return []cli.Flag{
-		&cli.StringFlag{
-			Name:     HostFlag,
-			Aliases:  []string{},
-			Usage:    "Local interface, leave empty for all interfaces",
-			Category: categoryListen,
-			Value:    "",
-			Required: false,
-		},
-		&cli.IntFlag{
-			Name:     PortFlag,
-			Aliases:  []string{"p"},
-			Usage:    "Local port",
-			Category: categoryListen,
-			Required: true,
-		},
-	}
+	return []cli.Flag{}
 }
 
 const categoryMaster = "master"

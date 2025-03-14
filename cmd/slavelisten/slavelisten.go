@@ -1,6 +1,7 @@
 package slavelisten
 
 import (
+	"context"
 	"dominicbreuker/goncat/cmd/shared"
 	"dominicbreuker/goncat/pkg/clean"
 	"dominicbreuker/goncat/pkg/config"
@@ -9,6 +10,7 @@ import (
 	"dominicbreuker/goncat/pkg/server"
 	"fmt"
 	"net"
+	"strings"
 
 	"github.com/urfave/cli/v3"
 )
@@ -16,10 +18,11 @@ import (
 // GetCommand ...
 func GetCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "listen",
-		Usage: "Listen for connections",
-		Action: func(cCtx *cli.Context) error {
-			if cCtx.Bool(shared.CleanupFlag) {
+		Name:        "listen",
+		Description: shared.GetBaseDescription(),
+		ArgsUsage:   shared.GetArgsUsage(),
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			if cmd.Bool(shared.CleanupFlag) {
 				delFunc, err := clean.EnsureDeletion()
 				if err != nil {
 					return fmt.Errorf("clean.EnsureDeletion(): %s", err)
@@ -27,13 +30,23 @@ func GetCommand() *cli.Command {
 				defer delFunc()
 			}
 
+			args := cmd.Args()
+			if args.Len() != 1 {
+				return fmt.Errorf("must provide exactly one argument, got %d (%s)", args.Len(), strings.Join(args.Slice(), ", "))
+			}
+
+			proto, host, port, err := shared.ParseTransport(args.Get(0))
+			if err != nil {
+				return fmt.Errorf("parsing transport: %s", err)
+			}
+
 			cfg := &config.Shared{
-				Host:      cCtx.String(shared.HostFlag),
-				Port:      cCtx.Int(shared.PortFlag),
-				SSL:       cCtx.Bool(shared.SSLFlag),
-				WebSocket: cCtx.Bool(shared.WebSocketFlag),
-				Key:       cCtx.String(shared.KeyFlag),
-				Verbose:   cCtx.Bool(shared.VerboseFlag),
+				Protocol: proto,
+				Host:     host,
+				Port:     port,
+				SSL:      cmd.Bool(shared.SSLFlag),
+				Key:      cmd.String(shared.KeyFlag),
+				Verbose:  cmd.Bool(shared.VerboseFlag),
 			}
 
 			if errors := config.Validate(cfg); len(errors) > 0 {
@@ -44,43 +57,38 @@ func GetCommand() *cli.Command {
 				return fmt.Errorf("exiting")
 			}
 
-			s := server.New(cfg)
+			s, err := server.New(ctx, cfg, makeHandler(ctx, cfg))
+			if err != nil {
+				return fmt.Errorf("server.New(): %s", err)
+			}
+
 			if err := s.Serve(); err != nil {
 				return fmt.Errorf("serving: %s", err)
 			}
 
-			for {
-				conn, err := s.Accept()
-				if err != nil {
-					log.ErrorMsg("Accepting new connection: %s\n", err)
-					continue
-				}
-
-				if err := handle(cfg, conn); err != nil {
-					log.ErrorMsg("Handling connection: %s\n", err)
-					continue
-				}
-			}
+			return nil
 		},
 		Flags: getFlags(),
 	}
 }
 
-func handle(cfg *config.Shared, conn net.Conn) error {
-	defer log.InfoMsg("Connection to %s closed\n", conn.RemoteAddr())
-	defer conn.Close()
+func makeHandler(ctx context.Context, cfg *config.Shared) func(conn net.Conn) error {
+	return func(conn net.Conn) error {
+		defer log.InfoMsg("Connection to %s closed\n", conn.RemoteAddr())
+		defer conn.Close()
 
-	slv, err := slave.New(cfg, conn)
-	if err != nil {
-		return fmt.Errorf("slave.New(): %s", err)
+		slv, err := slave.New(ctx, cfg, conn)
+		if err != nil {
+			return fmt.Errorf("slave.New(): %s", err)
+		}
+		defer slv.Close()
+
+		if err := slv.Handle(); err != nil {
+			return fmt.Errorf("handle: %s", err)
+		}
+
+		return nil
 	}
-	defer slv.Close()
-
-	if err := slv.Handle(); err != nil {
-		return fmt.Errorf("handle: %s", err)
-	}
-
-	return nil
 }
 
 func getFlags() []cli.Flag {

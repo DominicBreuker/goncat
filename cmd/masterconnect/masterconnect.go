@@ -1,12 +1,14 @@
 package masterconnect
 
 import (
+	"context"
 	"dominicbreuker/goncat/cmd/shared"
 	"dominicbreuker/goncat/pkg/client"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/handler/master"
 	"dominicbreuker/goncat/pkg/log"
 	"fmt"
+	"strings"
 
 	"github.com/urfave/cli/v3"
 )
@@ -16,26 +18,39 @@ func GetCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "connect",
 		Usage: "Connect to a remote host",
-		Action: func(cCtx *cli.Context) error {
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			args := cmd.Args()
+			if args.Len() != 1 {
+				return fmt.Errorf("must provide exactly one argument, got %d (%s)", args.Len(), strings.Join(args.Slice(), ", "))
+			}
+
+			proto, host, port, err := shared.ParseTransport(args.Get(0))
+			if err != nil {
+				return fmt.Errorf("parsing transport: %s", err)
+			}
+			if host == "" {
+				return fmt.Errorf("parsing transport: %s: specify a host", args.Get(0))
+			}
+
 			cfg := &config.Shared{
-				Host:      cCtx.String(shared.HostFlag),
-				Port:      cCtx.Int(shared.PortFlag),
-				SSL:       cCtx.Bool(shared.SSLFlag),
-				WebSocket: cCtx.Bool(shared.WebSocketFlag),
-				Key:       cCtx.String(shared.KeyFlag),
-				Verbose:   cCtx.Bool(shared.VerboseFlag),
+				Protocol: proto,
+				Host:     host,
+				Port:     port,
+				SSL:      cmd.Bool(shared.SSLFlag),
+				Key:      cmd.String(shared.KeyFlag),
+				Verbose:  cmd.Bool(shared.VerboseFlag),
 			}
 
 			mCfg := &config.Master{
-				Exec:    cCtx.String(shared.ExecFlag),
-				Pty:     cCtx.Bool(shared.PtyFlag),
-				LogFile: cCtx.String(shared.LogFileFlag),
+				Exec:    cmd.String(shared.ExecFlag),
+				Pty:     cmd.Bool(shared.PtyFlag),
+				LogFile: cmd.String(shared.LogFileFlag),
 			}
 
-			mCfg.ParseLocalPortForwardingSpecs(cCtx.StringSlice(shared.LocalPortForwardingFlag))
-			mCfg.ParseRemotePortForwardingSpecs(cCtx.StringSlice(shared.RemotePortForwardingFlag))
+			mCfg.ParseLocalPortForwardingSpecs(cmd.StringSlice(shared.LocalPortForwardingFlag))
+			mCfg.ParseRemotePortForwardingSpecs(cmd.StringSlice(shared.RemotePortForwardingFlag))
 
-			socksSpec := cCtx.String(shared.SocksFlag)
+			socksSpec := cmd.String(shared.SocksFlag)
 			if socksSpec != "" {
 				mCfg.Socks = config.NewSocksCfg(socksSpec)
 			}
@@ -48,13 +63,13 @@ func GetCommand() *cli.Command {
 				return fmt.Errorf("exiting")
 			}
 
-			c := client.New(cfg)
+			c := client.New(ctx, cfg)
 			if err := c.Connect(); err != nil {
 				return fmt.Errorf("connecting: %s", err)
 			}
 			defer c.Close()
 
-			h, err := master.New(cfg, mCfg, c.GetConnection())
+			h, err := master.New(ctx, cfg, mCfg, c.GetConnection())
 			if err != nil {
 				return fmt.Errorf("master.New(): %s", err)
 			}
