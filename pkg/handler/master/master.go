@@ -14,6 +14,7 @@ import (
 
 // Master ...
 type Master struct {
+	ctx  context.Context
 	cfg  *config.Shared
 	mCfg *config.Master
 
@@ -21,13 +22,14 @@ type Master struct {
 }
 
 // New ...
-func New(cfg *config.Shared, mCfg *config.Master, conn net.Conn) (*Master, error) {
+func New(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (*Master, error) {
 	sess, err := mux.OpenSession(conn)
 	if err != nil {
 		return nil, fmt.Errorf("mux.OpenSession(conn): %s", err)
 	}
 
 	return &Master{
+		ctx:  ctx,
 		cfg:  cfg,
 		mCfg: mCfg,
 		sess: sess,
@@ -43,7 +45,7 @@ func (mst *Master) Close() error {
 func (mst *Master) Handle() error {
 	var wg sync.WaitGroup
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(mst.ctx)
 
 	for _, lpf := range mst.mCfg.LocalPortForwarding {
 		mst.startLocalPortFwdJobJob(ctx, &wg, lpf)

@@ -5,6 +5,11 @@ GOBIN=go
 .PHONY: build
 build: build-linux build-windows build-darwin
 
+
+.PHONY: test
+test:
+	go test ./...
+
 .PHONY: build-linux
 build-linux:
 	mkdir -p dist

@@ -1,26 +1,32 @@
 package client
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/crypto"
 	"dominicbreuker/goncat/pkg/format"
 	"dominicbreuker/goncat/pkg/log"
+	"dominicbreuker/goncat/pkg/transport"
+	"dominicbreuker/goncat/pkg/transport/tcp"
+	"dominicbreuker/goncat/pkg/transport/ws"
 	"fmt"
 	"net"
 )
 
 // Client ...
 type Client struct {
+	ctx context.Context
 	cfg *config.Shared
 
 	conn net.Conn
 }
 
 // New ...
-func New(cfg *config.Shared) *Client {
+func New(ctx context.Context, cfg *config.Shared) *Client {
 	return &Client{
+		ctx: ctx,
 		cfg: cfg,
 	}
 }
@@ -43,35 +49,34 @@ func (c *Client) Connect() error {
 
 	log.InfoMsg("Connecting to %s\n", addr)
 
+	var d transport.Dialer
 	var err error
-	if c.cfg.SSL {
-		c.conn, err = dialTLS(addr, c.cfg.GetKey())
-	} else {
-		c.conn, err = dialTCP(addr)
+	switch c.cfg.Protocol {
+	case config.ProtoWS, config.ProtoWSS:
+		d, err = ws.NewDialer(c.ctx, addr, c.cfg.Protocol), nil
+	default:
+		d, err = tcp.NewDialer(addr)
 	}
 	if err != nil {
-		return fmt.Errorf("dial: %s", err)
+		return fmt.Errorf("NewDialer: %s", err)
+	}
+
+	c.conn, err = d.Dial()
+	if err != nil {
+		return fmt.Errorf("Dial(): %s", err)
+	}
+
+	if c.cfg.SSL {
+		c.conn, err = upgradeToTLS(c.conn, c.cfg.GetKey())
+		if err != nil {
+			return fmt.Errorf("upgradeToTLS: %s", err)
+		}
 	}
 
 	return nil
 }
 
-func dialTCP(addr string) (net.Conn, error) {
-	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
-	if err != nil {
-		return nil, fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %s", addr, err)
-	}
-
-	conn, err := net.DialTCP("tcp", nil, tcpAddr)
-	if err != nil {
-		return nil, fmt.Errorf("net.Dial(tcp, %s): %s", addr, err)
-	}
-
-	conn.SetKeepAlive(true)
-	return conn, nil
-}
-
-func dialTLS(addr string, key string) (net.Conn, error) {
+func upgradeToTLS(conn net.Conn, key string) (net.Conn, error) {
 	setTCPKeepAlive := func(clientHello *tls.ClientHelloInfo) (*tls.Config, error) {
 		if tcpConn, ok := clientHello.Conn.(*net.TCPConn); ok {
 			if err := tcpConn.SetKeepAlive(true); err != nil {
@@ -84,7 +89,9 @@ func dialTLS(addr string, key string) (net.Conn, error) {
 		return nil, nil
 	}
 
-	cfg := &tls.Config{}
+	cfg := &tls.Config{
+		MinVersion: tls.VersionTLS13,
+	}
 	cfg.GetConfigForClient = setTCPKeepAlive
 	cfg.InsecureSkipVerify = true // we implement ourselves to skip hostname validation
 
@@ -100,12 +107,10 @@ func dialTLS(addr string, key string) (net.Conn, error) {
 		}
 	}
 
-	conn, err := tls.Dial("tcp", addr, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("tls.Dial(tcp): %s", err)
-	}
+	tlsConn := tls.Client(conn, cfg)
+	tlsConn.Handshake()
 
-	return conn, nil
+	return tlsConn, nil
 }
 
 // customVerifier verifies the certificate but cares only about the root certificate, not SANs

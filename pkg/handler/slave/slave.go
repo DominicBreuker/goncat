@@ -13,19 +13,21 @@ import (
 
 // Slave ...
 type Slave struct {
+	ctx context.Context
 	cfg *config.Shared
 
 	sess *mux.SlaveSession
 }
 
 // New ...
-func New(cfg *config.Shared, conn net.Conn) (*Slave, error) {
+func New(ctx context.Context, cfg *config.Shared, conn net.Conn) (*Slave, error) {
 	sess, err := mux.AcceptSession(conn)
 	if err != nil {
 		return nil, fmt.Errorf("mux.AcceptSession(conn): %s", err)
 	}
 
 	return &Slave{
+		ctx:  ctx,
 		cfg:  cfg,
 		sess: sess,
 	}, nil
@@ -38,7 +40,7 @@ func (slv *Slave) Close() error {
 
 // Handle ...
 func (slv *Slave) Handle() error {
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(slv.ctx)
 	defer cancel()
 
 	for {

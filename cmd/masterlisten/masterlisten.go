@@ -1,6 +1,7 @@
 package masterlisten
 
 import (
+	"context"
 	"dominicbreuker/goncat/cmd/shared"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/handler/master"
@@ -8,6 +9,7 @@ import (
 	"dominicbreuker/goncat/pkg/server"
 	"fmt"
 	"net"
+	"strings"
 
 	"github.com/urfave/cli/v3"
 )
@@ -17,26 +19,36 @@ func GetCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "listen",
 		Usage: "Listen for connections",
-		Action: func(cCtx *cli.Context) error {
+		Action: func(ctx context.Context, cmd *cli.Command) error {
+			args := cmd.Args()
+			if args.Len() != 1 {
+				return fmt.Errorf("must provide exactly one argument, got %d (%s)", args.Len(), strings.Join(args.Slice(), ", "))
+			}
+
+			proto, host, port, err := shared.ParseTransport(args.Get(0))
+			if err != nil {
+				return fmt.Errorf("parsing transport: %s", err)
+			}
+
 			cfg := &config.Shared{
-				Host:      cCtx.String(shared.HostFlag),
-				Port:      cCtx.Int(shared.PortFlag),
-				SSL:       cCtx.Bool(shared.SSLFlag),
-				WebSocket: cCtx.Bool(shared.WebSocketFlag),
-				Key:       cCtx.String(shared.KeyFlag),
-				Verbose:   cCtx.Bool(shared.VerboseFlag),
+				Protocol: proto,
+				Host:     host,
+				Port:     port,
+				SSL:      cmd.Bool(shared.SSLFlag),
+				Key:      cmd.String(shared.KeyFlag),
+				Verbose:  cmd.Bool(shared.VerboseFlag),
 			}
 
 			mCfg := &config.Master{
-				Exec:    cCtx.String(shared.ExecFlag),
-				Pty:     cCtx.Bool(shared.PtyFlag),
-				LogFile: cCtx.String(shared.LogFileFlag),
+				Exec:    cmd.String(shared.ExecFlag),
+				Pty:     cmd.Bool(shared.PtyFlag),
+				LogFile: cmd.String(shared.LogFileFlag),
 			}
 
-			mCfg.ParseLocalPortForwardingSpecs(cCtx.StringSlice(shared.LocalPortForwardingFlag))
-			mCfg.ParseRemotePortForwardingSpecs(cCtx.StringSlice(shared.RemotePortForwardingFlag))
+			mCfg.ParseLocalPortForwardingSpecs(cmd.StringSlice(shared.LocalPortForwardingFlag))
+			mCfg.ParseRemotePortForwardingSpecs(cmd.StringSlice(shared.RemotePortForwardingFlag))
 
-			socksSpec := cCtx.String(shared.SocksFlag)
+			socksSpec := cmd.String(shared.SocksFlag)
 			if socksSpec != "" {
 				mCfg.Socks = config.NewSocksCfg(socksSpec)
 			}
@@ -49,44 +61,39 @@ func GetCommand() *cli.Command {
 				return fmt.Errorf("exiting")
 			}
 
-			s := server.New(cfg)
+			s, err := server.New(ctx, cfg, makeHandler(ctx, cfg, mCfg))
+			if err != nil {
+				return fmt.Errorf("server.New(): %s", err)
+			}
+
 			if err := s.Serve(); err != nil {
 				return fmt.Errorf("serving: %s", err)
 			}
 			defer s.Close()
 
-			for {
-				conn, err := s.Accept()
-				if err != nil {
-					log.ErrorMsg("Accepting new connection: %s", err)
-					continue
-				}
-
-				if err := handle(cfg, mCfg, conn); err != nil {
-					log.ErrorMsg("Handling connection: %s\n", err)
-					continue
-				}
-			}
+			return nil
 		},
 		Flags: getFlags(),
 	}
 }
 
-func handle(cfg *config.Shared, mCfg *config.Master, conn net.Conn) error {
-	defer log.InfoMsg("Connection to %s closed\n", conn.RemoteAddr())
-	defer conn.Close()
+func makeHandler(ctx context.Context, cfg *config.Shared, mCfg *config.Master) func(conn net.Conn) error {
+	return func(conn net.Conn) error {
+		defer log.InfoMsg("Connection to %s closed\n", conn.RemoteAddr())
+		defer conn.Close()
 
-	mst, err := master.New(cfg, mCfg, conn)
-	if err != nil {
-		return fmt.Errorf("master.New(): %s", err)
+		mst, err := master.New(ctx, cfg, mCfg, conn)
+		if err != nil {
+			return fmt.Errorf("master.New(): %s", err)
+		}
+		defer mst.Close()
+
+		if err := mst.Handle(); err != nil {
+			return fmt.Errorf("handle: %s", err)
+		}
+
+		return nil
 	}
-	defer mst.Close()
-
-	if err := mst.Handle(); err != nil {
-		return fmt.Errorf("handle: %s", err)
-	}
-
-	return nil
 }
 
 func getFlags() []cli.Flag {

@@ -37,7 +37,7 @@ func PipeWithPTY(ctx context.Context, connCtl, connData net.Conn, verbose bool) 
 		fmt.Printf("\033[2K\r") // clear line
 	}()
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(ctx)
 	go syncTerminalSize(ctx, connCtl)
 
 	Pipe(ctx, connData, verbose)

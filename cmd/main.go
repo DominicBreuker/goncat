@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"dominicbreuker/goncat/cmd/master"
 	"dominicbreuker/goncat/cmd/slave"
 	"dominicbreuker/goncat/cmd/version"
@@ -13,9 +14,9 @@ import (
 )
 
 func main() {
-	app := &cli.App{
-		Name:  "goncat",
-		Usage: "netcat-like tool for reverse shells",
+	app := &cli.Command{
+		Name:        "goncat",
+		Description: "netcat-like tool for reverse shells",
 		Commands: []*cli.Command{
 			master.GetCommand(),
 			slave.GetCommand(),
@@ -30,7 +31,7 @@ func main() {
 	// 	}
 	// }()
 
-	if err := app.Run(os.Args); err != nil {
+	if err := app.Run(context.Background(), os.Args); err != nil {
 		log.ErrorMsg("Run: %s\n", err)
 	}
 }
