@@ -1,5 +1,7 @@
 # goncat
 
+[![Build and Test](https://github.com/dominicbreuker/goncat/actions/workflows/test.yml/badge.svg)](https://github.com/dominicbreuker/goncat/actions/workflows/test.yml)
+
 goncat is a netcat-like tool you can use to create bind or reverse shells,
 but designed to give you a more SSH-like experience.
 It contains a few extra features that I missed from netcat.
