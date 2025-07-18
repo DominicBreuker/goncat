@@ -1,3 +1,9 @@
-FROM alpine:3
+FROM ubuntu:22.04
 
-RUN apk add expect
+# Install required packages
+RUN apt-get update && apt-get install -y \
+    expect \
+    netcat-openbsd \
+    telnet \
+    socat \
+    && rm -rf /var/lib/apt/lists/*
