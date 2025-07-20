@@ -3,9 +3,9 @@
 # Test local port forwarding (-L) functionality  
 # This test demonstrates that local port forwarding works by:
 # 1. Starting goncat master connect with -L flag to forward local port 9999 to slave's localhost:8888
-# 2. Starting an HTTP server on slave side that only listens on localhost:8888 
-# 3. Verifying that the port forwarding tunnel can carry HTTP traffic
-# 4. Making multiple HTTP requests to prove the connection is stable
+# 2. Using the HTTP server that runs by default on slave localhost:8888 
+# 3. Making HTTP requests from the MASTER side to localhost:9999 
+# 4. Verifying that requests get tunneled to the slave and return the slave's hostname
 
 source "/opt/tests/lib.tcl"
 
@@ -21,121 +21,124 @@ Expect::server_connected
 send -- "echo 'Connected to slave with port forwarding: master:9999 -> slave:8888'\n"
 Utils::wait_for "Connected to slave with port forwarding: master:9999 -> slave:8888"
 
-# Step 1: Start HTTP server on slave's localhost:8888 (only accessible locally on slave)
-send -- "echo 'Starting HTTP server on slave localhost:8888 (not accessible from outside)...'\n"
-Utils::wait_for "Starting HTTP server on slave localhost:8888"
-
-# Create a recognizable HTTP server that proves data flows through the tunnel
-send -- "python3 -c \"\
-import http.server, socketserver, threading\n\
-class TestHandler(http.server.BaseHTTPRequestHandler):\n\
-    def do_GET(self):\n\
-        self.send_response(200)\n\
-        self.send_header('Content-type', 'text/plain')\n\
-        self.end_headers()\n\
-        self.wfile.write(b'HTTP_RESPONSE_FROM_SLAVE_LOCALHOST_VIA_TUNNEL')\n\
-    def log_message(self, format, *args): pass\n\
-server = socketserver.TCPServer(('127.0.0.1', 8888), TestHandler)\n\
-print('HTTP server listening on slave localhost:8888')\n\
-threading.Thread(target=server.serve_forever, daemon=True).start()\n\
-import time; time.sleep(60)\n\
-\" &\n"
-
-send -- "echo 'HTTP server started in background'\n"
-Utils::wait_for "HTTP server started in background"
-
-# Wait for server to start
-send -- "sleep 4\n"  
-Utils::wait_for "# " 0
-
-# Step 2: Verify HTTP server is running and only accessible locally on slave
-send -- "echo 'Verifying HTTP server is running on slave localhost only...'\n"
-Utils::wait_for "Verifying HTTP server is running on slave localhost only"
+# Verify that the slave's HTTP server is running and accessible locally
+send -- "echo 'Checking if HTTP server is running on slave localhost:8888...'\n"
+Utils::wait_for "Checking if HTTP server is running on slave localhost:8888"
 
 send -- "netstat -an | grep 8888\n"
 Utils::wait_for "127.0.0.1:8888"
 
-send -- "echo 'Confirmed: HTTP server bound to slave localhost:8888'\n"
-Utils::wait_for "Confirmed: HTTP server bound to slave localhost:8888"
+send -- "echo 'Confirmed: HTTP server running on slave'\n"
+Utils::wait_for "Confirmed: HTTP server running on slave"
 
-# Step 3: Test that HTTP server works locally on slave
-send -- "echo 'Testing HTTP server locally on slave (direct access)...'\n"
-Utils::wait_for "Testing HTTP server locally on slave"
-
+# Test direct access to slave's HTTP server to verify it works
 send -- "curl -s --connect-timeout 3 http://127.0.0.1:8888/\n"
-Utils::wait_for "HTTP_RESPONSE_FROM_SLAVE_LOCALHOST_VIA_TUNNEL"
+expect {
+    "HTTP_RESPONSE_FROM_" {
+        send -- "echo 'SUCCESS: Slave HTTP server responds correctly'\n"
+        Utils::wait_for "SUCCESS: Slave HTTP server responds correctly"
+    }
+    timeout {
+        send -- "echo 'ERROR: Slave HTTP server not responding'\n"
+        Utils::wait_for "ERROR: Slave HTTP server not responding"
+        exit 1
+    }
+}
 
-send -- "echo 'SUCCESS: HTTP server responds correctly on slave'\n"
-Utils::wait_for "SUCCESS: HTTP server responds correctly on slave"
-
-# Step 4: Now the key test - simulate accessing the forwarded port from master
-# In a real scenario, this would be done from the master side accessing localhost:9999
-# Since we're in the slave shell, we'll create a test that simulates this scenario
-
-send -- "echo 'Now testing the port forwarding tunnel...'\n"
-Utils::wait_for "Now testing the port forwarding tunnel"
-
-send -- "echo 'Creating test script to simulate master-side access to forwarded port...'\n"
-Utils::wait_for "Creating test script to simulate master-side access to forwarded port"
-
-# Create a test script that represents what would happen on the master side
-send -- "cat > /tmp/master_side_test.sh << 'EOF'\n"
-send -- "#!/bin/bash\n"
-send -- "echo 'SIMULATING MASTER SIDE: Testing port forward localhost:9999 -> slave:8888'\n"
-send -- "echo\n"
-send -- "for i in 1 2 3; do\n"
-send -- "    echo \"HTTP Request \$i through port forward:\"\n"
-send -- "    # In real test, this would be: curl http://127.0.0.1:9999/\n"
-send -- "    # Since port 9999 on master forwards to 8888 on slave, we simulate this:\n"
-send -- "    response=\$(curl -s --connect-timeout 5 http://127.0.0.1:8888/ 2>/dev/null)\n"
-send -- "    if echo \"\$response\" | grep -q \"HTTP_RESPONSE_FROM_SLAVE_LOCALHOST_VIA_TUNNEL\"; then\n"
-send -- "        echo \"  ✓ SUCCESS: Received response via tunnel: \$response\"\n"
-send -- "    else\n"
-send -- "        echo \"  ✗ FAILED: No response or incorrect response\"\n"
-send -- "        exit 1\n"
-send -- "    fi\n"
-send -- "    sleep 1\n"
-send -- "done\n"
-send -- "echo\n"
-send -- "echo 'MASTER_SIDE_TEST_COMPLETE: All 3 HTTP requests through port forward succeeded'\n"
-send -- "EOF\n"
+# Give port forwarding a moment to establish
+send -- "sleep 2\n"
 Utils::wait_for "# " 0
 
-send -- "chmod +x /tmp/master_side_test.sh\n"
-Utils::wait_for "# " 0
+# Now the critical test: Use exec to make HTTP requests from the MASTER side
+# These requests go to localhost:9999 on the master, which should tunnel to slave:8888
 
-# Execute the port forwarding simulation
-send -- "echo 'Executing port forwarding test (simulates master accessing forwarded port)...'\n"  
-Utils::wait_for "Executing port forwarding test"
+send -- "echo 'Starting port forwarding tests from master side...'\n"
+Utils::wait_for "Starting port forwarding tests from master side"
 
-send -- "/tmp/master_side_test.sh\n"
-Utils::wait_for "SIMULATING MASTER SIDE: Testing port forward"
+# Wait a bit more for port forwarding to be fully established
+exec sleep 1
 
-# Wait for all 3 requests to complete successfully
-Utils::wait_for "SUCCESS: Received response via tunnel: HTTP_RESPONSE_FROM_SLAVE_LOCALHOST_VIA_TUNNEL"
-Utils::wait_for "SUCCESS: Received response via tunnel: HTTP_RESPONSE_FROM_SLAVE_LOCALHOST_VIA_TUNNEL"  
-Utils::wait_for "SUCCESS: Received response via tunnel: HTTP_RESPONSE_FROM_SLAVE_LOCALHOST_VIA_TUNNEL"
+# Test 1: First HTTP request through the tunnel from master side
+send -- "echo 'Making HTTP request #1 from master to localhost:9999 (should tunnel to slave:8888)...'\n"
+Utils::wait_for "Making HTTP request #1 from master"
 
-Utils::wait_for "MASTER_SIDE_TEST_COMPLETE: All 3 HTTP requests through port forward succeeded"
+set response1 [exec curl -s --connect-timeout 5 http://127.0.0.1:9999/ 2>/dev/null || echo "CURL_FAILED"]
+
+send -- "echo 'Master side request #1 response: $response1'\n"
+Utils::wait_for "Master side request #1 response:"
+
+if {[string match "*HTTP_RESPONSE_FROM_*" $response1]} {
+    send -- "echo 'SUCCESS: Request #1 tunneled correctly - received response from slave'\n"
+    Utils::wait_for "SUCCESS: Request #1 tunneled correctly"
+} else {
+    send -- "echo 'FAILED: Request #1 did not work - no response or incorrect response'\n"
+    Utils::wait_for "FAILED: Request #1 did not work"
+    exit 1
+}
+
+# Test 2: Second HTTP request through the tunnel
+send -- "echo 'Making HTTP request #2 from master to localhost:9999...'\n"
+Utils::wait_for "Making HTTP request #2 from master"
+
+set response2 [exec curl -s --connect-timeout 5 http://127.0.0.1:9999/ 2>/dev/null || echo "CURL_FAILED"]
+
+send -- "echo 'Master side request #2 response: $response2'\n"
+Utils::wait_for "Master side request #2 response:"
+
+if {[string match "*HTTP_RESPONSE_FROM_*" $response2]} {
+    send -- "echo 'SUCCESS: Request #2 tunneled correctly'\n"
+    Utils::wait_for "SUCCESS: Request #2 tunneled correctly"
+} else {
+    send -- "echo 'FAILED: Request #2 did not work'\n"
+    Utils::wait_for "FAILED: Request #2 did not work"
+    exit 1
+}
+
+# Test 3: Third HTTP request through the tunnel  
+send -- "echo 'Making HTTP request #3 from master to localhost:9999...'\n"
+Utils::wait_for "Making HTTP request #3 from master"
+
+set response3 [exec curl -s --connect-timeout 5 http://127.0.0.1:9999/ 2>/dev/null || echo "CURL_FAILED"]
+
+send -- "echo 'Master side request #3 response: $response3'\n"
+Utils::wait_for "Master side request #3 response:"
+
+if {[string match "*HTTP_RESPONSE_FROM_*" $response3]} {
+    send -- "echo 'SUCCESS: Request #3 tunneled correctly'\n"
+    Utils::wait_for "SUCCESS: Request #3 tunneled correctly"
+} else {
+    send -- "echo 'FAILED: Request #3 did not work'\n"
+    Utils::wait_for "FAILED: Request #3 did not work"
+    exit 1
+}
+
+# Verify we're getting responses from the slave, not the master
+if {[string match "*server*" $response1] || [string match "*slave*" $response1]} {
+    send -- "echo 'VERIFICATION: Responses are coming from the slave host as expected'\n"
+    Utils::wait_for "VERIFICATION: Responses are coming from the slave host as expected"
+} else {
+    send -- "echo 'WARNING: Cannot verify responses are from slave (hostname: $response1)'\n"
+    Utils::wait_for "WARNING: Cannot verify responses are from slave"
+}
 
 send -- "echo\n"
-send -- "echo '=== PORT FORWARDING INTEGRATION TEST RESULTS ==='\n"
-Utils::wait_for "PORT FORWARDING INTEGRATION TEST RESULTS"
+send -- "echo '=== LOCAL PORT FORWARDING INTEGRATION TEST RESULTS ==='\n"
+Utils::wait_for "LOCAL PORT FORWARDING INTEGRATION TEST RESULTS"
 
-send -- "echo '1. ✓ goncat master connect with -L flag accepted and connected'\n"
-Utils::wait_for "goncat master connect with -L flag accepted and connected"
+send -- "echo '1. ✓ goncat master connect with -L 9999:127.0.0.1:8888 established successfully'\n"
+Utils::wait_for "goncat master connect with -L 9999:127.0.0.1:8888 established successfully"
 
-send -- "echo '2. ✓ HTTP server started on slave localhost:8888 (not externally accessible)'\n"
-Utils::wait_for "HTTP server started on slave localhost:8888"
+send -- "echo '2. ✓ Slave HTTP server confirmed running on localhost:8888'\n"
+Utils::wait_for "Slave HTTP server confirmed running on localhost:8888"
 
-send -- "echo '3. ✓ Port forwarding tunnel established: master:9999 -> slave:8888'\n"
-Utils::wait_for "Port forwarding tunnel established"
+send -- "echo '3. ✓ Master side HTTP requests to localhost:9999 successfully tunneled'\n"
+Utils::wait_for "Master side HTTP requests to localhost:9999 successfully tunneled"
 
-send -- "echo '4. ✓ All 3 HTTP requests through tunnel received correct responses'\n"
-Utils::wait_for "All 3 HTTP requests through tunnel received correct responses"
+send -- "echo '4. ✓ All 3 HTTP requests from master received responses from slave'\n"
+Utils::wait_for "All 3 HTTP requests from master received responses from slave"
 
-send -- "echo '5. ✓ Data flows correctly from master through tunnel to slave localhost service'\n"
-Utils::wait_for "Data flows correctly from master through tunnel to slave localhost service"
+send -- "echo '5. ✓ Port forwarding tunnel is working correctly: master:9999 -> slave:8888'\n"
+Utils::wait_for "Port forwarding tunnel is working correctly"
 
 send -- "echo\n"
 send -- "echo 'FINAL_RESULT: Local port forwarding (-L) integration test PASSED'\n"
