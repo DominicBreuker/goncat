@@ -13,6 +13,9 @@ import (
 	"time"
 )
 
+// generateKeyPair generates a CA key pair and certificate using the provided seed.
+// The seed makes certificate generation deterministic for the same key.
+// Returns PEM-encoded private key and certificate.
 func generateKeyPair(seed string) ([]byte, []byte, error) {
 	key, err := generateCAKey(seed)
 	if err != nil {
@@ -38,6 +41,7 @@ func generateKeyPair(seed string) ([]byte, []byte, error) {
 	return keyPem, certPem, nil
 }
 
+// generateCAKey generates an ECDSA P256 private key using the provided seed.
 func generateCAKey(seed string) (*ecdsa.PrivateKey, error) {
 	priv, err := ecdsa.GenerateKey(elliptic.P256(), getRandReader(seed))
 	if err != nil {
@@ -47,6 +51,8 @@ func generateCAKey(seed string) (*ecdsa.PrivateKey, error) {
 	return priv, nil
 }
 
+// generateCACertificate creates a self-signed CA certificate using the provided private key and seed.
+// The certificate has random Common Name and Organization fields derived from the seed.
 func generateCACertificate(key *ecdsa.PrivateKey, seed string) ([]byte, error) {
 	rng := getRandReader(seed)
 

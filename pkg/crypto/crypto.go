@@ -1,3 +1,5 @@
+// Package crypto provides certificate generation and cryptographic utilities
+// for establishing secure TLS connections with mutual authentication.
 package crypto
 
 import (
@@ -6,7 +8,9 @@ import (
 	"fmt"
 )
 
-// GenerateCertificates ...
+// GenerateCertificates generates a CA certificate pool and a client certificate
+// for mutual TLS authentication. If seed is empty, a random seed is generated.
+// The same seed will produce the same certificates, enabling key-based authentication.
 func GenerateCertificates(seed string) (*x509.CertPool, tls.Certificate, error) {
 	var caCert *x509.CertPool
 	var cert tls.Certificate

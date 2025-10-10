@@ -17,7 +17,9 @@ import (
 	"syscall"
 )
 
-// RunWithPTY ...
+// RunWithPTY executes the specified program in a PTY (pseudo-terminal) on Unix systems.
+// It uses two connections: connCtl for terminal size synchronization and connData for I/O.
+// The function blocks until the program exits or the context is cancelled.
 func RunWithPTY(ctx context.Context, connCtl, connData net.Conn, program string, verbose bool) error {
 	cmd := exec.Command(program)
 
@@ -65,6 +67,8 @@ func RunWithPTY(ctx context.Context, connCtl, connData net.Conn, program string,
 	return nil
 }
 
+// syncTerminalSize continuously reads terminal size updates from connCtl
+// and applies them to the PTY file descriptor.
 func syncTerminalSize(ptyFd *os.File, connCtl net.Conn, verbose bool) {
 	dec := gob.NewDecoder(connCtl)
 

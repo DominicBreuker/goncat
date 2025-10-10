@@ -8,7 +8,7 @@ import (
 	"io"
 )
 
-// getRandReader returns a determinatic reader if a seed is given, else rand.Reader
+// getRandReader returns a deterministic reader if a seed is given, otherwise crypto/rand.Reader.
 func getRandReader(seed string) io.Reader {
 	if seed != "" {
 		return newDRand(seed)
@@ -17,6 +17,7 @@ func getRandReader(seed string) io.Reader {
 	return rand.Reader
 }
 
+// generateRandomString generates a random base64 URL-encoded string of the specified length.
 func generateRandomString(length int, r io.Reader) (string, error) {
 	bytes := make([]byte, length)
 	if _, err := r.Read(bytes); err != nil {

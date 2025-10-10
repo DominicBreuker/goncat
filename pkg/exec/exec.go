@@ -1,3 +1,6 @@
+// Package exec provides functionality for executing programs
+// and connecting their I/O to network connections, with support
+// for both plain execution and PTY (pseudo-terminal) mode.
 package exec
 
 import (
@@ -9,7 +12,9 @@ import (
 	"os/exec"
 )
 
-// Run ...
+// Run executes the specified program and pipes its stdin/stdout/stderr
+// to and from the provided network connection. The function blocks until
+// the program exits or the context is cancelled.
 func Run(ctx context.Context, conn net.Conn, program string) error {
 	cmd := exec.Command(program)
 
