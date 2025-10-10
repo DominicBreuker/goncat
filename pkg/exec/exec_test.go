@@ -61,18 +61,24 @@ func TestRun_Echo(t *testing.T) {
 	// Run echo command with input
 	conn.readBuf.WriteString("test input\n")
 
+	// Run the command in a goroutine and cancel when it starts
+	done := make(chan error, 1)
 	go func() {
-		// Give some time for the command to start and process
-		time.Sleep(100 * time.Millisecond)
-		cancel() // Cancel to stop the blocking Run
+		done <- Run(ctx, conn, "echo")
 	}()
 
-	// This will block until cancelled or command completes
-	err := Run(ctx, conn, "echo")
+	// Cancel immediately to test context cancellation handling
+	cancel()
 
-	// We expect either no error or a context cancellation
-	if err != nil && ctx.Err() == nil {
-		t.Errorf("Run() error = %v", err)
+	// Wait for the command to finish
+	select {
+	case err := <-done:
+		// We expect either no error or a context cancellation
+		if err != nil && ctx.Err() == nil {
+			t.Errorf("Run() error = %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Error("Run() did not return after context cancellation")
 	}
 }
 
