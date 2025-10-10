@@ -345,3 +345,39 @@ func TestConfig_StringFormat(t *testing.T) {
 		})
 	}
 }
+
+// TestNewUDPRelay_InvalidAddress verifies error handling for invalid addresses.
+func TestNewUDPRelay_InvalidAddress(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx := context.Background()
+	invalidAddr := "invalid::address::format"
+
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	// Create a minimal valid request (ReadRequest would parse this from SOCKS protocol)
+	// We use a buffer to simulate a SOCKS request with IPv4 address
+	var buf bytes.Buffer
+	buf.Write([]byte{
+		0x05,           // SOCKS version 5
+		0x01,           // CMD: CONNECT
+		0x00,           // Reserved
+		0x01,           // Address type: IPv4
+		192, 168, 1, 1, // IP: 192.168.1.1
+		0x00, 0x50, // Port: 80
+	})
+	req, err := socks.ReadRequest(&buf)
+	if err != nil {
+		t.Fatalf("Failed to create test request: %v", err)
+	}
+
+	_, err = NewUDPRelay(ctx, invalidAddr, req, client)
+	if err == nil {
+		t.Error("NewUDPRelay() expected error with invalid address, got nil")
+	}
+}
