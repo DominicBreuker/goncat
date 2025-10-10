@@ -69,6 +69,7 @@ func TestListener_Serve(t *testing.T) {
 
 	addr := l.nl.Addr().String()
 	handlerCalled := make(chan bool, 1)
+	serverReady := make(chan bool)
 
 	handler := func(conn net.Conn) error {
 		defer conn.Close()
@@ -78,11 +79,12 @@ func TestListener_Serve(t *testing.T) {
 
 	// Start serving in a goroutine
 	go func() {
+		serverReady <- true
 		l.Serve(handler)
 	}()
 
-	// Give the server time to start
-	time.Sleep(100 * time.Millisecond)
+	// Wait for server to be ready
+	<-serverReady
 
 	// Connect to the listener
 	conn, err := net.Dial("tcp", addr)
@@ -114,20 +116,25 @@ func TestListener_SingleConnection(t *testing.T) {
 	addr := l.nl.Addr().String()
 	handlerCount := 0
 	handlerCh := make(chan bool)
+	handlerStarted := make(chan bool)
+	serverReady := make(chan bool)
 
 	handler := func(conn net.Conn) error {
 		defer conn.Close()
 		handlerCount++
+		handlerStarted <- true
 		<-handlerCh // Block until we signal
 		return nil
 	}
 
 	// Start serving
 	go func() {
+		serverReady <- true
 		l.Serve(handler)
 	}()
 
-	time.Sleep(100 * time.Millisecond)
+	// Wait for server to be ready
+	<-serverReady
 
 	// Connect first connection
 	conn1, err := net.Dial("tcp", addr)
@@ -136,8 +143,8 @@ func TestListener_SingleConnection(t *testing.T) {
 	}
 	defer conn1.Close()
 
-	// Give handler time to be called
-	time.Sleep(100 * time.Millisecond)
+	// Wait for handler to start processing
+	<-handlerStarted
 
 	// Try second connection - should be rejected since first is still active
 	conn2, err := net.Dial("tcp", addr)
@@ -146,17 +153,18 @@ func TestListener_SingleConnection(t *testing.T) {
 	}
 
 	// Second connection should be closed immediately
-	time.Sleep(100 * time.Millisecond)
 	buf := make([]byte, 1)
-	conn2.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	conn2.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
 	_, _ = conn2.Read(buf) // Intentionally ignoring error - we're checking if connection closes
 	conn2.Close()
 
 	// Signal first handler to finish
 	handlerCh <- true
 
+	// Wait briefly for handler to complete
+	<-time.After(100 * time.Millisecond)
+
 	// Verify only one handler was called
-	time.Sleep(100 * time.Millisecond)
 	if handlerCount != 1 {
 		t.Errorf("Expected 1 handler call, got %d", handlerCount)
 	}
@@ -174,17 +182,22 @@ func TestListener_HandlerError(t *testing.T) {
 	defer l.Close()
 
 	addr := l.nl.Addr().String()
+	handlerCalled := make(chan bool, 1)
+	serverReady := make(chan bool)
 
 	handler := func(conn net.Conn) error {
 		conn.Close()
+		handlerCalled <- true
 		return fmt.Errorf("test error")
 	}
 
 	go func() {
+		serverReady <- true
 		l.Serve(handler)
 	}()
 
-	time.Sleep(100 * time.Millisecond)
+	// Wait for server to be ready
+	<-serverReady
 
 	// Connect - handler will return error but serve should continue
 	conn, err := net.Dial("tcp", addr)
@@ -193,8 +206,8 @@ func TestListener_HandlerError(t *testing.T) {
 	}
 	conn.Close()
 
-	// Give time for error handling
-	time.Sleep(100 * time.Millisecond)
+	// Wait for first handler to complete
+	<-handlerCalled
 
 	// Verify listener is still accepting connections
 	conn2, err := net.Dial("tcp", addr)
@@ -224,11 +237,14 @@ func TestListener_Close(t *testing.T) {
 	}
 
 	serveDone := make(chan error, 1)
+	serverReady := make(chan bool)
 	go func() {
+		serverReady <- true
 		serveDone <- l.Serve(handler)
 	}()
 
-	time.Sleep(100 * time.Millisecond)
+	// Wait for server to be ready
+	<-serverReady
 
 	// Close the listener
 	if err := l.Close(); err != nil {

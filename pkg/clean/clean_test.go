@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 )
 
 func TestEnsureDeletion(t *testing.T) {
@@ -46,10 +45,8 @@ func TestDeleteFile_Default(t *testing.T) {
 	// Test deleteFile
 	deleteFile(tmpFile)
 
-	// Give a moment for deletion to occur (especially on Windows)
-	time.Sleep(100 * time.Millisecond)
-
-	// On non-Windows, file should be deleted immediately
-	// On Windows, it might still exist due to the timeout mechanism
-	// So we just verify the function doesn't panic
+	// The deleteFile function attempts to delete the file.
+	// On non-Windows, file should be deleted immediately.
+	// On Windows, it might still exist due to the timeout mechanism.
+	// We just verify the function doesn't panic and returns without error.
 }

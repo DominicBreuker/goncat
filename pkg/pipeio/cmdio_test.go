@@ -5,7 +5,6 @@ import (
 	"io"
 	"strings"
 	"testing"
-	"time"
 )
 
 type nopWriteCloser struct {
@@ -64,14 +63,12 @@ func TestCmdio_Read(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Read() error = %v", err)
 		}
-		// Add small delay to allow both goroutines to provide data
-		time.Sleep(10 * time.Millisecond)
 	}
 
-	// Verify we got data from both streams
+	// Verify we got data from at least one stream
 	result := string(allData)
 	if !strings.Contains(result, "stdout") && !strings.Contains(result, "stderr") {
-		t.Errorf("Read() data = %q, expected to contain data from both stdout and stderr", result)
+		t.Errorf("Read() data = %q, expected to contain data from stdout or stderr", result)
 	}
 }
 
@@ -125,7 +122,7 @@ func TestMultiReader(t *testing.T) {
 	buf := make([]byte, 1024)
 
 	// Read all available data
-	for i := 0; i < 10; i++ {
+	for {
 		n, err := mr.Read(buf)
 		if n > 0 {
 			allData = append(allData, buf[:n]...)
@@ -136,7 +133,6 @@ func TestMultiReader(t *testing.T) {
 		if err != nil {
 			t.Fatalf("Read() error = %v", err)
 		}
-		time.Sleep(10 * time.Millisecond)
 	}
 
 	result := string(allData)

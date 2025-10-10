@@ -84,6 +84,7 @@ func TestListener_Serve(t *testing.T) {
 
 	addr := l.nl.Addr().String()
 	handlerCalled := make(chan bool, 1)
+	serverReady := make(chan bool)
 
 	handler := func(conn net.Conn) error {
 		defer conn.Close()
@@ -93,11 +94,12 @@ func TestListener_Serve(t *testing.T) {
 
 	// Start serving in a goroutine
 	go func() {
+		serverReady <- true
 		l.Serve(handler)
 	}()
 
-	// Give the server time to start
-	time.Sleep(100 * time.Millisecond)
+	// Wait for server to be ready
+	<-serverReady
 
 	// Connect to the listener
 	dialCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -135,19 +137,24 @@ func TestListener_SingleConnection(t *testing.T) {
 
 	addr := l.nl.Addr().String()
 	handlerCh := make(chan bool)
+	handlerStarted := make(chan bool)
+	serverReady := make(chan bool)
 
 	handler := func(conn net.Conn) error {
 		defer conn.Close()
+		handlerStarted <- true
 		<-handlerCh // Block until we signal
 		return nil
 	}
 
 	// Start serving
 	go func() {
+		serverReady <- true
 		l.Serve(handler)
 	}()
 
-	time.Sleep(100 * time.Millisecond)
+	// Wait for server to be ready
+	<-serverReady
 
 	// Connect first connection
 	dialCtx1, cancel1 := context.WithTimeout(context.Background(), 5*time.Second)
@@ -165,8 +172,8 @@ func TestListener_SingleConnection(t *testing.T) {
 		t.Errorf("First connection status = %d, want %d", resp1.StatusCode, http.StatusSwitchingProtocols)
 	}
 
-	// Give handler time to be called
-	time.Sleep(100 * time.Millisecond)
+	// Wait for handler to start processing
+	<-handlerStarted
 
 	// Try second connection - should be rejected with 500
 	dialCtx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
@@ -200,17 +207,22 @@ func TestListener_HandlerError(t *testing.T) {
 	defer l.Close()
 
 	addr := l.nl.Addr().String()
+	handlerCalled := make(chan bool, 1)
+	serverReady := make(chan bool)
 
 	handler := func(conn net.Conn) error {
 		conn.Close()
+		handlerCalled <- true
 		return nil
 	}
 
 	go func() {
+		serverReady <- true
 		l.Serve(handler)
 	}()
 
-	time.Sleep(100 * time.Millisecond)
+	// Wait for server to be ready
+	<-serverReady
 
 	// Connect - handler will close connection
 	dialCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -225,8 +237,8 @@ func TestListener_HandlerError(t *testing.T) {
 	}
 	c.Close(websocket.StatusNormalClosure, "")
 
-	// Give time for error handling
-	time.Sleep(100 * time.Millisecond)
+	// Wait for first handler to complete
+	<-handlerCalled
 
 	// Verify listener is still accepting connections
 	c2, _, err := websocket.Dial(dialCtx, wsURL, &websocket.DialOptions{
@@ -259,11 +271,14 @@ func TestListener_Close(t *testing.T) {
 	}
 
 	serveDone := make(chan error, 1)
+	serverReady := make(chan bool)
 	go func() {
+		serverReady <- true
 		serveDone <- l.Serve(handler)
 	}()
 
-	time.Sleep(100 * time.Millisecond)
+	// Wait for server to be ready
+	<-serverReady
 
 	// Close the listener
 	if err := l.Close(); err != nil {

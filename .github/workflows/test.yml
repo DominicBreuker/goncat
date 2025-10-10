@@ -20,6 +20,9 @@ jobs:
       with:
         go-version: 1.23
 
+    - name: run linters
+      run: make lint
+
     - name: build binaries
       run: |
         make build
