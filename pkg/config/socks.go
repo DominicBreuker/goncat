@@ -6,6 +6,7 @@ import (
 	"strings"
 )
 
+// SocksCfg contains configuration for SOCKS proxy functionality.
 type SocksCfg struct {
 	Host string
 	Port int
@@ -14,6 +15,7 @@ type SocksCfg struct {
 	parsingErr error
 }
 
+// String returns the string representation of the SOCKS configuration.
 func (sCfg *SocksCfg) String() string {
 	if sCfg.parsingErr != nil {
 		return sCfg.spec
@@ -22,6 +24,8 @@ func (sCfg *SocksCfg) String() string {
 	return fmt.Sprintf("%s:%d", sCfg.Host, sCfg.Port)
 }
 
+// NewSocksCfg creates a new SOCKS configuration from a specification string.
+// The spec format is "[host:]port". If host is omitted, defaults to 127.0.0.1.
 func NewSocksCfg(spec string) *SocksCfg {
 	var out SocksCfg
 	out.spec = spec

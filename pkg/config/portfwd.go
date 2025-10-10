@@ -6,12 +6,15 @@ import (
 	"strings"
 )
 
-// LocalPortForwardingCfg ...
+// LocalPortForwardingCfg contains configuration for local port forwarding.
+// Format: [localHost:]localPort:remoteHost:remotePort
 type LocalPortForwardingCfg portForwardingCfg
 
-// RemotePortForwardingCfg ...
+// RemotePortForwardingCfg contains configuration for remote port forwarding.
+// Format: [remoteHost:]remotePort:localHost:localPort
 type RemotePortForwardingCfg portForwardingCfg
 
+// portForwardingCfg is the underlying structure for both local and remote port forwarding.
 type portForwardingCfg struct {
 	LocalHost  string
 	LocalPort  int
@@ -22,6 +25,7 @@ type portForwardingCfg struct {
 	parsingErr error
 }
 
+// String returns the string representation of the local port forwarding configuration.
 func (lpf *LocalPortForwardingCfg) String() string {
 	if lpf.parsingErr != nil {
 		return lpf.spec
@@ -30,6 +34,7 @@ func (lpf *LocalPortForwardingCfg) String() string {
 	return fmt.Sprintf("%s:%d:%s:%d", lpf.LocalHost, lpf.LocalPort, lpf.RemoteHost, lpf.RemotePort)
 }
 
+// String returns the string representation of the remote port forwarding configuration.
 func (rpf *RemotePortForwardingCfg) String() string {
 	if rpf.parsingErr != nil {
 		return rpf.spec

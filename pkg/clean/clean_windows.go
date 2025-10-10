@@ -11,11 +11,19 @@ import (
 	"unsafe"
 )
 
+// deleteFile removes the file at the specified path using Windows-specific deletion methods.
+// It attempts two approaches:
+//  1. Delayed deletion using cmd.exe timeout command
+//  2. Deletion on system reboot using MoveFileEx with MOVEFILE_DELAY_UNTIL_REBOOT flag
+//
+// Errors are logged but not returned.
 func deleteFile(path string) {
 	deleteFileAfterExit(path)
 	deleteFileOnReboot(path)
 }
 
+// deleteFileAfterExit schedules file deletion using cmd.exe timeout and del commands.
+// It waits 5 seconds before attempting deletion to ensure the process has exited.
 func deleteFileAfterExit(path string) {
 	// cmd.exe /C timeout /T 5 /NOBREAK > NUL & del <path-to-file>
 	cmd := exec.Command("cmd.exe", "/C", "timeout", "/T", strconv.Itoa(5), "/NOBREAK", ">", "NUL", "&", "del", path)
@@ -25,6 +33,8 @@ func deleteFileAfterExit(path string) {
 	}
 }
 
+// deleteFileOnReboot marks the file for deletion on next system reboot.
+// It uses the Windows MoveFileEx API with the MOVEFILE_DELAY_UNTIL_REBOOT flag.
 func deleteFileOnReboot(path string) {
 	kernel32 := syscall.NewLazyDLL("kernel32.dll")
 	moveFileEx := kernel32.NewProc("MoveFileExW")

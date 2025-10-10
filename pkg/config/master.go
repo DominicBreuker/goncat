@@ -4,7 +4,8 @@ import (
 	"fmt"
 )
 
-// Master ...
+// Master contains configuration specific to master mode operation,
+// including command execution, PTY settings, logging, port forwarding, and SOCKS proxy.
 type Master struct {
 	Exec    string
 	Pty     bool
@@ -24,7 +25,8 @@ func (mCfg *Master) getRpfDestinations() map[string]struct{} {
 	return mCfg.rpfDestinations
 }
 
-// ParseLocalPortForwardingSpecs ...
+// ParseLocalPortForwardingSpecs parses local port forwarding specification strings
+// and adds them to the master configuration.
 func (mCfg *Master) ParseLocalPortForwardingSpecs(specs []string) {
 	for _, spec := range specs {
 		mCfg.addLocalPortForwardingSpec(spec)
@@ -35,7 +37,8 @@ func (mCfg *Master) addLocalPortForwardingSpec(spec string) {
 	mCfg.LocalPortForwarding = append(mCfg.LocalPortForwarding, newLocalPortForwardingCfg(spec))
 }
 
-// ParseRemotePortForwardingSpecs ...
+// ParseRemotePortForwardingSpecs parses remote port forwarding specification strings
+// and adds them to the master configuration.
 func (mCfg *Master) ParseRemotePortForwardingSpecs(specs []string) {
 	for _, spec := range specs {
 		mCfg.addRemotePortForwardingSpec(spec)
@@ -62,7 +65,7 @@ func (mCfg *Master) IsSocksEnabled() bool {
 	return mCfg.Socks != nil
 }
 
-// Validate ...
+// Validate checks the Master configuration for errors and returns any validation errors found.
 func (mCfg *Master) Validate() []error {
 	var errors []error
 

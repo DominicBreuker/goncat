@@ -12,6 +12,8 @@ import (
 	"time"
 )
 
+// generateCertificate creates a new certificate signed by the provided CA.
+// It generates a new ECDSA key pair for the certificate with a random common name.
 func generateCertificate(caCertPEM, caKeyPEM []byte) (tls.Certificate, error) {
 	var out tls.Certificate
 

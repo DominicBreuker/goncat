@@ -8,7 +8,8 @@ import (
 	"sync"
 )
 
-// Listener ...
+// Listener implements the transport.Listener interface for TCP connections.
+// It ensures only one connection is handled at a time.
 type Listener struct {
 	nl net.Listener
 
@@ -16,7 +17,7 @@ type Listener struct {
 	mu  sync.Mutex
 }
 
-// NewListener ...
+// NewListener creates a new TCP listener on the specified address.
 func NewListener(addr string) (*Listener, error) {
 	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
@@ -34,7 +35,8 @@ func NewListener(addr string) (*Listener, error) {
 	}, nil
 }
 
-// Serve ...
+// Serve accepts and handles incoming connections using the provided handler.
+// Only one connection is handled at a time; additional connections are closed if received.
 func (l *Listener) Serve(handle transport.Handler) error {
 	for {
 		conn, err := l.nl.Accept()
@@ -71,7 +73,7 @@ func (l *Listener) Serve(handle transport.Handler) error {
 	}
 }
 
-// Close ...
+// Close stops the listener.
 func (l *Listener) Close() error {
 	return l.nl.Close()
 }

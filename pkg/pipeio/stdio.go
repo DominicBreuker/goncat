@@ -6,8 +6,9 @@ import (
 	"github.com/muesli/cancelreader"
 )
 
-// Stdio is a ReadWriteCloser on standard in and out
-// if possible, it ensures that Reads to stdin are cancelled when it gets closed
+// Stdio provides a ReadWriteCloser interface for standard I/O streams.
+// It uses cancelable reading from stdin when supported, allowing reads
+// to be interrupted via Close.
 type Stdio struct {
 	stdin            *os.File
 	cancellableStdin cancelreader.CancelReader
@@ -15,8 +16,7 @@ type Stdio struct {
 	stdout *os.File
 }
 
-// NewStdio sets up a new Stdio with cancellable reader in stdin if supported
-// func NewStdio() *Stdio {
+// NewStdio creates a new Stdio with cancelable stdin reading if supported by the platform.
 func NewStdio() *Stdio {
 	out := Stdio{
 		stdin:  os.Stdin,
@@ -32,7 +32,7 @@ func NewStdio() *Stdio {
 	return &out
 }
 
-// Read reads from stdin
+// Read reads from stdin, using the cancelable reader if available.
 func (s *Stdio) Read(p []byte) (n int, err error) {
 	if s.cancellableStdin != nil {
 		return s.cancellableStdin.Read(p)
@@ -41,12 +41,12 @@ func (s *Stdio) Read(p []byte) (n int, err error) {
 	return s.stdin.Read(p)
 }
 
-// Write writes to stdout
+// Write writes to stdout.
 func (s *Stdio) Write(p []byte) (n int, err error) {
 	return s.stdout.Write(p)
 }
 
-// Close cancels reads from stdin if possible
+// Close cancels any pending reads from stdin if using a cancelable reader.
 func (s *Stdio) Close() error {
 	if s.cancellableStdin != nil {
 		s.cancellableStdin.Cancel()

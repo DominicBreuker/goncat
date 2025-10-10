@@ -1,3 +1,4 @@
+// Package tcp provides TCP transport implementation for dialers and listeners.
 package tcp
 
 import (
@@ -5,12 +6,12 @@ import (
 	"net"
 )
 
-// Dialer ...
+// Dialer implements the transport.Dialer interface for TCP connections.
 type Dialer struct {
 	tcpAddr *net.TCPAddr
 }
 
-// NewDialer ...
+// NewDialer creates a new TCP dialer for the specified address.
 func NewDialer(addr string) (*Dialer, error) {
 	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
@@ -22,7 +23,7 @@ func NewDialer(addr string) (*Dialer, error) {
 	}, nil
 }
 
-// Dial ...
+// Dial establishes a TCP connection to the configured address with keep-alive enabled.
 func (d *Dialer) Dial() (net.Conn, error) {
 	conn, err := net.DialTCP("tcp", nil, d.tcpAddr)
 	if err != nil {

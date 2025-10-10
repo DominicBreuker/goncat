@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// loggedConn wraps a net.Conn and logs all read/write operations to a file.
 type loggedConn struct {
 	conn    net.Conn
 	logFile *os.File
@@ -58,6 +59,8 @@ func (lc *loggedConn) SetWriteDeadline(t time.Time) error {
 	return lc.conn.SetWriteDeadline(t)
 }
 
+// NewLoggedConn wraps a network connection to log all data read from and written to it.
+// The log file is created or appended to at the specified path.
 func NewLoggedConn(conn net.Conn, logFilePath string) (net.Conn, error) {
 	logFile, err := os.OpenFile(logFilePath, os.O_WRONLY|os.O_CREATE|os.O_APPEND, 0644)
 	if err != nil {

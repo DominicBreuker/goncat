@@ -5,13 +5,16 @@ import (
 	"sync"
 )
 
-// Cmdio ...
+// Cmdio wraps stdout/stderr readers and stdin writer for a command,
+// providing a unified ReadWriteCloser interface.
 type Cmdio struct {
 	r io.Reader
 	w io.WriteCloser
 }
 
-// NewCmdio sets up a new Cmdio with cancellable writer for stdin of an 'exec.cmd` instance
+// NewCmdio creates a new Cmdio that combines stdout and stderr into a single reader
+// and provides access to stdin as a writer. The stdout and stderr streams are
+// multiplexed together for reading.
 func NewCmdio(stdout, stderr io.Reader, stdin io.WriteCloser) *Cmdio {
 	return &Cmdio{
 		r: newMultiReader(stdout, stderr),
@@ -19,23 +22,23 @@ func NewCmdio(stdout, stderr io.Reader, stdin io.WriteCloser) *Cmdio {
 	}
 }
 
-// Read ...
+// Read reads from the combined stdout/stderr stream.
 func (s *Cmdio) Read(p []byte) (n int, err error) {
 	return s.r.Read(p)
 }
 
-// Write ...
+// Write writes to the command's stdin.
 func (s *Cmdio) Write(p []byte) (n int, err error) {
 	return s.w.Write(p)
 }
 
-// Close ...
+// Close closes the stdin writer.
 func (s *Cmdio) Close() error {
 	return s.w.Close()
 }
 
-// #########
-
+// multiReader multiplexes data from two readers into a single reader.
+// It concurrently reads from both readers and provides data through Read calls.
 type multiReader struct {
 	r1 io.Reader
 	r2 io.Reader
@@ -45,6 +48,7 @@ type multiReader struct {
 	once   sync.Once
 }
 
+// newMultiReader creates a new multiReader that reads from both r1 and r2 concurrently.
 func newMultiReader(r1, r2 io.Reader) *multiReader {
 	mr := &multiReader{
 		r1: r1,

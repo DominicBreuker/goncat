@@ -1,3 +1,5 @@
+// Package terminal provides utilities for terminal I/O piping with support
+// for PTY (pseudo-terminal) mode, including raw mode and terminal size synchronization.
 package terminal
 
 import (
@@ -14,7 +16,7 @@ import (
 	"golang.org/x/term"
 )
 
-// Pipe ...
+// Pipe establishes bidirectional I/O between standard I/O and a network connection.
 func Pipe(ctx context.Context, conn net.Conn, verbose bool) {
 	pipeio.Pipe(ctx, pipeio.NewStdio(), conn, func(err error) {
 		if verbose {
@@ -23,7 +25,9 @@ func Pipe(ctx context.Context, conn net.Conn, verbose bool) {
 	})
 }
 
-// PipeWithPTY ...
+// PipeWithPTY sets up a PTY-enabled connection between standard I/O and network connections.
+// It puts the terminal in raw mode, pipes data, and synchronizes terminal size changes
+// via connCtl. The terminal is restored to its original state when done.
 func PipeWithPTY(ctx context.Context, connCtl, connData net.Conn, verbose bool) error {
 	log.InfoMsg("Enabling raw mode\n")
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
@@ -46,6 +50,8 @@ func PipeWithPTY(ctx context.Context, connCtl, connData net.Conn, verbose bool) 
 	return nil
 }
 
+// syncTerminalSize continuously monitors the local terminal size and sends updates
+// to the remote side via connCtl whenever the size changes.
 func syncTerminalSize(ctx context.Context, connCtl net.Conn) {
 	enc := gob.NewEncoder(connCtl)
 	ticker := time.NewTicker(1 * time.Second)

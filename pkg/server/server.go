@@ -1,3 +1,5 @@
+// Package server provides a network server implementation with support for
+// multiple transport protocols (TCP, WebSocket) and optional TLS encryption.
 package server
 
 import (
@@ -14,7 +16,8 @@ import (
 	"net"
 )
 
-// Server ...
+// Server manages a network listener and handles incoming connections
+// with optional TLS encryption and mutual authentication.
 type Server struct {
 	ctx context.Context
 	cfg *config.Shared
@@ -23,7 +26,9 @@ type Server struct {
 	handle transport.Handler
 }
 
-// New ...
+// New creates a new Server with the given context, configuration, and connection handler.
+// If SSL is enabled in the configuration, connections are wrapped with TLS using generated certificates.
+// If a key is configured, mutual TLS authentication is required.
 func New(ctx context.Context, cfg *config.Shared, handle transport.Handler) (*Server, error) {
 	s := &Server{
 		ctx: ctx,
@@ -57,7 +62,7 @@ func New(ctx context.Context, cfg *config.Shared, handle transport.Handler) (*Se
 	return s, nil
 }
 
-// Close ...
+// Close stops the server's listener if it's running.
 func (s *Server) Close() error {
 	if s.l != nil {
 		return s.l.Close()
@@ -65,7 +70,9 @@ func (s *Server) Close() error {
 	return nil
 }
 
-// Serve ...
+// Serve starts the server and begins accepting connections.
+// The server listens on the configured address using the configured transport protocol.
+// This function blocks until an error occurs or the server is closed.
 func (s *Server) Serve() error {
 	addr := format.Addr(s.cfg.Host, s.cfg.Port)
 
