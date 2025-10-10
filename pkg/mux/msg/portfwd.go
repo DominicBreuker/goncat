@@ -6,7 +6,9 @@ func init() {
 	gob.Register(PortFwd{})
 }
 
-// PortFwd ...
+// PortFwd represents a message configuring port forwarding between local and
+// remote endpoints. The slave receives this message and establishes a connection
+// to the remote host/port while forwarding traffic to/from the local host/port.
 type PortFwd struct {
 	LocalHost string
 	LocalPort int
@@ -15,7 +17,7 @@ type PortFwd struct {
 	RemotePort int
 }
 
-// MsgType ...
+// MsgType returns the message type identifier for PortFwd messages.
 func (m PortFwd) MsgType() string {
 	return "PortFwd"
 }

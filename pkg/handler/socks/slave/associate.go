@@ -170,8 +170,6 @@ func (r *UDPRelay) remoteToLocal() error {
 			}
 		}
 	}
-
-	return nil
 }
 
 // sendToDst sends data to addr:port via UDP
