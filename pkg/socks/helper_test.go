@@ -2,7 +2,6 @@ package socks
 
 import (
 	"bytes"
-	"encoding/binary"
 	"testing"
 )
 
@@ -250,10 +249,4 @@ func TestParseAddrAndPort(t *testing.T) {
 			}
 		})
 	}
-}
-
-func makePortBytes(port uint16) []byte {
-	b := make([]byte, 2)
-	binary.BigEndian.PutUint16(b, port)
-	return b
 }

@@ -186,9 +186,9 @@ func TestMethodSelectionResponse_serialize(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name   string
-		resp   MethodSelectionResponse
-		want   []byte
+		name string
+		resp MethodSelectionResponse
+		want []byte
 	}{
 		{
 			name: "no auth method",
