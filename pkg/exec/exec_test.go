@@ -60,7 +60,7 @@ func TestRun_Echo(t *testing.T) {
 
 	// Run echo command with input
 	conn.readBuf.WriteString("test input\n")
-	
+
 	go func() {
 		// Give some time for the command to start and process
 		time.Sleep(100 * time.Millisecond)
@@ -69,7 +69,7 @@ func TestRun_Echo(t *testing.T) {
 
 	// This will block until cancelled or command completes
 	err := Run(ctx, conn, "echo")
-	
+
 	// We expect either no error or a context cancellation
 	if err != nil && ctx.Err() == nil {
 		t.Errorf("Run() error = %v", err)
