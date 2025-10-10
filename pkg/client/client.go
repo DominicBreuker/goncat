@@ -1,3 +1,5 @@
+// Package client provides functionality for establishing network connections
+// with support for multiple protocols (TCP, WebSocket) and optional TLS encryption.
 package client
 
 import (
@@ -15,7 +17,8 @@ import (
 	"net"
 )
 
-// Client ...
+// Client manages a network connection with support for multiple transport protocols
+// and optional TLS encryption with mutual authentication.
 type Client struct {
 	ctx context.Context
 	cfg *config.Shared
@@ -23,7 +26,7 @@ type Client struct {
 	conn net.Conn
 }
 
-// New ...
+// New creates a new Client with the given context and configuration.
 func New(ctx context.Context, cfg *config.Shared) *Client {
 	return &Client{
 		ctx: ctx,
@@ -31,19 +34,21 @@ func New(ctx context.Context, cfg *config.Shared) *Client {
 	}
 }
 
-// Close ...
+// Close closes the client's network connection and logs the closure.
 func (c *Client) Close() error {
 	log.InfoMsg("Connection to %s closed\n", c.conn.RemoteAddr())
 
 	return c.conn.Close()
 }
 
-// GetConnection ...
+// GetConnection returns the underlying network connection.
 func (c *Client) GetConnection() net.Conn {
 	return c.conn
 }
 
-// Connect ...
+// Connect establishes a connection to the configured remote address.
+// It supports TCP and WebSocket protocols, and optionally upgrades to TLS.
+// The connection is stored in the Client and can be retrieved via GetConnection.
 func (c *Client) Connect() error {
 	addr := format.Addr(c.cfg.Host, c.cfg.Port)
 
@@ -76,6 +81,9 @@ func (c *Client) Connect() error {
 	return nil
 }
 
+// upgradeToTLS wraps the given connection with TLS encryption.
+// If a key is provided, it enables mutual authentication using generated certificates.
+// The function configures TLS 1.3 as the minimum version and sets up TCP keep-alive.
 func upgradeToTLS(conn net.Conn, key string) (net.Conn, error) {
 	setTCPKeepAlive := func(clientHello *tls.ClientHelloInfo) (*tls.Config, error) {
 		if tcpConn, ok := clientHello.Conn.(*net.TCPConn); ok {
