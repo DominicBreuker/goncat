@@ -13,7 +13,7 @@ import (
 // It returns a cleanup function that can be called explicitly to delete the executable,
 // and an error if the executable path cannot be determined.
 //
-// The function registers handlers for SIGINT, SIGKILL, and os.Interrupt signals.
+// The function registers handlers for SIGINT, SIGTERM, and os.Interrupt signals.
 // When any of these signals are received, the executable file is deleted before the program exits.
 //
 // The returned cleanup function can be called explicitly (e.g., with defer) to ensure
@@ -25,7 +25,7 @@ func EnsureDeletion() (func(), error) {
 	}
 
 	sigs := make(chan os.Signal, 1)
-	signal.Notify(sigs, syscall.SIGINT, syscall.SIGKILL, os.Interrupt)
+	signal.Notify(sigs, syscall.SIGINT, syscall.SIGTERM, os.Interrupt)
 
 	go func() {
 		<-sigs

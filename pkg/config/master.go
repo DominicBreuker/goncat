@@ -71,32 +71,32 @@ func (mCfg *Master) Validate() []error {
 
 	for _, lpf := range mCfg.LocalPortForwarding {
 		if lpf.parsingErr != nil {
-			errors = append(errors, fmt.Errorf("Local port forwarding: %s: parsing error: %s", lpf, lpf.parsingErr))
+			errors = append(errors, fmt.Errorf("local port forwarding: %s: parsing error: %s", lpf, lpf.parsingErr))
 			continue
 		}
 
 		for _, err := range lpf.validate() {
-			errors = append(errors, fmt.Errorf("Local port forwarding: %s: %s", lpf, err))
+			errors = append(errors, fmt.Errorf("local port forwarding: %s: %s", lpf, err))
 		}
 	}
 
 	for _, rpf := range mCfg.RemotePortForwarding {
 		if rpf.parsingErr != nil {
-			errors = append(errors, fmt.Errorf("Remote port forwarding: %s: parsing error: %s", rpf, rpf.parsingErr))
+			errors = append(errors, fmt.Errorf("remote port forwarding: %s: parsing error: %s", rpf, rpf.parsingErr))
 			continue
 		}
 
 		for _, err := range rpf.validate() {
-			errors = append(errors, fmt.Errorf("Remote port forwarding: %s: %s", rpf, err))
+			errors = append(errors, fmt.Errorf("remote port forwarding: %s: %s", rpf, err))
 		}
 	}
 
 	if mCfg.IsSocksEnabled() {
 		if mCfg.Socks.parsingErr != nil {
-			errors = append(errors, fmt.Errorf("Socks: %s: parsing error: %s", mCfg.Socks, mCfg.Socks.parsingErr))
+			errors = append(errors, fmt.Errorf("socks: %s: parsing error: %s", mCfg.Socks, mCfg.Socks.parsingErr))
 		} else {
 			for _, err := range mCfg.Socks.validate() {
-				errors = append(errors, fmt.Errorf("SOCKS: %s", err))
+				errors = append(errors, fmt.Errorf("socks: %s", err))
 			}
 		}
 	}
