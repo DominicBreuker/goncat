@@ -44,7 +44,7 @@ func TestNewDialer(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			d, err := NewDialer(tc.addr)
+			d, err := NewDialer(tc.addr, nil)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("NewDialer(%q) error = %v, wantErr %v", tc.addr, err, tc.wantErr)
 			}
@@ -81,7 +81,7 @@ func TestDialer_Dial(t *testing.T) {
 	}()
 
 	// Test dialing
-	d, err := NewDialer(addr)
+	d, err := NewDialer(addr, nil)
 	if err != nil {
 		t.Fatalf("NewDialer() error = %v", err)
 	}
@@ -107,7 +107,7 @@ func TestDialer_Dial_Failure(t *testing.T) {
 	}
 
 	// Try to dial a non-existent server
-	d, err := NewDialer("127.0.0.1:1")
+	d, err := NewDialer("127.0.0.1:1", nil)
 	if err != nil {
 		t.Fatalf("NewDialer() error = %v", err)
 	}

@@ -3,7 +3,10 @@
 // and master/slave specific configurations.
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"net"
+)
 
 // Shared contains configuration settings common to both master and slave modes,
 // including network protocol, connection details, and security settings.
@@ -14,7 +17,23 @@ type Shared struct {
 	SSL      bool
 	Key      string
 	Verbose  bool
+	Deps     *Dependencies
 }
+
+// Dependencies contains injectable dependencies for testing and customization.
+// All fields are optional and will use default implementations if nil.
+type Dependencies struct {
+	TCPDialer   TCPDialerFunc
+	TCPListener TCPListenerFunc
+}
+
+// TCPDialerFunc is a function that dials a TCP connection.
+// It matches the signature of net.DialTCP.
+type TCPDialerFunc func(network string, laddr, raddr *net.TCPAddr) (*net.TCPConn, error)
+
+// TCPListenerFunc is a function that creates a TCP listener.
+// It matches the signature of net.ListenTCP.
+type TCPListenerFunc func(network string, laddr *net.TCPAddr) (*net.TCPListener, error)
 
 // Protocol represents the network protocol type used for communication.
 type Protocol int

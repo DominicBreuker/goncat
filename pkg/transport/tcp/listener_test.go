@@ -41,7 +41,7 @@ func TestNewListener(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			l, err := NewListener(tc.addr)
+			l, err := NewListener(tc.addr, nil)
 			if (err != nil) != tc.wantErr {
 				t.Errorf("NewListener(%q) error = %v, wantErr %v", tc.addr, err, tc.wantErr)
 			}
@@ -61,7 +61,7 @@ func TestListener_Serve(t *testing.T) {
 		t.Skip("skipping network test in short mode")
 	}
 
-	l, err := NewListener("127.0.0.1:0")
+	l, err := NewListener("127.0.0.1:0", nil)
 	if err != nil {
 		t.Fatalf("NewListener() error = %v", err)
 	}
@@ -107,7 +107,7 @@ func TestListener_SingleConnection(t *testing.T) {
 		t.Skip("skipping network test in short mode")
 	}
 
-	l, err := NewListener("127.0.0.1:0")
+	l, err := NewListener("127.0.0.1:0", nil)
 	if err != nil {
 		t.Fatalf("NewListener() error = %v", err)
 	}
@@ -175,7 +175,7 @@ func TestListener_HandlerError(t *testing.T) {
 		t.Skip("skipping network test in short mode")
 	}
 
-	l, err := NewListener("127.0.0.1:0")
+	l, err := NewListener("127.0.0.1:0", nil)
 	if err != nil {
 		t.Fatalf("NewListener() error = %v", err)
 	}
@@ -224,7 +224,7 @@ func TestListener_Close(t *testing.T) {
 		t.Skip("skipping network test in short mode")
 	}
 
-	l, err := NewListener("127.0.0.1:0")
+	l, err := NewListener("127.0.0.1:0", nil)
 	if err != nil {
 		t.Fatalf("NewListener() error = %v", err)
 	}

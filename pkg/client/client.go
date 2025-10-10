@@ -60,7 +60,7 @@ func (c *Client) Connect() error {
 	case config.ProtoWS, config.ProtoWSS:
 		d, err = ws.NewDialer(c.ctx, addr, c.cfg.Protocol), nil
 	default:
-		d, err = tcp.NewDialer(addr)
+		d, err = tcp.NewDialer(addr, c.cfg.Deps)
 	}
 	if err != nil {
 		return fmt.Errorf("NewDialer: %s", err)
