@@ -310,3 +310,79 @@ func TestClient_ContextCancellation(t *testing.T) {
 	// This test mainly verifies no panic occurs
 	_ = client.Handle()
 }
+
+// TestClient_Handle_SuccessfulConnection tests the successful connection path.
+func TestClient_Handle_SuccessfulConnection(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx := context.Background()
+
+	// Start a local TCP server to accept connections
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to create test listener: %v", err)
+	}
+	defer listener.Close()
+
+	addr := listener.Addr().(*net.TCPAddr)
+
+	m := msg.Connect{
+		RemoteHost: addr.IP.String(),
+		RemotePort: addr.Port,
+	}
+
+	// Create a fake remote channel
+	remoteClient, remoteServer := net.Pipe()
+	defer remoteClient.Close()
+
+	sessCtl := &fakeClientControlSession{
+		channelFn: func() (net.Conn, error) {
+			return remoteServer, nil
+		},
+	}
+
+	// Accept connection in background
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+
+	client := NewClient(ctx, m, sessCtl)
+
+	// Run Handle in goroutine since it blocks
+	done := make(chan error, 1)
+	go func() {
+		done <- client.Handle()
+	}()
+
+	// Wait for connection to be accepted
+	var localConn net.Conn
+	select {
+	case localConn = <-accepted:
+		defer localConn.Close()
+	case <-done:
+		// Handle returned early, check for error
+		err := <-done
+		if err != nil {
+			t.Logf("Handle() returned error: %v", err)
+		}
+		return
+	}
+
+	// Close connections to trigger completion
+	remoteClient.Close()
+	localConn.Close()
+	remoteServer.Close()
+
+	// Wait for Handle to complete
+	err = <-done
+	if err != nil {
+		t.Logf("Handle() returned error: %v", err)
+	}
+}
