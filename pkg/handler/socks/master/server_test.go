@@ -132,10 +132,10 @@ func TestHandleRequest_InvalidCommand(t *testing.T) {
 
 	// Write request with unsupported command (BIND)
 	buf.Write([]byte{
-		0x05,       // SOCKS version 5
-		0x02,       // CMD: BIND (not supported)
-		0x00,       // Reserved
-		0x01,       // Address type: IPv4
+		0x05,         // SOCKS version 5
+		0x02,         // CMD: BIND (not supported)
+		0x00,         // Reserved
+		0x01,         // Address type: IPv4
 		127, 0, 0, 1, // IP: 127.0.0.1
 		0x00, 0x50, // Port: 80
 	})
@@ -157,10 +157,10 @@ func TestHandleRequest_ValidConnect(t *testing.T) {
 
 	// Write a valid CONNECT request
 	buf.Write([]byte{
-		0x05,       // SOCKS version 5
-		0x01,       // CMD: CONNECT
-		0x00,       // Reserved
-		0x01,       // Address type: IPv4
+		0x05,           // SOCKS version 5
+		0x01,           // CMD: CONNECT
+		0x00,           // Reserved
+		0x01,           // Address type: IPv4
 		192, 168, 1, 1, // IP: 192.168.1.1
 		0x1F, 0x90, // Port: 8080
 	})
