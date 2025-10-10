@@ -13,7 +13,7 @@ import (
 type Listener struct {
 	nl net.Listener
 
-	rdy bool // wheter we can handle a new connection
+	rdy bool // whether we can handle a new connection
 	mu  sync.Mutex
 }
 

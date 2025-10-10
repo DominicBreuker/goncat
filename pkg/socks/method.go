@@ -23,7 +23,7 @@ type MethodSelectionRequest struct {
 	Methods  []Method
 }
 
-// IsNoAuthRequested returns true iff clients specified that they support connections without authentication
+// IsNoAuthRequested returns true if the client supports connections without authentication.
 func (msr *MethodSelectionRequest) IsNoAuthRequested() bool {
 	for _, m := range msr.Methods {
 		if m == MethodNoAuthenticationRequired {
@@ -34,7 +34,7 @@ func (msr *MethodSelectionRequest) IsNoAuthRequested() bool {
 	return false
 }
 
-// ReadMethodSelectionRequest reads a complete method selection request from r
+// ReadMethodSelectionRequest reads a complete method selection request from r.
 func ReadMethodSelectionRequest(r io.Reader) (*MethodSelectionRequest, error) {
 	var out MethodSelectionRequest
 	var err error
@@ -99,7 +99,7 @@ func (msr MethodSelectionResponse) serialize() []byte {
 	return []byte{msr.Ver, byte(msr.Method)}
 }
 
-// WriteMethodSelectionResponse writes a complete serialized method selection response to w
+// WriteMethodSelectionResponse writes a complete serialized method selection response to w.
 func WriteMethodSelectionResponse(w io.Writer, method Method) error {
 	resp := MethodSelectionResponse{
 		Ver:    VersionSocks5,

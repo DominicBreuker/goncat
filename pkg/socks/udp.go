@@ -17,7 +17,7 @@ import (
 //      | 2  |  1   |  1   | Variable |    2     | Variable |
 //      +----+------+------+----------+----------+----------+
 
-// UDPRequest ...
+// UDPRequest represents a SOCKS5 UDP datagram as defined in RFC 1928 section 7.
 type UDPRequest struct {
 	Frag    byte
 	DstAddr Addr
@@ -29,7 +29,7 @@ func (r *UDPRequest) String() string {
 	return fmt.Sprintf("Datagram[%d|%s:%d|%s]", r.Frag, r.DstAddr, r.DstPort, r.Data) // just for debugging
 }
 
-// ReadUDPDatagram ...
+// ReadUDPDatagram parses a SOCKS5 UDP datagram from the provided byte slice.
 func ReadUDPDatagram(data []byte) (*UDPRequest, error) {
 	var out UDPRequest
 
@@ -73,7 +73,7 @@ func ReadUDPDatagram(data []byte) (*UDPRequest, error) {
 	return &out, nil
 }
 
-// WriteUDPRequestAddrPort writes a UDP Request
+// WriteUDPRequestAddrPort writes a SOCKS5 UDP datagram to the specified address and port.
 func WriteUDPRequestAddrPort(conn *net.UDPConn, ip netip.Addr, port uint16, data []byte) error {
 	var a Addr
 
@@ -100,7 +100,7 @@ func WriteUDPRequestAddrPort(conn *net.UDPConn, ip netip.Addr, port uint16, data
 	return nil
 }
 
-// FRAG ...
+// FRAG is the fragment field value for non-fragmented datagrams.
 const FRAG = byte(0x0)
 
 func (r UDPRequest) serialize() []byte {

@@ -25,7 +25,7 @@ type Request struct {
 	DstPort uint16
 }
 
-// ReadRequest reads a complete SOCKS request from r
+// ReadRequest reads a complete SOCKS request from r.
 func ReadRequest(r io.Reader) (*Request, error) {
 	var out Request
 	var err error
@@ -68,7 +68,7 @@ func ReadRequest(r io.Reader) (*Request, error) {
 	return &out, nil
 }
 
-// DstToUDPAddr is a helper function to turn DstAddr and DstPort into a Go UDP Addr
+// DstToUDPAddr converts the destination address and port into a net.UDPAddr.
 func (r *Request) DstToUDPAddr() (*net.UDPAddr, error) {
 	ip := r.DstAddr.ToNetipAddr()
 	if (ip == netip.Addr{}) {
@@ -98,7 +98,7 @@ func (r *Request) DstToUDPAddr() (*net.UDPAddr, error) {
 //        +----+-----+-------+------+----------+----------+
 
 // Reply is the server's response to the Request.
-// In Rep, the server indicates if the connection is a success, or what kind of error was encountered.,
+// In Rep, the server indicates if the connection is a success, or what kind of error was encountered.
 // It also communicates host and port values, whose meaning depends on the command previously selected by the client.
 type Reply struct {
 	Ver     byte

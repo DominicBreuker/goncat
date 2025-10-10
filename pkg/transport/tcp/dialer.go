@@ -1,4 +1,6 @@
-// Package tcp provides TCP transport implementation for dialers and listeners.
+// Package tcp provides TCP transport implementations.
+// It implements the transport.Dialer and transport.Listener interfaces
+// for TCP network connections.
 package tcp
 
 import (

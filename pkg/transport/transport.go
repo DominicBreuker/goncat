@@ -1,5 +1,7 @@
-// Package transport defines interfaces for network transport abstractions
-// including dialers and listeners for different protocols.
+// Package transport provides abstractions for network transport protocols.
+// It defines common interfaces for establishing connections (Dialer) and
+// accepting incoming connections (Listener) that can be implemented by
+// different transport protocols such as TCP and WebSocket.
 package transport
 
 import "net"

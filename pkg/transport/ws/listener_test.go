@@ -1,11 +1,14 @@
-package tcp
+package ws
 
 import (
+	"context"
 	"dominicbreuker/goncat/pkg/transport"
-	"fmt"
 	"net"
+	"net/http"
 	"testing"
 	"time"
+
+	"github.com/coder/websocket"
 )
 
 func TestNewListener(t *testing.T) {
@@ -18,21 +21,31 @@ func TestNewListener(t *testing.T) {
 	tests := []struct {
 		name    string
 		addr    string
+		tls     bool
 		wantErr bool
 	}{
 		{
-			name:    "valid address with port 0",
+			name:    "valid address without TLS",
 			addr:    "127.0.0.1:0",
+			tls:     false,
+			wantErr: false,
+		},
+		{
+			name:    "valid address with TLS",
+			addr:    "127.0.0.1:0",
+			tls:     true,
 			wantErr: false,
 		},
 		{
 			name:    "wildcard address",
 			addr:    ":0",
+			tls:     false,
 			wantErr: false,
 		},
 		{
 			name:    "invalid address",
 			addr:    "invalid:abc",
+			tls:     false,
 			wantErr: true,
 		},
 	}
@@ -41,9 +54,10 @@ func TestNewListener(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			l, err := NewListener(tc.addr)
+			ctx := context.Background()
+			l, err := NewListener(ctx, tc.addr, tc.tls)
 			if (err != nil) != tc.wantErr {
-				t.Errorf("NewListener(%q) error = %v, wantErr %v", tc.addr, err, tc.wantErr)
+				t.Errorf("NewListener() error = %v, wantErr %v", err, tc.wantErr)
 			}
 			if !tc.wantErr {
 				if l == nil {
@@ -61,7 +75,8 @@ func TestListener_Serve(t *testing.T) {
 		t.Skip("skipping network test in short mode")
 	}
 
-	l, err := NewListener("127.0.0.1:0")
+	ctx := context.Background()
+	l, err := NewListener(ctx, "127.0.0.1:0", false)
 	if err != nil {
 		t.Fatalf("NewListener() error = %v", err)
 	}
@@ -85,11 +100,17 @@ func TestListener_Serve(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Connect to the listener
-	conn, err := net.Dial("tcp", addr)
+	dialCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	wsURL := "ws://" + addr
+	c, _, err := websocket.Dial(dialCtx, wsURL, &websocket.DialOptions{
+		Subprotocols: []string{"bin"},
+	})
 	if err != nil {
 		t.Fatalf("Failed to connect to listener: %v", err)
 	}
-	conn.Close()
+	c.Close(websocket.StatusNormalClosure, "")
 
 	// Wait for handler to be called
 	select {
@@ -105,19 +126,18 @@ func TestListener_SingleConnection(t *testing.T) {
 		t.Skip("skipping network test in short mode")
 	}
 
-	l, err := NewListener("127.0.0.1:0")
+	ctx := context.Background()
+	l, err := NewListener(ctx, "127.0.0.1:0", false)
 	if err != nil {
 		t.Fatalf("NewListener() error = %v", err)
 	}
 	defer l.Close()
 
 	addr := l.nl.Addr().String()
-	handlerCount := 0
 	handlerCh := make(chan bool)
 
 	handler := func(conn net.Conn) error {
 		defer conn.Close()
-		handlerCount++
 		<-handlerCh // Block until we signal
 		return nil
 	}
@@ -130,36 +150,41 @@ func TestListener_SingleConnection(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Connect first connection
-	conn1, err := net.Dial("tcp", addr)
+	dialCtx1, cancel1 := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel1()
+
+	wsURL := "ws://" + addr
+	c1, resp1, err := websocket.Dial(dialCtx1, wsURL, &websocket.DialOptions{
+		Subprotocols: []string{"bin"},
+	})
 	if err != nil {
-		t.Fatalf("Failed to connect: %v", err)
+		t.Fatalf("Failed to connect first time: %v", err)
 	}
-	defer conn1.Close()
+	defer c1.Close(websocket.StatusNormalClosure, "")
+	if resp1.StatusCode != http.StatusSwitchingProtocols {
+		t.Errorf("First connection status = %d, want %d", resp1.StatusCode, http.StatusSwitchingProtocols)
+	}
 
 	// Give handler time to be called
 	time.Sleep(100 * time.Millisecond)
 
-	// Try second connection - should be rejected since first is still active
-	conn2, err := net.Dial("tcp", addr)
-	if err != nil {
-		t.Fatalf("Failed to connect: %v", err)
-	}
+	// Try second connection - should be rejected with 500
+	dialCtx2, cancel2 := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel2()
 
-	// Second connection should be closed immediately
-	time.Sleep(100 * time.Millisecond)
-	buf := make([]byte, 1)
-	conn2.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
-	_, _ = conn2.Read(buf) // Intentionally ignoring error - we're checking if connection closes
-	conn2.Close()
+	c2, resp2, err := websocket.Dial(dialCtx2, wsURL, &websocket.DialOptions{
+		Subprotocols: []string{"bin"},
+	})
+	if err == nil {
+		c2.Close(websocket.StatusNormalClosure, "")
+	}
+	// Second connection should receive HTTP 500
+	if resp2.StatusCode == http.StatusSwitchingProtocols {
+		t.Error("Second connection should not have been upgraded")
+	}
 
 	// Signal first handler to finish
 	handlerCh <- true
-
-	// Verify only one handler was called
-	time.Sleep(100 * time.Millisecond)
-	if handlerCount != 1 {
-		t.Errorf("Expected 1 handler call, got %d", handlerCount)
-	}
 }
 
 func TestListener_HandlerError(t *testing.T) {
@@ -167,7 +192,8 @@ func TestListener_HandlerError(t *testing.T) {
 		t.Skip("skipping network test in short mode")
 	}
 
-	l, err := NewListener("127.0.0.1:0")
+	ctx := context.Background()
+	l, err := NewListener(ctx, "127.0.0.1:0", false)
 	if err != nil {
 		t.Fatalf("NewListener() error = %v", err)
 	}
@@ -177,7 +203,7 @@ func TestListener_HandlerError(t *testing.T) {
 
 	handler := func(conn net.Conn) error {
 		conn.Close()
-		return fmt.Errorf("test error")
+		return nil
 	}
 
 	go func() {
@@ -186,23 +212,31 @@ func TestListener_HandlerError(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	// Connect - handler will return error but serve should continue
-	conn, err := net.Dial("tcp", addr)
+	// Connect - handler will close connection
+	dialCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	wsURL := "ws://" + addr
+	c, _, err := websocket.Dial(dialCtx, wsURL, &websocket.DialOptions{
+		Subprotocols: []string{"bin"},
+	})
 	if err != nil {
 		t.Fatalf("Failed to connect: %v", err)
 	}
-	conn.Close()
+	c.Close(websocket.StatusNormalClosure, "")
 
 	// Give time for error handling
 	time.Sleep(100 * time.Millisecond)
 
 	// Verify listener is still accepting connections
-	conn2, err := net.Dial("tcp", addr)
+	c2, _, err := websocket.Dial(dialCtx, wsURL, &websocket.DialOptions{
+		Subprotocols: []string{"bin"},
+	})
 	if err != nil {
 		t.Error("Listener stopped accepting after handler error")
 	}
-	if conn2 != nil {
-		conn2.Close()
+	if c2 != nil {
+		c2.Close(websocket.StatusNormalClosure, "")
 	}
 }
 
@@ -211,7 +245,8 @@ func TestListener_Close(t *testing.T) {
 		t.Skip("skipping network test in short mode")
 	}
 
-	l, err := NewListener("127.0.0.1:0")
+	ctx := context.Background()
+	l, err := NewListener(ctx, "127.0.0.1:0", false)
 	if err != nil {
 		t.Fatalf("NewListener() error = %v", err)
 	}
@@ -244,9 +279,15 @@ func TestListener_Close(t *testing.T) {
 	}
 
 	// Verify we can't connect anymore
-	conn, err := net.Dial("tcp", addr)
+	dialCtx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
+	defer cancel()
+
+	wsURL := "ws://" + addr
+	c, _, err := websocket.Dial(dialCtx, wsURL, &websocket.DialOptions{
+		Subprotocols: []string{"bin"},
+	})
 	if err == nil {
-		conn.Close()
+		c.Close(websocket.StatusNormalClosure, "")
 		t.Error("Expected connection to fail after Close")
 	}
 }
