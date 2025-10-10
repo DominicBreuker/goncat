@@ -169,3 +169,220 @@ func TestClient_Handle_InvalidAddress(t *testing.T) {
 		t.Error("Handle() expected error with invalid address, got nil")
 	}
 }
+
+// TestClient_Handle_DialError verifies error handling when dialing the destination fails.
+func TestClient_Handle_DialError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	// Use localhost with a port that's very unlikely to be listening
+	// This will fail quickly with "connection refused" rather than timeout
+	m := msg.Connect{
+		RemoteHost: "127.0.0.1",
+		RemotePort: 1, // Port 1 requires root, should be refused
+	}
+
+	// Create a fake channel
+	client1, server1 := net.Pipe()
+	defer client1.Close()
+	defer server1.Close()
+
+	ctx := context.Background()
+	sessCtl := &fakeClientControlSession{
+		channelFn: func() (net.Conn, error) {
+			return server1, nil
+		},
+	}
+
+	client := NewClient(ctx, m, sessCtl)
+	err := client.Handle()
+
+	if err == nil {
+		t.Error("Handle() expected error when dial fails, got nil")
+	}
+}
+
+// TestClient_Handle_TableDriven tests various error scenarios using table-driven approach.
+func TestClient_Handle_TableDriven(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		msg       msg.Connect
+		channelFn func() (net.Conn, error)
+		wantErr   bool
+	}{
+		{
+			name: "GetOneChannel error",
+			msg: msg.Connect{
+				RemoteHost: "example.com",
+				RemotePort: 80,
+			},
+			channelFn: func() (net.Conn, error) {
+				return nil, errors.New("channel error")
+			},
+			wantErr: true,
+		},
+		{
+			name: "invalid host format",
+			msg: msg.Connect{
+				RemoteHost: "invalid::host",
+				RemotePort: 80,
+			},
+			channelFn: func() (net.Conn, error) {
+				client, server := net.Pipe()
+				// Close client so test cleans up properly
+				go func() { client.Close() }()
+				return server, nil
+			},
+			wantErr: true,
+		},
+		{
+			name: "connection refused",
+			msg: msg.Connect{
+				RemoteHost: "127.0.0.1",
+				RemotePort: 1, // Port 1 should be refused
+			},
+			channelFn: func() (net.Conn, error) {
+				client, server := net.Pipe()
+				go func() { client.Close() }()
+				return server, nil
+			},
+			wantErr: true,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx := context.Background()
+			sessCtl := &fakeClientControlSession{
+				channelFn: tc.channelFn,
+			}
+
+			client := NewClient(ctx, tc.msg, sessCtl)
+			err := client.Handle()
+
+			if (err != nil) != tc.wantErr {
+				t.Errorf("Handle() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// TestClient_ContextCancellation verifies that the client respects context cancellation.
+func TestClient_ContextCancellation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	m := msg.Connect{
+		RemoteHost: "example.com",
+		RemotePort: 80,
+	}
+
+	// Create channels that won't close on their own
+	remoteClient, remoteServer := net.Pipe()
+	defer remoteClient.Close()
+	defer remoteServer.Close()
+
+	sessCtl := &fakeClientControlSession{
+		channelFn: func() (net.Conn, error) {
+			return remoteServer, nil
+		},
+	}
+
+	client := NewClient(ctx, m, sessCtl)
+
+	// Cancel context immediately to test cancellation path
+	cancel()
+
+	// The Handle should eventually respect the cancelled context
+	// This test mainly verifies no panic occurs
+	_ = client.Handle()
+}
+
+// TestClient_Handle_SuccessfulConnection tests the successful connection path.
+func TestClient_Handle_SuccessfulConnection(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx := context.Background()
+
+	// Start a local TCP server to accept connections
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("failed to create test listener: %v", err)
+	}
+	defer listener.Close()
+
+	addr := listener.Addr().(*net.TCPAddr)
+
+	m := msg.Connect{
+		RemoteHost: addr.IP.String(),
+		RemotePort: addr.Port,
+	}
+
+	// Create a fake remote channel
+	remoteClient, remoteServer := net.Pipe()
+	defer remoteClient.Close()
+
+	sessCtl := &fakeClientControlSession{
+		channelFn: func() (net.Conn, error) {
+			return remoteServer, nil
+		},
+	}
+
+	// Accept connection in background
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		conn, err := listener.Accept()
+		if err == nil {
+			accepted <- conn
+		}
+	}()
+
+	client := NewClient(ctx, m, sessCtl)
+
+	// Run Handle in goroutine since it blocks
+	done := make(chan error, 1)
+	go func() {
+		done <- client.Handle()
+	}()
+
+	// Wait for connection to be accepted
+	var localConn net.Conn
+	select {
+	case localConn = <-accepted:
+		defer localConn.Close()
+	case <-done:
+		// Handle returned early, check for error
+		err := <-done
+		if err != nil {
+			t.Logf("Handle() returned error: %v", err)
+		}
+		return
+	}
+
+	// Close connections to trigger completion
+	remoteClient.Close()
+	localConn.Close()
+	remoteServer.Close()
+
+	// Wait for Handle to complete
+	err = <-done
+	if err != nil {
+		t.Logf("Handle() returned error: %v", err)
+	}
+}

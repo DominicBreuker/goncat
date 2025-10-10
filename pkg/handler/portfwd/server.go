@@ -36,6 +36,7 @@ type ServerControlSession interface {
 	SendAndGetOneChannel(m msg.Message) (net.Conn, error)
 }
 
+// String returns a human-readable string representation of the port forwarding configuration.
 func (cfg Config) String() string {
 	return fmt.Sprintf("PortForwarding[%s:%d -> %s:%d]", cfg.LocalHost, cfg.LocalPort, cfg.RemoteHost, cfg.RemotePort)
 }
