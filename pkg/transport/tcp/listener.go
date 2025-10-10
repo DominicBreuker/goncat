@@ -26,7 +26,10 @@ func NewListener(addr string, deps *config.Dependencies) (*Listener, error) {
 		return nil, fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %s", addr, err)
 	}
 
-	listenerFn := net.ListenTCP
+	// Default listener wraps net.ListenTCP to match the interface
+	listenerFn := config.TCPListenerFunc(func(network string, laddr *net.TCPAddr) (net.Listener, error) {
+		return net.ListenTCP(network, laddr)
+	})
 	if deps != nil && deps.TCPListener != nil {
 		listenerFn = deps.TCPListener
 	}

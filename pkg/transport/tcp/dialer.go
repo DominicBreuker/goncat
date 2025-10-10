@@ -23,7 +23,10 @@ func NewDialer(addr string, deps *config.Dependencies) (*Dialer, error) {
 		return nil, fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %s", addr, err)
 	}
 
-	dialerFn := net.DialTCP
+	// Default dialer wraps net.DialTCP to match the interface
+	dialerFn := config.TCPDialerFunc(func(network string, laddr, raddr *net.TCPAddr) (net.Conn, error) {
+		return net.DialTCP(network, laddr, raddr)
+	})
 	if deps != nil && deps.TCPDialer != nil {
 		dialerFn = deps.TCPDialer
 	}
@@ -41,6 +44,9 @@ func (d *Dialer) Dial() (net.Conn, error) {
 		return nil, fmt.Errorf("net.DialTCP(tcp, %s): %s", d.tcpAddr.String(), err)
 	}
 
-	conn.SetKeepAlive(true)
+	// Try to enable keep-alive if it's a TCP connection
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		tcpConn.SetKeepAlive(true)
+	}
 	return conn, nil
 }
