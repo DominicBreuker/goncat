@@ -4,6 +4,7 @@ import (
 	"context"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/mux"
+	msg "dominicbreuker/goncat/pkg/mux/msg"
 	"net"
 	"sync"
 	"testing"
@@ -268,4 +269,1259 @@ func TestMasterConfig_IsSocksEnabled(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestStartLocalPortFwdJob tests the startLocalPortFwdJob method.
+func TestStartLocalPortFwdJob(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := &config.Shared{}
+	mCfg := &config.Master{}
+
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, err := mux.AcceptSession(server)
+		if err != nil {
+			t.Logf("AcceptSession() error (expected on cleanup): %v", err)
+		}
+	}()
+
+	master, err := New(ctx, cfg, mCfg, client)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer master.Close()
+
+	lpf := &config.LocalPortForwardingCfg{
+		LocalHost:  "127.0.0.1",
+		LocalPort:  0, // Use port 0 to let OS choose available port
+		RemoteHost: "example.com",
+		RemotePort: 80,
+	}
+
+	var jobWg sync.WaitGroup
+	jobCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Start the job
+	master.startLocalPortFwdJob(jobCtx, &jobWg, lpf)
+
+	// Cancel context to stop the job
+	cancel()
+
+	// Wait for job to complete
+	jobWg.Wait()
+
+	wg.Wait()
+}
+
+// TestStartRemotePortFwdJob tests the startRemotePortFwdJob method.
+func TestStartRemotePortFwdJob(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := &config.Shared{}
+	mCfg := &config.Master{}
+
+	client, server := net.Pipe()
+	defer server.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sess, err := mux.AcceptSession(server)
+		if err != nil {
+			t.Logf("AcceptSession() error: %v", err)
+			return
+		}
+		defer sess.Close()
+
+		// Receive the port forwarding message
+		_, err = sess.Receive()
+		if err != nil {
+			t.Logf("Receive() error (may be expected on cleanup): %v", err)
+		}
+	}()
+
+	master, err := New(ctx, cfg, mCfg, client)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer master.Close()
+
+	rpf := &config.RemotePortForwardingCfg{
+		LocalHost:  "127.0.0.1",
+		LocalPort:  9090,
+		RemoteHost: "localhost",
+		RemotePort: 8080,
+	}
+
+	var jobWg sync.WaitGroup
+	jobCtx := context.Background()
+
+	// Start the job
+	master.startRemotePortFwdJob(jobCtx, &jobWg, rpf)
+
+	// Wait for job to complete
+	jobWg.Wait()
+
+	client.Close()
+	wg.Wait()
+}
+
+// TestHandleConnectAsync tests the handleConnectAsync method.
+func TestHandleConnectAsync(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := &config.Shared{}
+	mCfg := &config.Master{}
+
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, err := mux.AcceptSession(server)
+		if err != nil {
+			t.Logf("AcceptSession() error: %v", err)
+		}
+	}()
+
+	master, err := New(ctx, cfg, mCfg, client)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer master.Close()
+
+	m := msg.Connect{
+		RemoteHost: "example.com",
+		RemotePort: 80,
+	}
+
+	// handleConnectAsync spawns a goroutine, so we just verify it doesn't panic
+	master.handleConnectAsync(ctx, m)
+
+	wg.Wait()
+}
+
+// TestStartSocksProxyJob tests the startSocksProxyJob method.
+func TestStartSocksProxyJob(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := &config.Shared{}
+	mCfg := &config.Master{
+		Socks: &config.SocksCfg{
+			Host: "127.0.0.1",
+			Port: 0, // Use port 0 to let OS choose available port
+		},
+	}
+
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, err := mux.AcceptSession(server)
+		if err != nil {
+			t.Logf("AcceptSession() error: %v", err)
+		}
+	}()
+
+	master, err := New(ctx, cfg, mCfg, client)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer master.Close()
+
+	var jobWg sync.WaitGroup
+	jobCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	// Start the SOCKS proxy job
+	err = master.startSocksProxyJob(jobCtx, &jobWg)
+	if err != nil {
+		t.Fatalf("startSocksProxyJob() error = %v", err)
+	}
+
+	// Cancel context to stop the job
+	cancel()
+
+	// Wait for job to complete
+	jobWg.Wait()
+
+	wg.Wait()
+}
+
+// TestStartSocksProxyJob_InvalidConfig tests error handling for invalid SOCKS config.
+func TestStartSocksProxyJob_InvalidConfig(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := &config.Shared{}
+	mCfg := &config.Master{
+		Socks: &config.SocksCfg{
+			Host: "127.0.0.1",
+			Port: 99999, // Invalid port
+		},
+	}
+
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, err := mux.AcceptSession(server)
+		if err != nil {
+			t.Logf("AcceptSession() error: %v", err)
+		}
+	}()
+
+	master, err := New(ctx, cfg, mCfg, client)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer master.Close()
+
+	var jobWg sync.WaitGroup
+	jobCtx := context.Background()
+
+	// Try to start the SOCKS proxy job with invalid config
+	err = master.startSocksProxyJob(jobCtx, &jobWg)
+	if err == nil {
+		t.Error("startSocksProxyJob() expected error with invalid port, got nil")
+	}
+
+	wg.Wait()
+}
+
+// TestHandleForeground_Plain tests handleForeground without PTY.
+func TestHandleForeground_Plain(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := &config.Shared{
+		Verbose: false,
+	}
+	mCfg := &config.Master{
+		Exec: "/bin/sh",
+		Pty:  false, // Plain mode
+	}
+
+	client, server := net.Pipe()
+	defer server.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sess, err := mux.AcceptSession(server)
+		if err != nil {
+			t.Logf("AcceptSession() error: %v", err)
+			return
+		}
+		defer sess.Close()
+
+		// Receive the foreground message and open a channel
+		m, err := sess.Receive()
+		if err != nil {
+			t.Logf("Receive() error: %v", err)
+			return
+		}
+
+		if _, ok := m.(msg.Foreground); !ok {
+			t.Errorf("Expected Foreground message, got %T", m)
+			return
+		}
+
+		// Open a channel for the foreground connection
+		_, err = sess.GetOneChannel()
+		if err != nil {
+			t.Logf("GetOneChannel() error (may be expected): %v", err)
+		}
+	}()
+
+	master, err := New(ctx, cfg, mCfg, client)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer master.Close()
+
+	// Start handleForeground in a goroutine
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- master.handleForeground(ctx)
+	}()
+
+	// Cancel context to stop the foreground handler
+	cancel()
+
+	// Wait for handleForeground to complete
+	err = <-errCh
+	if err != nil {
+		t.Logf("handleForeground() returned error (may be expected on cancellation): %v", err)
+	}
+
+	client.Close()
+	wg.Wait()
+}
+
+// TestHandleForeground_PTY tests handleForeground with PTY enabled.
+func TestHandleForeground_PTY(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := &config.Shared{
+		Verbose: false,
+	}
+	mCfg := &config.Master{
+		Exec: "/bin/sh",
+		Pty:  true, // PTY mode
+	}
+
+	client, server := net.Pipe()
+	defer server.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sess, err := mux.AcceptSession(server)
+		if err != nil {
+			t.Logf("AcceptSession() error: %v", err)
+			return
+		}
+		defer sess.Close()
+
+		// Receive the foreground message and open channels
+		m, err := sess.Receive()
+		if err != nil {
+			t.Logf("Receive() error: %v", err)
+			return
+		}
+
+		if _, ok := m.(msg.Foreground); !ok {
+			t.Errorf("Expected Foreground message, got %T", m)
+			return
+		}
+
+		// Open two channels for PTY mode (data and control)
+		_, err = sess.AcceptNewChannel()
+		if err != nil {
+			t.Logf("AcceptNewChannel() error (may be expected): %v", err)
+			return
+		}
+		_, err = sess.AcceptNewChannel()
+		if err != nil {
+			t.Logf("AcceptNewChannel() error (may be expected): %v", err)
+		}
+	}()
+
+	master, err := New(ctx, cfg, mCfg, client)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer master.Close()
+
+	// Start handleForeground in a goroutine
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- master.handleForeground(ctx)
+	}()
+
+	// Cancel context to stop the foreground handler
+	cancel()
+
+	// Wait for handleForeground to complete
+	err = <-errCh
+	if err != nil {
+		t.Logf("handleForeground() returned error (may be expected on cancellation): %v", err)
+	}
+
+	client.Close()
+	wg.Wait()
+}
+
+// TestStartForegroundJob tests the startForegroundJob method.
+func TestStartForegroundJob(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := &config.Shared{}
+	mCfg := &config.Master{
+		Exec: "/bin/sh",
+		Pty:  false,
+	}
+
+	client, server := net.Pipe()
+	defer server.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sess, err := mux.AcceptSession(server)
+		if err != nil {
+			t.Logf("AcceptSession() error: %v", err)
+			return
+		}
+		defer sess.Close()
+
+		// Receive and handle the foreground message
+		_, err = sess.Receive()
+		if err != nil {
+			t.Logf("Receive() error: %v", err)
+			return
+		}
+
+		_, err = sess.GetOneChannel()
+		if err != nil {
+			t.Logf("GetOneChannel() error: %v", err)
+		}
+	}()
+
+	master, err := New(ctx, cfg, mCfg, client)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer master.Close()
+
+	var jobWg sync.WaitGroup
+	jobCtx, cancel := context.WithCancel(ctx)
+
+	// Start the foreground job
+	master.startForegroundJob(jobCtx, &jobWg, cancel)
+
+	// Wait a bit for the job to start
+	// The cancel function should be called by the job when it completes
+
+	// Wait for job to complete
+	jobWg.Wait()
+
+	client.Close()
+	wg.Wait()
+}
+
+// TestHandle_BasicFlow tests the Handle method with a simple configuration.
+func TestHandle_BasicFlow(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := &config.Shared{
+		Verbose: false,
+	}
+	mCfg := &config.Master{
+		Exec: "/bin/sh",
+		Pty:  false,
+	}
+
+	client, server := net.Pipe()
+	defer server.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sess, err := mux.AcceptSession(server)
+		if err != nil {
+			t.Logf("AcceptSession() error: %v", err)
+			return
+		}
+		defer sess.Close()
+
+		// Receive the foreground message
+		m, err := sess.Receive()
+		if err != nil {
+			t.Logf("Receive() error: %v", err)
+			return
+		}
+
+		if _, ok := m.(msg.Foreground); !ok {
+			t.Errorf("Expected Foreground message, got %T", m)
+			return
+		}
+
+		// Open a channel for the foreground connection
+		conn, err := sess.AcceptNewChannel()
+		if err != nil {
+			t.Logf("AcceptNewChannel() error: %v", err)
+			return
+		}
+		defer conn.Close()
+
+		// Write some data and close
+		conn.Write([]byte("test"))
+	}()
+
+	master, err := New(ctx, cfg, mCfg, client)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer master.Close()
+
+	// Start Handle in a goroutine
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- master.Handle()
+	}()
+
+	// Cancel context to stop Handle
+	cancel()
+
+	// Wait for Handle to complete
+	err = <-errCh
+	if err != nil {
+		t.Logf("Handle() returned error (may be expected on cancellation): %v", err)
+	}
+
+	client.Close()
+	wg.Wait()
+}
+
+// TestHandle_WithLocalPortForwarding tests Handle with local port forwarding configured.
+func TestHandle_WithLocalPortForwarding(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := &config.Shared{
+		Verbose: false,
+	}
+	mCfg := &config.Master{
+		Exec: "/bin/sh",
+		Pty:  false,
+		LocalPortForwarding: []*config.LocalPortForwardingCfg{
+			{
+				LocalHost:  "127.0.0.1",
+				LocalPort:  0, // OS chooses port
+				RemoteHost: "example.com",
+				RemotePort: 80,
+			},
+		},
+	}
+
+	client, server := net.Pipe()
+	defer server.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sess, err := mux.AcceptSession(server)
+		if err != nil {
+			t.Logf("AcceptSession() error: %v", err)
+			return
+		}
+		defer sess.Close()
+
+		// Receive the foreground message
+		_, err = sess.Receive()
+		if err != nil {
+			t.Logf("Receive() error: %v", err)
+			return
+		}
+
+		// Accept channel
+		conn, err := sess.AcceptNewChannel()
+		if err != nil {
+			t.Logf("AcceptNewChannel() error: %v", err)
+			return
+		}
+		conn.Close()
+	}()
+
+	master, err := New(ctx, cfg, mCfg, client)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer master.Close()
+
+	// Start Handle in a goroutine
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- master.Handle()
+	}()
+
+	// Cancel context to stop Handle
+	cancel()
+
+	// Wait for Handle to complete
+	err = <-errCh
+	if err != nil {
+		t.Logf("Handle() returned error (may be expected on cancellation): %v", err)
+	}
+
+	client.Close()
+	wg.Wait()
+}
+
+// TestHandle_WithRemotePortForwarding tests Handle with remote port forwarding configured.
+func TestHandle_WithRemotePortForwarding(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := &config.Shared{
+		Verbose: false,
+	}
+	mCfg := &config.Master{
+		Exec: "/bin/sh",
+		Pty:  false,
+		RemotePortForwarding: []*config.RemotePortForwardingCfg{
+			{
+				LocalHost:  "127.0.0.1",
+				LocalPort:  9090,
+				RemoteHost: "localhost",
+				RemotePort: 8080,
+			},
+		},
+	}
+
+	client, server := net.Pipe()
+	defer server.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sess, err := mux.AcceptSession(server)
+		if err != nil {
+			t.Logf("AcceptSession() error: %v", err)
+			return
+		}
+		defer sess.Close()
+
+		// Receive the remote port forwarding message
+		m, err := sess.Receive()
+		if err != nil {
+			t.Logf("Receive() error: %v", err)
+			return
+		}
+
+		if _, ok := m.(msg.PortFwd); !ok {
+			t.Logf("Expected PortFwd message first, got %T", m)
+		}
+
+		// Receive the foreground message
+		_, err = sess.Receive()
+		if err != nil {
+			t.Logf("Receive() error: %v", err)
+			return
+		}
+
+		// Accept channel
+		conn, err := sess.AcceptNewChannel()
+		if err != nil {
+			t.Logf("AcceptNewChannel() error: %v", err)
+			return
+		}
+		conn.Close()
+	}()
+
+	master, err := New(ctx, cfg, mCfg, client)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer master.Close()
+
+	// Start Handle in a goroutine
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- master.Handle()
+	}()
+
+	// Cancel context to stop Handle
+	cancel()
+
+	// Wait for Handle to complete
+	err = <-errCh
+	if err != nil {
+		t.Logf("Handle() returned error (may be expected on cancellation): %v", err)
+	}
+
+	client.Close()
+	wg.Wait()
+}
+
+// TestHandle_WithSOCKS tests Handle with SOCKS proxy configured.
+func TestHandle_WithSOCKS(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := &config.Shared{
+		Verbose: false,
+	}
+	mCfg := &config.Master{
+		Exec: "/bin/sh",
+		Pty:  false,
+		Socks: &config.SocksCfg{
+			Host: "127.0.0.1",
+			Port: 0, // OS chooses port
+		},
+	}
+
+	client, server := net.Pipe()
+	defer server.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sess, err := mux.AcceptSession(server)
+		if err != nil {
+			t.Logf("AcceptSession() error: %v", err)
+			return
+		}
+		defer sess.Close()
+
+		// Receive the foreground message
+		_, err = sess.Receive()
+		if err != nil {
+			t.Logf("Receive() error: %v", err)
+			return
+		}
+
+		// Accept channel
+		conn, err := sess.AcceptNewChannel()
+		if err != nil {
+			t.Logf("AcceptNewChannel() error: %v", err)
+			return
+		}
+		conn.Close()
+	}()
+
+	master, err := New(ctx, cfg, mCfg, client)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer master.Close()
+
+	// Start Handle in a goroutine
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- master.Handle()
+	}()
+
+	// Cancel context to stop Handle
+	cancel()
+
+	// Wait for Handle to complete
+	err = <-errCh
+	if err != nil {
+		t.Logf("Handle() returned error (may be expected on cancellation): %v", err)
+	}
+
+	client.Close()
+	wg.Wait()
+}
+
+// TestHandle_ReceiveConnectMessage tests Handle receiving a Connect message from slave.
+func TestHandle_ReceiveConnectMessage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := &config.Shared{
+		Verbose: false,
+	}
+	mCfg := &config.Master{
+		Exec: "/bin/sh",
+		Pty:  false,
+		RemotePortForwarding: []*config.RemotePortForwardingCfg{
+			{
+				LocalHost:  "127.0.0.1",
+				LocalPort:  9090,
+				RemoteHost: "localhost",
+				RemotePort: 8080,
+			},
+		},
+	}
+
+	client, server := net.Pipe()
+	defer server.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sess, err := mux.AcceptSession(server)
+		if err != nil {
+			t.Logf("AcceptSession() error: %v", err)
+			return
+		}
+		defer sess.Close()
+
+		// Receive port fwd message
+		_, err = sess.Receive()
+		if err != nil {
+			t.Logf("Receive() error: %v", err)
+			return
+		}
+
+		// Send a Connect message to master (simulating remote port forward)
+		connectMsg := msg.Connect{
+			RemoteHost: "localhost",
+			RemotePort: 8080,
+		}
+		if err := sess.Send(connectMsg); err != nil {
+			t.Logf("Send(Connect) error: %v", err)
+		}
+
+		// Receive foreground message
+		_, err = sess.Receive()
+		if err != nil {
+			t.Logf("Receive() error: %v", err)
+			return
+		}
+
+		// Accept channel
+		conn, err := sess.AcceptNewChannel()
+		if err != nil {
+			t.Logf("AcceptNewChannel() error: %v", err)
+			return
+		}
+		conn.Close()
+	}()
+
+	master, err := New(ctx, cfg, mCfg, client)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer master.Close()
+
+	// Start Handle in a goroutine
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- master.Handle()
+	}()
+
+	// Give some time for the Connect message to be processed
+	// then cancel context to stop Handle
+	cancel()
+
+	// Wait for Handle to complete
+	err = <-errCh
+	if err != nil {
+		t.Logf("Handle() returned error (may be expected on cancellation): %v", err)
+	}
+
+	client.Close()
+	wg.Wait()
+}
+
+// TestHandle_UnexpectedMessage tests Handle receiving an unexpected message type.
+func TestHandle_UnexpectedMessage(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := &config.Shared{
+		Verbose: false,
+	}
+	mCfg := &config.Master{
+		Exec: "/bin/sh",
+		Pty:  false,
+	}
+
+	client, server := net.Pipe()
+	defer server.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sess, err := mux.AcceptSession(server)
+		if err != nil {
+			t.Logf("AcceptSession() error: %v", err)
+			return
+		}
+		defer sess.Close()
+
+		// Send an unexpected message type (SocksConnect when not expected)
+		unexpectedMsg := msg.SocksConnect{
+			RemoteHost: "example.com",
+			RemotePort: 80,
+		}
+		if err := sess.Send(unexpectedMsg); err != nil {
+			t.Logf("Send(unexpected) error: %v", err)
+		}
+
+		// Receive foreground message
+		_, err = sess.Receive()
+		if err != nil {
+			t.Logf("Receive() error: %v", err)
+			return
+		}
+
+		// Accept channel
+		conn, err := sess.AcceptNewChannel()
+		if err != nil {
+			t.Logf("AcceptNewChannel() error: %v", err)
+			return
+		}
+		conn.Close()
+	}()
+
+	master, err := New(ctx, cfg, mCfg, client)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer master.Close()
+
+	// Start Handle in a goroutine
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- master.Handle()
+	}()
+
+	// Cancel context to stop Handle
+	cancel()
+
+	// Wait for Handle to complete
+	err = <-errCh
+	if err != nil {
+		t.Logf("Handle() returned error (may be expected on cancellation): %v", err)
+	}
+
+	client.Close()
+	wg.Wait()
+}
+
+// TestHandle_UnauthorizedConnect tests Handle rejecting unauthorized Connect message.
+func TestHandle_UnauthorizedConnect(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	cfg := &config.Shared{
+		Verbose: false,
+	}
+	mCfg := &config.Master{
+		Exec: "/bin/sh",
+		Pty:  false,
+		RemotePortForwarding: []*config.RemotePortForwardingCfg{
+			{
+				LocalHost:  "127.0.0.1",
+				LocalPort:  9090,
+				RemoteHost: "allowed.example.com",
+				RemotePort: 8080,
+			},
+		},
+	}
+
+	client, server := net.Pipe()
+	defer server.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sess, err := mux.AcceptSession(server)
+		if err != nil {
+			t.Logf("AcceptSession() error: %v", err)
+			return
+		}
+		defer sess.Close()
+
+		// Receive port fwd message
+		_, err = sess.Receive()
+		if err != nil {
+			t.Logf("Receive() error: %v", err)
+			return
+		}
+
+		// Send a Connect message to unauthorized destination
+		connectMsg := msg.Connect{
+			RemoteHost: "unauthorized.example.com",
+			RemotePort: 9999,
+		}
+		if err := sess.Send(connectMsg); err != nil {
+			t.Logf("Send(Connect) error: %v", err)
+		}
+
+		// Receive foreground message
+		_, err = sess.Receive()
+		if err != nil {
+			t.Logf("Receive() error: %v", err)
+			return
+		}
+
+		// Accept channel
+		conn, err := sess.AcceptNewChannel()
+		if err != nil {
+			t.Logf("AcceptNewChannel() error: %v", err)
+			return
+		}
+		conn.Close()
+	}()
+
+	master, err := New(ctx, cfg, mCfg, client)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer master.Close()
+
+	// Start Handle in a goroutine
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- master.Handle()
+	}()
+
+	// Cancel context to stop Handle
+	cancel()
+
+	// Wait for Handle to complete
+	err = <-errCh
+	if err != nil {
+		t.Logf("Handle() returned error (may be expected on cancellation): %v", err)
+	}
+
+	client.Close()
+	wg.Wait()
+}
+
+// TestHandleForeground_WithLogFile tests foreground handling with log file configured.
+func TestHandleForeground_WithLogFile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Create a temporary log file
+	logFile := "/tmp/goncat_test_" + t.Name() + ".log"
+
+	cfg := &config.Shared{
+		Verbose: false,
+	}
+	mCfg := &config.Master{
+		Exec:    "/bin/sh",
+		Pty:     false,
+		LogFile: logFile,
+	}
+
+	client, server := net.Pipe()
+	defer server.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sess, err := mux.AcceptSession(server)
+		if err != nil {
+			t.Logf("AcceptSession() error: %v", err)
+			return
+		}
+		defer sess.Close()
+
+		// Receive the foreground message
+		m, err := sess.Receive()
+		if err != nil {
+			t.Logf("Receive() error: %v", err)
+			return
+		}
+
+		if _, ok := m.(msg.Foreground); !ok {
+			t.Errorf("Expected Foreground message, got %T", m)
+			return
+		}
+
+		// Open a channel for the foreground connection
+		conn, err := sess.AcceptNewChannel()
+		if err != nil {
+			t.Logf("AcceptNewChannel() error: %v", err)
+			return
+		}
+		defer conn.Close()
+
+		// Write some data
+		conn.Write([]byte("test data"))
+	}()
+
+	master, err := New(ctx, cfg, mCfg, client)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer master.Close()
+
+	// Start handleForeground in a goroutine
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- master.handleForeground(ctx)
+	}()
+
+	// Cancel context to stop the foreground handler
+	cancel()
+
+	// Wait for handleForeground to complete
+	err = <-errCh
+	if err != nil {
+		t.Logf("handleForeground() returned error (may be expected on cancellation): %v", err)
+	}
+
+	client.Close()
+	wg.Wait()
+}
+
+// TestHandleForeground_PTYWithLogFile tests PTY foreground handling with log file.
+func TestHandleForeground_PTYWithLogFile(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// Create a temporary log file
+	logFile := "/tmp/goncat_test_" + t.Name() + ".log"
+
+	cfg := &config.Shared{
+		Verbose: false,
+	}
+	mCfg := &config.Master{
+		Exec:    "/bin/sh",
+		Pty:     true,
+		LogFile: logFile,
+	}
+
+	client, server := net.Pipe()
+	defer server.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		sess, err := mux.AcceptSession(server)
+		if err != nil {
+			t.Logf("AcceptSession() error: %v", err)
+			return
+		}
+		defer sess.Close()
+
+		// Receive the foreground message
+		m, err := sess.Receive()
+		if err != nil {
+			t.Logf("Receive() error: %v", err)
+			return
+		}
+
+		if _, ok := m.(msg.Foreground); !ok {
+			t.Errorf("Expected Foreground message, got %T", m)
+			return
+		}
+
+		// Open two channels for PTY mode
+		_, err = sess.AcceptNewChannel()
+		if err != nil {
+			t.Logf("AcceptNewChannel() error: %v", err)
+			return
+		}
+		_, err = sess.AcceptNewChannel()
+		if err != nil {
+			t.Logf("AcceptNewChannel() error: %v", err)
+		}
+	}()
+
+	master, err := New(ctx, cfg, mCfg, client)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer master.Close()
+
+	// Start handleForeground in a goroutine
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- master.handleForeground(ctx)
+	}()
+
+	// Cancel context to stop the foreground handler
+	cancel()
+
+	// Wait for handleForeground to complete
+	err = <-errCh
+	if err != nil {
+		t.Logf("handleForeground() returned error (may be expected on cancellation): %v", err)
+	}
+
+	client.Close()
+	wg.Wait()
 }

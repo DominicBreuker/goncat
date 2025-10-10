@@ -9,10 +9,10 @@ import (
 	"sync"
 )
 
-// startLocalPortFwdJobJob starts a local port forwarding job in a goroutine.
+// startLocalPortFwdJob starts a local port forwarding job in a goroutine.
 // It sets up a server to accept connections on the local port and forwards them
 // to the remote destination through the multiplexed session.
-func (mst *Master) startLocalPortFwdJobJob(ctx context.Context, wg *sync.WaitGroup, lpf *config.LocalPortForwardingCfg) {
+func (mst *Master) startLocalPortFwdJob(ctx context.Context, wg *sync.WaitGroup, lpf *config.LocalPortForwardingCfg) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -30,10 +30,10 @@ func (mst *Master) startLocalPortFwdJobJob(ctx context.Context, wg *sync.WaitGro
 	}()
 }
 
-// startRemotePortFwdJobJob starts a remote port forwarding job in a goroutine.
+// startRemotePortFwdJob starts a remote port forwarding job in a goroutine.
 // It sends a port forwarding message to the slave, instructing it to listen
 // on the remote port and forward connections back to the master.
-func (mst *Master) startRemotePortFwdJobJob(ctx context.Context, wg *sync.WaitGroup, rpf *config.RemotePortForwardingCfg) {
+func (mst *Master) startRemotePortFwdJob(ctx context.Context, wg *sync.WaitGroup, rpf *config.RemotePortForwardingCfg) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
