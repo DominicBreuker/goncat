@@ -290,6 +290,7 @@ func TestSlaveSession_AcceptNewChannel(t *testing.T) {
 	defer client.Close()
 	defer server.Close()
 
+	done := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -301,14 +302,23 @@ func TestSlaveSession_AcceptNewChannel(t *testing.T) {
 		}
 		defer master.Close()
 
-		// Open multiple channels
+		// Open multiple channels and keep them open until slave accepts them
+		var conns []net.Conn
 		for i := 0; i < 3; i++ {
 			conn, err := master.openNewChannel()
 			if err != nil {
 				t.Errorf("master.openNewChannel() %d failed: %v", i, err)
 				return
 			}
-			defer conn.Close()
+			conns = append(conns, conn)
+		}
+
+		// Wait for slave to signal it's done accepting channels
+		<-done
+
+		// Now close all channels
+		for _, conn := range conns {
+			conn.Close()
 		}
 	}()
 
@@ -316,6 +326,7 @@ func TestSlaveSession_AcceptNewChannel(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AcceptSession() failed: %v", err)
 	}
+	defer slave.Close()
 
 	// Accept multiple channels
 	for i := 0; i < 3; i++ {
@@ -326,8 +337,10 @@ func TestSlaveSession_AcceptNewChannel(t *testing.T) {
 		conn.Close()
 	}
 
+	// Signal that we're done accepting channels
+	close(done)
+
 	wg.Wait()
-	slave.Close()
 }
 
 // TestSlaveSession_ConcurrentReceives verifies that concurrent receives work correctly.
@@ -339,6 +352,7 @@ func TestSlaveSession_ConcurrentReceives(t *testing.T) {
 	defer server.Close()
 
 	messageCount := 10
+	done := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -358,6 +372,9 @@ func TestSlaveSession_ConcurrentReceives(t *testing.T) {
 				return
 			}
 		}
+
+		// Wait for slave to finish receiving messages before closing
+		<-done
 	}()
 
 	slave, err := AcceptSession(server)
@@ -379,6 +396,9 @@ func TestSlaveSession_ConcurrentReceives(t *testing.T) {
 	if receivedCount != messageCount {
 		t.Errorf("received %d messages; want %d", receivedCount, messageCount)
 	}
+
+	// Signal we're done before waiting
+	close(done)
 
 	wg.Wait()
 }
