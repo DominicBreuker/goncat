@@ -130,16 +130,11 @@ func (l *mockTCPListener) Addr() net.Addr {
 	return l.addr
 }
 
-
-
-
-
 // mockTCPConn is a mock implementation of net.TCPConn.
 type mockTCPConn struct {
 	net.Conn
 	localAddr  *net.TCPAddr
 	remoteAddr *net.TCPAddr
-	keepAlive  bool
 }
 
 // LocalAddr returns the local network address.
@@ -157,8 +152,6 @@ func (c *mockTCPConn) RemoteAddr() net.Addr {
 	}
 	return c.Conn.RemoteAddr()
 }
-
-
 
 var _ net.Listener = (*mockTCPListener)(nil)
 var _ net.Conn = (*mockTCPConn)(nil)

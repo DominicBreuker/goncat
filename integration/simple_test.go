@@ -59,7 +59,7 @@ func TestSlaveConnectToMasterListen(t *testing.T) {
 	// Master handler that receives data and echoes it back
 	masterHandler := func(conn net.Conn) error {
 		defer conn.Close()
-		
+
 		// Signal that master is handling a connection
 		close(masterReady)
 
@@ -69,7 +69,7 @@ func TestSlaveConnectToMasterListen(t *testing.T) {
 		if err != nil && err != io.EOF {
 			return fmt.Errorf("master read error: %w", err)
 		}
-		
+
 		// Echo back
 		if n > 0 {
 			_, err = conn.Write(buf[:n])
@@ -116,7 +116,7 @@ func TestSlaveConnectToMasterListen(t *testing.T) {
 		defer c.Close()
 
 		conn := c.GetConnection()
-		
+
 		// Send test message
 		testMsg := []byte("Hello from slave")
 		_, err := conn.Write(testMsg)
@@ -183,7 +183,7 @@ func TestSlaveConnectToMasterListen(t *testing.T) {
 // This is a more complete example that actually uses the slave handler.
 func TestSlaveHandlerWithMock(t *testing.T) {
 	t.Skip("Skipping more complex test for now - basic mock is demonstrated")
-	
+
 	// Create a mock TCP network
 	mockNet := NewMockTCPNetwork()
 

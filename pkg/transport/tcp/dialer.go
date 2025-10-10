@@ -11,8 +11,8 @@ import (
 
 // Dialer implements the transport.Dialer interface for TCP connections.
 type Dialer struct {
-	tcpAddr   *net.TCPAddr
-	dialerFn  config.TCPDialerFunc
+	tcpAddr  *net.TCPAddr
+	dialerFn config.TCPDialerFunc
 }
 
 // NewDialer creates a new TCP dialer for the specified address.
