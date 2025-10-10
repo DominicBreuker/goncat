@@ -39,6 +39,8 @@ func (s *Cmdio) Close() error {
 
 // multiReader multiplexes data from two readers into a single reader.
 // It concurrently reads from both readers and provides data through Read calls.
+// Reading continues until both readers return an error (typically io.EOF).
+// Data from both readers is interleaved in the order it becomes available.
 type multiReader struct {
 	r1 io.Reader
 	r2 io.Reader
@@ -49,6 +51,7 @@ type multiReader struct {
 }
 
 // newMultiReader creates a new multiReader that reads from both r1 and r2 concurrently.
+// The returned reader will provide data from both sources until both have been exhausted.
 func newMultiReader(r1, r2 io.Reader) *multiReader {
 	mr := &multiReader{
 		r1: r1,
@@ -64,6 +67,8 @@ func newMultiReader(r1, r2 io.Reader) *multiReader {
 	return mr
 }
 
+// readFrom continuously reads from r and sends data to the dataCh channel.
+// It sends any errors to errCh when reading is complete.
 func (mr *multiReader) readFrom(r io.Reader) {
 	buffer := make([]byte, 4096)
 	for {

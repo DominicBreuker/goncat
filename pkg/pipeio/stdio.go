@@ -17,6 +17,8 @@ type Stdio struct {
 }
 
 // NewStdio creates a new Stdio with cancelable stdin reading if supported by the platform.
+// On platforms where cancelable reading is not supported, Read operations will use
+// standard os.Stdin directly and cannot be interrupted via Close.
 func NewStdio() *Stdio {
 	out := Stdio{
 		stdin:  os.Stdin,
