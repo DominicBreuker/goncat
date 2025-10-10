@@ -17,6 +17,13 @@ import (
 // It copies data in both directions concurrently until one side closes,
 // an error occurs, or the context is cancelled. The logfunc is called
 // for non-fatal errors during copying.
+//
+// Certain errors are considered non-fatal and are not logged:
+//   - cancelreader.ErrCanceled: when a cancelable reader is cancelled
+//   - syscall.ECONNRESET: when a connection is reset by peer
+//
+// Both connections are closed when the function returns, regardless of
+// whether an error occurred or the context was cancelled.
 func Pipe(ctx context.Context, rwc1 io.ReadWriteCloser, rwc2 io.ReadWriteCloser, logfunc func(error)) {
 	var wg sync.WaitGroup
 	var o sync.Once

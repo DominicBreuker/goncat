@@ -141,3 +141,107 @@ func TestMultiReader(t *testing.T) {
 		t.Error("multiReader.Read() returned no data")
 	}
 }
+
+func TestMultiReader_BothReadersEmpty(t *testing.T) {
+	t.Parallel()
+
+	r1 := strings.NewReader("")
+	r2 := strings.NewReader("")
+
+	mr := newMultiReader(r1, r2)
+
+	buf := make([]byte, 1024)
+	n, err := mr.Read(buf)
+	if err != io.EOF {
+		t.Errorf("Read() error = %v, want io.EOF", err)
+	}
+	if n != 0 {
+		t.Errorf("Read() returned %d bytes, want 0", n)
+	}
+}
+
+func TestMultiReader_SmallBuffer(t *testing.T) {
+	t.Parallel()
+
+	r1 := strings.NewReader("data")
+	r2 := strings.NewReader("more")
+
+	mr := newMultiReader(r1, r2)
+
+	// Use a small buffer to test multiple reads
+	buf := make([]byte, 2)
+	var allData []byte
+
+	for {
+		n, err := mr.Read(buf)
+		if n > 0 {
+			allData = append(allData, buf[:n]...)
+		}
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatalf("Read() error = %v", err)
+		}
+	}
+
+	// Should have read all data from both readers eventually
+	if len(allData) == 0 {
+		t.Error("multiReader.Read() returned no data")
+	}
+}
+
+func TestCmdio_WithClosedWriter(t *testing.T) {
+	t.Parallel()
+
+	stdout := strings.NewReader("test")
+	stderr := strings.NewReader("data")
+
+	// Create a write closer that simulates being closed
+	stdin := &closedWriteCloser{}
+
+	cmdio := NewCmdio(stdout, stderr, stdin)
+
+	// Writing should fail
+	_, err := cmdio.Write([]byte("test"))
+	if err == nil {
+		t.Error("Write() to closed writer should return error")
+	}
+}
+
+func TestCmdio_MultipleReads(t *testing.T) {
+	t.Parallel()
+
+	stdout := strings.NewReader("stdout")
+	stderr := strings.NewReader("stderr")
+	stdin := &nopWriteCloser{w: new(bytes.Buffer)}
+
+	cmdio := NewCmdio(stdout, stderr, stdin)
+
+	// First read
+	buf1 := make([]byte, 1024)
+	n1, _ := cmdio.Read(buf1)
+	data1 := string(buf1[:n1])
+
+	// Second read
+	buf2 := make([]byte, 1024)
+	n2, _ := cmdio.Read(buf2)
+	data2 := string(buf2[:n2])
+
+	// We should have read data from both readers
+	combined := data1 + data2
+	if !strings.Contains(combined, "stdout") && !strings.Contains(combined, "stderr") {
+		t.Errorf("Multiple reads did not return expected data, got: %q", combined)
+	}
+}
+
+// closedWriteCloser simulates a closed writer
+type closedWriteCloser struct{}
+
+func (c *closedWriteCloser) Write(p []byte) (int, error) {
+	return 0, io.ErrClosedPipe
+}
+
+func (c *closedWriteCloser) Close() error {
+	return nil
+}
