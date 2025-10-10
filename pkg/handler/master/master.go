@@ -54,10 +54,10 @@ func (mst *Master) Handle() error {
 	ctx, cancel := context.WithCancel(mst.ctx)
 
 	for _, lpf := range mst.mCfg.LocalPortForwarding {
-		mst.startLocalPortFwdJobJob(ctx, &wg, lpf)
+		mst.startLocalPortFwdJob(ctx, &wg, lpf)
 	}
 	for _, rpf := range mst.mCfg.RemotePortForwarding {
-		mst.startRemotePortFwdJobJob(ctx, &wg, rpf)
+		mst.startRemotePortFwdJob(ctx, &wg, rpf)
 	}
 
 	if mst.mCfg.IsSocksEnabled() {
