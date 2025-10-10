@@ -16,7 +16,7 @@ type Stdio struct {
 }
 
 // NewStdio sets up a new Stdio with cancellable reader in stdin if supported
-//func NewStdio() *Stdio {
+// func NewStdio() *Stdio {
 func NewStdio() *Stdio {
 	out := Stdio{
 		stdin:  os.Stdin,

@@ -2,12 +2,14 @@ package shared
 
 import (
 	"dominicbreuker/goncat/pkg/config"
-	"errors"
 	"fmt"
 	"regexp"
 	"strconv"
 )
 
+// ParseTransport parses a transport string in the format "protocol://host:port"
+// where protocol is one of tcp, ws, or wss. The host can be empty or "*" to
+// bind to all interfaces. Returns the protocol, host, port, and any parsing error.
 func ParseTransport(s string) (proto config.Protocol, host string, port int, err error) {
 	re := regexp.MustCompile(`^(tcp|ws|wss)://([^:]*):(\d+)$`)
 	matches := re.FindStringSubmatch(s)
@@ -43,5 +45,5 @@ func ParseTransport(s string) (proto config.Protocol, host string, port int, err
 }
 
 func parsingError(s string) error {
-	return errors.New(fmt.Sprintf("parsing %s: format should be 'protocol://host:port', where protocol = tcp|ws|wss", s))
+	return fmt.Errorf("parsing %s: format should be 'protocol://host:port', where protocol = tcp|ws|wss", s)
 }

@@ -1,3 +1,5 @@
+// Package masterconnect implements the master connect command, which connects
+// to a remote slave and controls it.
 package masterconnect
 
 import (
@@ -13,7 +15,7 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-// GetCommand ...
+// GetCommand returns the CLI command for master connect mode.
 func GetCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "connect",

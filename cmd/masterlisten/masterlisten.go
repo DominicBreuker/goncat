@@ -1,3 +1,5 @@
+// Package masterlisten implements the master listen command, which listens
+// for incoming slave connections and controls them.
 package masterlisten
 
 import (
@@ -14,7 +16,7 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-// GetCommand ...
+// GetCommand returns the CLI command for master listen mode.
 func GetCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "listen",

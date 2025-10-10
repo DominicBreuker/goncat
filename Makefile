@@ -22,6 +22,24 @@ build-darwin:
 	mkdir -p dist
 	CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 ${GOBIN} build -trimpath -ldflags="-buildid= -extldflags=-static -w -s -X dominicbreuker/goncat/pkg/config.KeySalt=${KEY_SALT} -X dominicbreuker/goncat/cmd/version.Version=${VERSION}" -o dist/goncat.macho cmd/main.go
 
+# Linting
+
+.PHONY: lint
+lint: fmt vet staticcheck
+
+.PHONY: fmt
+fmt:
+	go fmt ./...
+
+.PHONY: vet
+vet:
+	go vet ./...
+
+.PHONY: staticcheck
+staticcheck:
+	@which staticcheck > /dev/null || (echo "Installing staticcheck..." && go install honnef.co/go/tools/cmd/staticcheck@latest)
+	@PATH="$(shell go env GOPATH)/bin:$$PATH" staticcheck ./...
+
 # Test
 
 .PHONY: test
@@ -29,7 +47,7 @@ test: test-unit test-integration
 
 .PHONY: test-unit
 test-unit: 
-	go test ./...
+	go test -cover ./...
 
 .PHONY: test-integration
 test-integration: build-linux
