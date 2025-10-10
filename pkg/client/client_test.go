@@ -34,7 +34,7 @@ func TestCustomVerifier_InvalidCertCount(t *testing.T) {
 	t.Parallel()
 
 	caCert := x509.NewCertPool()
-	
+
 	tests := []struct {
 		name     string
 		rawCerts [][]byte
@@ -68,10 +68,10 @@ func TestCustomVerifier_InvalidCertificate(t *testing.T) {
 	t.Parallel()
 
 	caCert := x509.NewCertPool()
-	
+
 	// Invalid certificate data
 	rawCerts := [][]byte{{0x00, 0x01, 0x02}}
-	
+
 	err := customVerifier(caCert, rawCerts)
 	if err == nil {
 		t.Error("customVerifier() expected error for invalid certificate data, got nil")
@@ -90,7 +90,7 @@ func TestClient_GetConnection_Nil(t *testing.T) {
 
 	client := New(ctx, cfg)
 	conn := client.GetConnection()
-	
+
 	if conn != nil {
 		t.Error("GetConnection() expected nil before Connect(), got non-nil")
 	}

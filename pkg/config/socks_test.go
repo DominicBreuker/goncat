@@ -64,11 +64,11 @@ func TestNewSocksCfg(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			cfg := NewSocksCfg(tc.spec)
-			
+
 			if (cfg.parsingErr != nil) != tc.wantError {
 				t.Errorf("NewSocksCfg(%q) parsingErr = %v, wantError %v", tc.spec, cfg.parsingErr, tc.wantError)
 			}
-			
+
 			if !tc.wantError {
 				if cfg.Host != tc.wantHost {
 					t.Errorf("NewSocksCfg(%q) Host = %q, want %q", tc.spec, cfg.Host, tc.wantHost)

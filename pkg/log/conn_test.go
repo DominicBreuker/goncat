@@ -177,7 +177,7 @@ func TestLoggedConn_Deadlines(t *testing.T) {
 	}
 
 	deadline := time.Now().Add(time.Second)
-	
+
 	if err := loggedConn.SetDeadline(deadline); err != nil {
 		t.Errorf("SetDeadline() error = %v", err)
 	}

@@ -92,7 +92,7 @@ func TestMaster_IsAllowedRemotePortForwardingDestination(t *testing.T) {
 			t.Parallel()
 			m := &Master{}
 			m.ParseRemotePortForwardingSpecs(tc.specs)
-			
+
 			if got := m.IsAllowedRemotePortForwardingDestination(tc.host, tc.port); got != tc.allowed {
 				t.Errorf("IsAllowedRemotePortForwardingDestination(%q, %d) = %v, want %v", tc.host, tc.port, got, tc.allowed)
 			}

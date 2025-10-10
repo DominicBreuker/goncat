@@ -33,7 +33,7 @@ func TestDeleteFile_Default(t *testing.T) {
 	// Create a temporary file to test deletion
 	tmpDir := t.TempDir()
 	tmpFile := filepath.Join(tmpDir, "test_delete.txt")
-	
+
 	if err := os.WriteFile(tmpFile, []byte("test"), 0644); err != nil {
 		t.Fatalf("Failed to create test file: %v", err)
 	}
