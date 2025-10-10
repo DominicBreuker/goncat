@@ -5,7 +5,6 @@ import (
 	"net"
 	"sync"
 	"testing"
-	"time"
 )
 
 // TestOpenSession verifies master session creation.
@@ -59,6 +58,7 @@ func TestMasterSession_Close(t *testing.T) {
 	defer client.Close()
 	defer server.Close()
 
+	ready := make(chan struct{})
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -68,8 +68,8 @@ func TestMasterSession_Close(t *testing.T) {
 			t.Errorf("AcceptSession() failed: %v", err)
 			return
 		}
-		// Wait a bit for master to be ready
-		time.Sleep(10 * time.Millisecond)
+		// Wait for master to be ready
+		<-ready
 		slave.Close()
 	}()
 
@@ -77,6 +77,9 @@ func TestMasterSession_Close(t *testing.T) {
 	if err != nil {
 		t.Fatalf("OpenSession() failed: %v", err)
 	}
+
+	// Signal slave that master is ready
+	close(ready)
 
 	wg.Wait()
 
@@ -509,9 +512,6 @@ func TestOpenSession_ServerClosesEarly(t *testing.T) {
 
 	// Close server immediately
 	server.Close()
-
-	// Give it a moment to propagate
-	time.Sleep(10 * time.Millisecond)
 
 	// Should fail to open session
 	_, err := OpenSession(client)
