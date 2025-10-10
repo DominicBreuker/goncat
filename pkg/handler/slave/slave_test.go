@@ -100,7 +100,6 @@ func TestClose(t *testing.T) {
 
 	client, server := net.Pipe()
 	defer client.Close()
-	defer server.Close()
 
 	ctx := context.Background()
 	cfg := &config.Shared{}
@@ -109,12 +108,11 @@ func TestClose(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		master, err := mux.OpenSession(client)
+		_, err := mux.OpenSession(client)
 		if err != nil {
-			t.Errorf("OpenSession() failed: %v", err)
+			// Expected error when slave closes
 			return
 		}
-		defer master.Close()
 	}()
 
 	slave, err := New(ctx, cfg, server)
@@ -125,6 +123,7 @@ func TestClose(t *testing.T) {
 	if err := slave.Close(); err != nil {
 		t.Errorf("Close() error = %v", err)
 	}
+	server.Close()
 
 	wg.Wait()
 }

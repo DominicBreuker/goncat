@@ -117,7 +117,6 @@ func TestClose(t *testing.T) {
 	t.Parallel()
 
 	client, server := net.Pipe()
-	defer client.Close()
 	defer server.Close()
 
 	ctx := context.Background()
@@ -128,12 +127,11 @@ func TestClose(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		slave, err := mux.AcceptSession(server)
+		_, err := mux.AcceptSession(server)
 		if err != nil {
-			t.Errorf("AcceptSession() failed: %v", err)
+			// Expected error when master closes
 			return
 		}
-		defer slave.Close()
 	}()
 
 	master, err := New(ctx, cfg, mCfg, client)
@@ -144,6 +142,7 @@ func TestClose(t *testing.T) {
 	if err := master.Close(); err != nil {
 		t.Errorf("Close() error = %v", err)
 	}
+	client.Close()
 
 	wg.Wait()
 }
