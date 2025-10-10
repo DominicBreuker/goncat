@@ -22,7 +22,9 @@ var (
 // compare github.com/UserExistsError/conpty
 // compare https://devblogs.microsoft.com/commandline/windows-command-line-introducing-the-windows-pseudo-console-conpty/
 
-// ConPTY ...
+// ConPTY represents a Windows Console Pseudo-Terminal (ConPTY) which provides
+// PTY-like functionality on Windows systems. It manages the console handles,
+// pipes for I/O, and the associated process information.
 type ConPTY struct {
 	hPC windows.Handle
 
@@ -52,7 +54,8 @@ func (cpty *ConPTY) Write(data []byte) (int, error) {
 	return int(n), err
 }
 
-// Close ...
+// Close closes all handles associated with the ConPTY.
+// Note: It does not call ClosePseudoConsole as that terminates the goncat process.
 func (cpty *ConPTY) Close() error {
 	if err := cpty.closeHandles(); err != nil {
 		return err
@@ -110,7 +113,9 @@ func closeHandle(h windows.Handle) error {
 // ############ Setup of ConPTY ########################
 // #####################################################
 
-// Create ...
+// Create creates a new ConPTY instance on Windows systems.
+// It sets up the pseudo-console with pipes for I/O and initializes
+// the process thread attribute list for process creation.
 func Create() (*ConPTY, error) {
 	cpty := &ConPTY{}
 
@@ -221,7 +226,8 @@ func (cpty *ConPTY) updateProcThreadAttribute() error {
 // ############ Execute program ########################
 // #####################################################
 
-// Execute ...
+// Execute starts a program in the ConPTY environment.
+// The program parameter should be a command line string to execute.
 func (cpty *ConPTY) Execute(program string) error {
 	cmd, err := windows.UTF16PtrFromString(program)
 	if err != nil {
@@ -249,7 +255,8 @@ func (cpty *ConPTY) Execute(program string) error {
 	return nil
 }
 
-// Wait ...
+// Wait blocks until the process running in the ConPTY exits.
+// It returns an error containing the exit code when the process terminates.
 func (cpty *ConPTY) Wait() error {
 	var exitCode uint32
 
@@ -266,14 +273,15 @@ func (cpty *ConPTY) Wait() error {
 	}
 }
 
-// KillProcess ...
+// KillProcess terminates the process running in the ConPTY.
+// It does nothing if no process is running.
 func (cpty *ConPTY) KillProcess() {
 	if cpty.pi != nil {
 		windows.TerminateProcess(cpty.pi.Process, 0)
 	}
 }
 
-// SetTerminalSize ...
+// SetTerminalSize resizes the ConPTY to the specified dimensions.
 func (cpty *ConPTY) SetTerminalSize(size TerminalSize) error {
 	ret, _, _ := resizePseudoConsole.Call(uintptr(cpty.hPC), size.serialize())
 	if ret != uintptr(0) {
@@ -291,7 +299,8 @@ func (size *TerminalSize) serialize() uintptr {
 	return uintptr((int32(size.Rows) << 16) | int32(size.Cols))
 }
 
-// GetTerminalSize ...
+// GetTerminalSize retrieves the current terminal size from the console.
+// It returns the terminal dimensions or an error if the console information cannot be retrieved.
 func GetTerminalSize() (size TerminalSize, err error) {
 	var csbi windows.ConsoleScreenBufferInfo
 	hConsole, err := windows.GetStdHandle(windows.STD_OUTPUT_HANDLE)
