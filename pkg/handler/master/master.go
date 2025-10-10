@@ -1,3 +1,6 @@
+// Package master provides the master-side handler for managing multiplexed
+// connections. The master controls the connection, initiating port forwarding,
+// SOCKS proxies, and foreground tasks that the slave executes.
 package master
 
 import (
@@ -12,7 +15,8 @@ import (
 	"sync"
 )
 
-// Master ...
+// Master manages the master side of a multiplexed connection, coordinating
+// port forwarding, SOCKS proxies, and command execution on the slave.
 type Master struct {
 	ctx  context.Context
 	cfg  *config.Shared
@@ -21,7 +25,8 @@ type Master struct {
 	sess *mux.MasterSession
 }
 
-// New ...
+// New creates a new Master handler over the given connection.
+// It opens a multiplexed session for managing multiple concurrent operations.
 func New(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (*Master, error) {
 	sess, err := mux.OpenSession(conn)
 	if err != nil {
@@ -36,12 +41,13 @@ func New(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.
 	}, nil
 }
 
-// Close ...
+// Close closes the master's multiplexed session and all associated resources.
 func (mst *Master) Close() error {
 	return mst.sess.Close()
 }
 
-// Handle ...
+// Handle starts all configured master operations (port forwarding, SOCKS, foreground task)
+// and processes incoming messages from the slave. It blocks until all operations complete.
 func (mst *Master) Handle() error {
 	var wg sync.WaitGroup
 

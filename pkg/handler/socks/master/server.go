@@ -11,7 +11,9 @@ import (
 	"net"
 )
 
-// Server ...
+// Server implements a SOCKS5 proxy server on the master side.
+// It accepts SOCKS5 client connections and forwards them through
+// the control session to the slave.
 type Server struct {
 	ctx     context.Context
 	cfg     Config
@@ -20,7 +22,7 @@ type Server struct {
 	listener *net.TCPListener
 }
 
-// NewServer ...
+// NewServer creates a new SOCKS5 proxy server that listens on the configured address.
 func NewServer(ctx context.Context, cfg Config, sessCtl ServerControlSession) (*Server, error) {
 	addr := format.Addr(cfg.LocalHost, cfg.LocalPort)
 

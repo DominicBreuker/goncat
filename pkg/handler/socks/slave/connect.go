@@ -11,14 +11,15 @@ import (
 	"net"
 )
 
-// TCPRelay ...
+// TCPRelay handles a SOCKS5 CONNECT request on the slave side,
+// establishing a TCP connection to the requested destination.
 type TCPRelay struct {
 	ctx     context.Context
 	m       msg.SocksConnect
 	sessCtl ClientControlSession
 }
 
-// NewTCPRelay ...
+// NewTCPRelay creates a new TCP relay for handling a SOCKS5 CONNECT request.
 func NewTCPRelay(ctx context.Context, m msg.SocksConnect, sessCtl ClientControlSession) *TCPRelay {
 	return &TCPRelay{
 		ctx:     ctx,
@@ -27,7 +28,8 @@ func NewTCPRelay(ctx context.Context, m msg.SocksConnect, sessCtl ClientControlS
 	}
 }
 
-// Handle ...
+// Handle establishes a TCP connection to the target destination and relays
+// data between the SOCKS5 client (via control session) and the destination.
 func (tr *TCPRelay) Handle() error {
 	connRemote, err := tr.sessCtl.GetOneChannel()
 	if err != nil {

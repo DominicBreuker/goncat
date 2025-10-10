@@ -10,7 +10,9 @@ import (
 	"unsafe"
 )
 
-// NewPty ...
+// NewPty creates a new pseudo-terminal pair on Unix systems.
+// It returns the master (ptm) and slave (pts) file descriptors.
+// The caller is responsible for closing both file descriptors.
 func NewPty() (*os.File, *os.File, error) {
 	ptm, err := openPtm()
 	if err != nil {
@@ -67,7 +69,8 @@ type winsize struct {
 	y    uint16
 }
 
-// GetTertminalSize ...
+// GetTerminalSize retrieves the current terminal size from stdout.
+// It returns the terminal dimensions or an error if the ioctl call fails.
 func GetTerminalSize() (size TerminalSize, err error) {
 	var ws winsize
 	if err := ioctl(os.Stdout.Fd(), syscall.TIOCGWINSZ, uintptr(unsafe.Pointer(&ws))); err != nil {
@@ -80,7 +83,8 @@ func GetTerminalSize() (size TerminalSize, err error) {
 	}, nil
 }
 
-// SetTertminalSize ...
+// SetTerminalSize sets the terminal size for the given PTY file descriptor.
+// It uses the TIOCSWINSZ ioctl to update the terminal dimensions.
 func SetTerminalSize(t *os.File, size TerminalSize) error {
 	ws := &winsize{
 		rows: uint16(size.Rows),
