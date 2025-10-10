@@ -10,7 +10,9 @@ import (
 	"github.com/hashicorp/yamux"
 )
 
-// SlaveSession ...
+// SlaveSession represents the slave side of a multiplexed connection.
+// The slave accepts connections from the master and executes commands.
+// It uses gob encoding for message passing over dedicated control channels.
 type SlaveSession struct {
 	sess *Session
 
@@ -20,12 +22,15 @@ type SlaveSession struct {
 	mu sync.Mutex
 }
 
-// Close ...
+// Close closes the slave session and its underlying multiplexed connection.
 func (s *SlaveSession) Close() error {
 	return s.sess.Close()
 }
 
-// AcceptSession ...
+// AcceptSession creates a new slave session over the given connection.
+// It establishes a yamux server session and accepts two control channels:
+// one for client-to-server messages (with decoder) and one for server-to-client
+// messages (with encoder).
 func AcceptSession(conn net.Conn) (*SlaveSession, error) {
 	out := SlaveSession{
 		sess: &Session{},
@@ -52,7 +57,9 @@ func AcceptSession(conn net.Conn) (*SlaveSession, error) {
 	return &out, nil
 }
 
-// SendAndGetOneChannel ...
+// SendAndGetOneChannel sends a message to the master and accepts a new channel
+// for data transfer. This is used for operations that require one bidirectional
+// data stream, such as port forwarding or SOCKS connections.
 func (s *SlaveSession) SendAndGetOneChannel(m msg.Message) (net.Conn, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -69,12 +76,13 @@ func (s *SlaveSession) SendAndGetOneChannel(m msg.Message) (net.Conn, error) {
 	return conn, nil
 }
 
-// GetOneChannel ...
+// GetOneChannel accepts a new channel without sending a message first.
+// This is used when the master is opening a channel that the slave should accept.
 func (s *SlaveSession) GetOneChannel() (net.Conn, error) {
 	return s.AcceptNewChannel()
 }
 
-// AcceptNewChannel ...
+// AcceptNewChannel accepts a new yamux stream over the multiplexed connection.
 func (s *SlaveSession) AcceptNewChannel() (net.Conn, error) {
 	out, err := s.sess.mux.Accept()
 	if err != nil {
@@ -84,14 +92,14 @@ func (s *SlaveSession) AcceptNewChannel() (net.Conn, error) {
 	return out, nil
 }
 
-// Receive ...
+// Receive receives a message from the master over the control channel using gob decoding.
 func (s *SlaveSession) Receive() (msg.Message, error) {
 	var m msg.Message
 	err := s.dec.Decode(&m)
 	return m, err
 }
 
-// Send ...
+// Send sends a message to the master over the control channel using gob encoding.
 func (s *SlaveSession) Send(m msg.Message) error {
 	if err := s.enc.Encode(&m); err != nil {
 		return fmt.Errorf("sending msg: %s", err)
