@@ -3,6 +3,7 @@ package portfwd
 import (
 	"context"
 	"dominicbreuker/goncat/pkg/mux/msg"
+	"errors"
 	"net"
 	"testing"
 )
@@ -122,5 +123,64 @@ func TestNewServer_AllFields(t *testing.T) {
 	}
 	if srv.sessCtl != sessCtl {
 		t.Error("Server control session not set correctly")
+	}
+}
+
+// TestServer_HandlePortForwardingConn verifies the connection handling logic.
+func TestServer_HandlePortForwardingConn_SendAndGetError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := Config{
+		LocalHost:  "127.0.0.1",
+		LocalPort:  0,
+		RemoteHost: "example.com",
+		RemotePort: 80,
+	}
+
+	// Create a fake session that returns an error
+	sessCtl := &fakeServerControlSession{
+		channelFn: func(m msg.Message) (net.Conn, error) {
+			return nil, errors.New("test error")
+		},
+	}
+
+	srv := NewServer(ctx, cfg, sessCtl)
+
+	// Create a fake local connection
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	err := srv.handlePortForwardingConn(client)
+	if err == nil {
+		t.Error("handlePortForwardingConn() expected error, got nil")
+	}
+}
+
+// TestServer_Handle_InvalidAddress verifies error handling for invalid addresses.
+func TestServer_Handle_InvalidAddress(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := Config{
+		LocalHost:  "invalid::address",
+		LocalPort:  8080,
+		RemoteHost: "example.com",
+		RemotePort: 80,
+	}
+
+	sessCtl := &fakeServerControlSession{}
+	srv := NewServer(ctx, cfg, sessCtl)
+
+	err := srv.Handle()
+	if err == nil {
+		t.Error("Handle() expected error with invalid address, got nil")
 	}
 }
