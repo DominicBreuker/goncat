@@ -54,7 +54,8 @@ func (srv *Server) LogError(format string, a ...interface{}) {
 	log.ErrorMsg("SOCKS proxy: "+format, a...)
 }
 
-// Serve ...
+// Serve starts accepting SOCKS5 client connections and handles them.
+// It blocks until the context is cancelled or an unrecoverable error occurs.
 func (srv *Server) Serve() error {
 	for {
 		conn, err := srv.listener.Accept()
@@ -77,6 +78,8 @@ func (srv *Server) Serve() error {
 	}
 }
 
+// handle processes a single SOCKS5 client connection through the complete
+// SOCKS5 handshake and request handling flow.
 func (srv *Server) handle(connLocal net.Conn) error {
 	bufConnLocal := bufio.NewReadWriter(bufio.NewReader(connLocal), bufio.NewWriter(connLocal))
 	defer bufConnLocal.Flush()
@@ -107,6 +110,8 @@ func (srv *Server) handle(connLocal net.Conn) error {
 
 }
 
+// handleMethodSelection processes the SOCKS5 method selection phase.
+// It only accepts connections requesting no authentication.
 func handleMethodSelection(bufConnLocal *bufio.ReadWriter) error {
 	msr, err := socks.ReadMethodSelectionRequest(bufConnLocal)
 	if err != nil {
@@ -128,6 +133,8 @@ func handleMethodSelection(bufConnLocal *bufio.ReadWriter) error {
 	return nil
 }
 
+// handleRequest reads and validates the SOCKS5 request from the client.
+// It returns the parsed request or writes an appropriate error response.
 func handleRequest(bufConnLocal *bufio.ReadWriter) (*socks.Request, error) {
 	sr, err := socks.ReadRequest(bufConnLocal)
 	if err != nil {

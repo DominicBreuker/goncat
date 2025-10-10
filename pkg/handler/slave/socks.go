@@ -7,6 +7,8 @@ import (
 	"dominicbreuker/goncat/pkg/mux/msg"
 )
 
+// handleSocksConnectAsync handles a SOCKS5 CONNECT request from the master asynchronously.
+// It establishes a TCP connection to the requested destination.
 func (slv *Slave) handleSocksConnectAsync(ctx context.Context, m msg.SocksConnect) {
 	go func() {
 		tr := socksslave.NewTCPRelay(ctx, m, slv.sess)
@@ -16,6 +18,8 @@ func (slv *Slave) handleSocksConnectAsync(ctx context.Context, m msg.SocksConnec
 	}()
 }
 
+// handleSocksAsociateAsync handles a SOCKS5 ASSOCIATE request from the master asynchronously.
+// It creates a UDP relay to handle UDP datagrams for the SOCKS5 client.
 func (slv *Slave) handleSocksAsociateAsync(ctx context.Context, _ msg.SocksAssociate) {
 	go func() {
 		relay, err := socksslave.NewUDPRelay(ctx, slv.sess)

@@ -13,7 +13,8 @@ import (
 	"net/netip"
 )
 
-// UDPRelay ...
+// UDPRelay manages UDP datagram forwarding for SOCKS5 ASSOCIATE requests.
+// It relays UDP packets between the local SOCKS5 client and the remote destination.
 type UDPRelay struct {
 	ctx  context.Context
 	Conn *net.UDPConn
@@ -28,7 +29,8 @@ type UDPRelay struct {
 	ClientPort uint16
 }
 
-// NewUDPRelay ...
+// NewUDPRelay creates a new UDP relay for handling SOCKS5 UDP ASSOCIATE requests.
+// It binds a local UDP port and sets up communication with the remote end.
 func NewUDPRelay(ctx context.Context, addr string, sr *socks.Request, connRemote net.Conn) (*UDPRelay, error) {
 	udpAddr, err := net.ResolveUDPAddr("udp", addr+":")
 	if err != nil {
@@ -60,7 +62,7 @@ func NewUDPRelay(ctx context.Context, addr string, sr *socks.Request, connRemote
 	}, nil
 }
 
-// Close ...
+// Close shuts down the UDP relay and closes the underlying connection.
 func (r *UDPRelay) Close() error {
 	r.cancel()
 	return r.Conn.Close()
@@ -113,6 +115,7 @@ func (r *UDPRelay) RemoteToLocal() {
 	}
 }
 
+// readFromRemote reads a UDP datagram message from the remote end.
 func (r *UDPRelay) readFromRemote() (*msg.SocksDatagram, error) {
 	p := msg.SocksDatagram{}
 
@@ -128,6 +131,7 @@ func (r *UDPRelay) readFromRemote() (*msg.SocksDatagram, error) {
 	return &p, nil
 }
 
+// sendToLocal sends a UDP datagram to the local SOCKS5 client.
 func (r *UDPRelay) sendToLocal(data *msg.SocksDatagram) error {
 	if (r.ClientIP != netip.Addr{}) && r.ClientPort != 0 {
 		err := socks.WriteUDPRequestAddrPort(r.Conn, r.ClientIP, r.ClientPort, data.Data)
@@ -141,7 +145,8 @@ func (r *UDPRelay) sendToLocal(data *msg.SocksDatagram) error {
 	return nil
 }
 
-// LocalToRemote ...
+// LocalToRemote reads UDP datagrams from the local SOCKS5 client and forwards them
+// to the remote destination through the control session.
 func (r *UDPRelay) LocalToRemote() {
 	data := make(chan []byte)
 
@@ -196,6 +201,7 @@ func (r *UDPRelay) LocalToRemote() {
 	}
 }
 
+// sendToRemote parses a SOCKS5 UDP datagram and sends it to the remote end.
 func (r *UDPRelay) sendToRemote(buf []byte) error {
 	d, err := socks.ReadUDPDatagram(buf)
 	if err != nil {

@@ -9,6 +9,8 @@ import (
 	"net"
 )
 
+// handleConnect processes a SOCKS5 CONNECT request by establishing a connection
+// through the control session and piping data between the client and destination.
 func (srv *Server) handleConnect(connLocal net.Conn, sr *socks.Request) error {
 	m := msg.SocksConnect{
 		RemoteHost: sr.DstAddr.String(),

@@ -10,7 +10,8 @@ import (
 	"net"
 )
 
-// UDPRelay ...
+// UDPRelay manages UDP datagram forwarding for SOCKS5 ASSOCIATE requests on the slave side.
+// It receives datagrams from the master and forwards them to destination hosts via UDP.
 type UDPRelay struct {
 	ctx context.Context
 
@@ -22,7 +23,8 @@ type UDPRelay struct {
 	sessCtl  ClientControlSession
 }
 
-// NewUDPRelay ...
+// NewUDPRelay creates a new UDP relay for handling SOCKS5 ASSOCIATE requests.
+// It binds a local UDP port for sending/receiving datagrams and opens a control channel.
 func NewUDPRelay(ctx context.Context, sessCtl ClientControlSession) (*UDPRelay, error) {
 	connLocal, err := net.ListenPacket("udp", "0.0.0.0:")
 	if err != nil {
@@ -47,7 +49,7 @@ func NewUDPRelay(ctx context.Context, sessCtl ClientControlSession) (*UDPRelay, 
 	}, nil
 }
 
-// Close ...
+// Close shuts down the UDP relay and closes all connections.
 func (r *UDPRelay) Close() error {
 	r.isClosed = true
 
@@ -61,12 +63,14 @@ func (r *UDPRelay) LogError(format string, a ...interface{}) {
 	log.ErrorMsg("UDP Relay: "+format, a...)
 }
 
-// Serve ...
+// Serve starts the UDP relay, forwarding datagrams between local and remote ends.
+// It blocks until the remote connection closes or an error occurs.
 func (r *UDPRelay) Serve() error {
 	go r.localToRemote()     // forward to remote forever
 	return r.remoteToLocal() // read from remote until it closes connection
 }
 
+// localToRemote reads UDP datagrams from local destinations and forwards them to the remote end.
 func (r *UDPRelay) localToRemote() {
 	writeRemote := gob.NewEncoder(r.ConnRemote)
 
@@ -122,6 +126,7 @@ func (r *UDPRelay) localToRemote() {
 	}
 }
 
+// remoteToLocal reads datagrams from the remote end and forwards them to destination hosts.
 func (r *UDPRelay) remoteToLocal() error {
 	read := gob.NewDecoder(r.ConnRemote)
 
@@ -172,7 +177,7 @@ func (r *UDPRelay) remoteToLocal() error {
 	}
 }
 
-// sendToDst sends data to addr:port via UDP
+// sendToDst sends a UDP datagram to the specified destination address and port.
 func (r *UDPRelay) sendToDst(addr string, port int, data []byte) error {
 	if r.isClosed {
 		return fmt.Errorf("use of closed relay")

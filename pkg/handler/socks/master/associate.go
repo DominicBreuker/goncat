@@ -8,6 +8,8 @@ import (
 	"io"
 )
 
+// handleAssociate processes a SOCKS5 ASSOCIATE request by setting up a UDP relay
+// between the client and the remote destination through the control session.
 func (srv *Server) handleAssociate(bufConnLocal *bufio.ReadWriter, sr *socks.Request) error {
 	defer bufConnLocal.Flush()
 
