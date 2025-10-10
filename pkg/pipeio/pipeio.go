@@ -1,3 +1,5 @@
+// Package pipeio provides utilities for bidirectional I/O piping between
+// ReadWriteClosers, with support for context cancellation and error handling.
 package pipeio
 
 import (
@@ -11,7 +13,10 @@ import (
 	"github.com/muesli/cancelreader"
 )
 
-// Pipe ...
+// Pipe establishes bidirectional I/O between two ReadWriteClosers.
+// It copies data in both directions concurrently until one side closes,
+// an error occurs, or the context is cancelled. The logfunc is called
+// for non-fatal errors during copying.
 func Pipe(ctx context.Context, rwc1 io.ReadWriteCloser, rwc2 io.ReadWriteCloser, logfunc func(error)) {
 	var wg sync.WaitGroup
 	var o sync.Once
