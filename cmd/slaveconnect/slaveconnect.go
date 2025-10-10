@@ -1,3 +1,5 @@
+// Package slaveconnect implements the slave connect command, which connects
+// to a remote master and follows its instructions.
 package slaveconnect
 
 import (
@@ -14,7 +16,7 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-// GetCommand ...
+// GetCommand returns the CLI command for slave connect mode.
 func GetCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "connect",

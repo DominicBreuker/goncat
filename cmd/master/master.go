@@ -1,3 +1,5 @@
+// Package master provides the master command, which acts as the controlling
+// side in a goncat connection. The master can connect to or listen for slaves.
 package master
 
 import (
@@ -7,7 +9,7 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-// GetCommand ...
+// GetCommand returns the CLI command for master mode with its subcommands.
 func GetCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "master",

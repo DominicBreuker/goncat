@@ -51,19 +51,41 @@
 - The KEY_SALT and VERSION are embedded via ldflags
 - Binary sizes are ~9-10MB each after stripping symbols
 
+### Linting
+
+**Run all linters:**
+```bash
+make lint              # Runs fmt, vet, and staticcheck
+```
+
+**Individual linters:**
+```bash
+make fmt               # Auto-format all Go files
+make vet               # Run go vet static analysis
+make staticcheck       # Run staticcheck (installs if needed)
+```
+
+**Linting Notes:**
+- `staticcheck` is automatically installed on first run via `go install honnef.co/go/tools/cmd/staticcheck@latest`
+- Pre-existing `go vet` warning in `pkg/handler/socks/slave/associate.go:174:2: unreachable code` is known and can be ignored
+- Always run `make fmt` before committing to ensure consistent formatting
+- Address all staticcheck issues for new code; existing issues are being addressed incrementally
+
 ### Testing
 
 **Unit Tests:**
 ```bash
-go test ./...
+make test-unit         # Unit tests with coverage report
+go test -cover ./...   # Same as above
 ```
 - Fast execution: ~2-3 seconds
-- Only one test file exists: `cmd/shared/parsers_test.go`
-- Tests transport protocol parsing (tcp://, ws://, wss://)
+- Reports code coverage for each package
+- See `TESTING.md` for comprehensive testing guidelines
 
 **Integration Tests:**
 ```bash
-make test
+make test              # All tests (unit + integration)
+make test-integration  # Only integration tests
 ```
 - **REQUIRES:** Docker and Docker Compose installed
 - **REQUIRES:** Linux binary built first (runs `make build-linux` automatically)
@@ -73,12 +95,6 @@ make test
 - Total test time: ~2-3 minutes
 - Tests are in `tests/` directory with expect scripts
 
-**Individual Test Targets:**
-```bash
-make test-unit         # Only unit tests (fast)
-make test-integration  # Only integration tests (requires Docker)
-```
-
 **Integration Test Details:**
 - Uses `docker compose` with test configurations in `tests/` directory
 - Two main test scenarios:
@@ -87,16 +103,18 @@ make test-integration  # Only integration tests (requires Docker)
 - Tests verify: basic connectivity, exec mode, PTY mode
 - All tests run with `--exit-code-from` to propagate test failures
 
+**Testing Guidelines:**
+- See `TESTING.md` for comprehensive testing guidelines
+- Use table-driven tests with subtests
+- Test behavior, not implementation details
+- Cover edge cases and error paths
+- Keep tests fast, focused, and deterministic
+
 ### Known Build/Test Issues
 
 1. **Integration tests require Docker** - unit tests will pass without Docker but `make test` will fail
 2. **KEY_SALT changes on each build** - this is intentional for security
-3. **No linter configuration** - no golangci-lint, gofmt, or govet configs exist. Use standard Go tools:
-   ```bash
-   go fmt ./...
-   go vet ./...  # Note: pre-existing unreachable code warning in pkg/handler/socks/slave/associate.go
-   ```
-4. **Pre-existing go vet warning** - `pkg/handler/socks/slave/associate.go:174:2: unreachable code` exists in main branch, ignore it
+3. **Pre-existing go vet warning** - `pkg/handler/socks/slave/associate.go:174:2: unreachable code` exists in main branch, ignore it
 
 ## Project Structure
 
@@ -183,18 +201,40 @@ Build Steps:
 
 **Expected Runtime:** ~5-7 minutes total
 
+## Code Quality Standards
+
+### Documentation (godoc)
+- Write godoc comments for all exported packages, functions, types, and constants
+- Start comments with the name of the item: "ParseTransport parses a transport string..."
+- Use full sentences ending with periods
+- Each package needs a clear package comment describing its purpose
+- Document special cases, but not internal implementation details
+- See `TESTING.md` for testing standards
+
+### Testing
+- Follow guidelines in `TESTING.md` for all new code
+- Use table-driven tests with subtests
+- Test edge cases and error paths
+- Maintain meaningful code coverage
+- Keep tests fast and deterministic
+
+### Linting
+- Run `make lint` before committing
+- All code should pass `go fmt`, `go vet`, and `staticcheck`
+- Address any new issues reported by linters
+
 ## Validation Steps
 
 Before committing changes:
 
-1. **Format code:**
+1. **Run linters:**
    ```bash
-   go fmt ./...
+   make lint
    ```
 
-2. **Run unit tests:**
+2. **Run unit tests with coverage:**
    ```bash
-   go test ./...
+   make test-unit
    ```
 
 3. **Build all platforms:**

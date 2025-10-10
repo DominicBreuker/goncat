@@ -1,3 +1,5 @@
+// Package shared provides common CLI flag definitions and utility functions
+// used across goncat's command-line interface.
 package shared
 
 import (
@@ -8,10 +10,17 @@ import (
 
 const categoryCommon = "common"
 
+// SSLFlag is the name of the flag to enable TLS encryption.
 const SSLFlag = "ssl"
+
+// KeyFlag is the name of the flag to specify the mTLS authentication key.
 const KeyFlag = "key"
+
+// VerboseFlag is the name of the flag to enable verbose error logging.
 const VerboseFlag = "verbose"
 
+// GetBaseDescription returns the base description text for transport
+// specifications used in CLI commands.
 func GetBaseDescription() string {
 	return strings.Join([]string{
 		"Specify transport like this: tcp://127.0.0.1:123 (supports tcp|ws|wss)",
@@ -19,13 +28,14 @@ func GetBaseDescription() string {
 	}, "\n")
 }
 
+// GetArgsUsage returns the arguments usage string for CLI commands.
 func GetArgsUsage() string {
 	return strings.Join([]string{
 		"transport",
 	}, " ")
 }
 
-// GetFlags ...
+// GetCommonFlags returns the common CLI flags used by both master and slave modes.
 func GetCommonFlags() []cli.Flag {
 	return []cli.Flag{
 		&cli.BoolFlag{
@@ -55,30 +65,39 @@ func GetCommonFlags() []cli.Flag {
 	}
 }
 
-const categoryConnect = "connect"
-
-// GetConnectFlags ...
+// GetConnectFlags returns the CLI flags specific to connect mode.
+// Currently returns an empty slice.
 func GetConnectFlags() []cli.Flag {
 	return []cli.Flag{}
 }
 
-const categoryListen = "listen"
-
-// GetListenFlags ...
+// GetListenFlags returns the CLI flags specific to listen mode.
+// Currently returns an empty slice.
 func GetListenFlags() []cli.Flag {
 	return []cli.Flag{}
 }
 
 const categoryMaster = "master"
 
+// ExecFlag is the name of the flag to specify a program to execute.
 const ExecFlag = "exec"
+
+// PtyFlag is the name of the flag to enable PTY mode.
 const PtyFlag = "pty"
+
+// LogFileFlag is the name of the flag to specify a log file.
 const LogFileFlag = "log"
+
+// LocalPortForwardingFlag is the name of the flag for local port forwarding.
 const LocalPortForwardingFlag = "local"
+
+// RemotePortForwardingFlag is the name of the flag for remote port forwarding.
 const RemotePortForwardingFlag = "remote"
+
+// SocksFlag is the name of the flag to enable SOCKS proxy mode.
 const SocksFlag = "socks"
 
-// GetMasterFlags ...
+// GetMasterFlags returns the CLI flags specific to master mode.
 func GetMasterFlags() []cli.Flag {
 	return []cli.Flag{
 		&cli.StringFlag{
@@ -134,8 +153,10 @@ func GetMasterFlags() []cli.Flag {
 
 const categorySlave = "slave"
 
+// CleanupFlag is the name of the flag to enable automatic cleanup after running.
 const CleanupFlag = "cleanup"
 
+// GetSlaveFlags returns the CLI flags specific to slave mode.
 func GetSlaveFlags() []cli.Flag {
 	return []cli.Flag{
 		&cli.BoolFlag{

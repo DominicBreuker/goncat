@@ -1,3 +1,5 @@
+// Package slavelisten implements the slave listen command, which listens
+// for incoming master connections and follows their instructions.
 package slavelisten
 
 import (
@@ -15,7 +17,7 @@ import (
 	"github.com/urfave/cli/v3"
 )
 
-// GetCommand ...
+// GetCommand returns the CLI command for slave listen mode.
 func GetCommand() *cli.Command {
 	return &cli.Command{
 		Name:        "listen",
