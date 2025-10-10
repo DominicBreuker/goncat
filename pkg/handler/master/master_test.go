@@ -6,7 +6,7 @@ import (
 	"testing"
 )
 
-func TestNew_Success(t *testing.T) {
+func TestNew_ConfigValidation(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -19,7 +19,7 @@ func TestNew_Success(t *testing.T) {
 	}
 
 	// We cannot fully test New without a valid connection that supports
-	// multiplexing, but we can test that the configuration is set up correctly
+	// multiplexing, but we can test that the configuration is validated correctly
 	if ctx.Err() != nil {
 		t.Error("context should not be cancelled")
 	}
@@ -34,7 +34,7 @@ func TestNew_Success(t *testing.T) {
 	}
 }
 
-func TestMasterConfig_Validation(t *testing.T) {
+func TestMasterConfig_Scenarios(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -70,6 +70,41 @@ func TestMasterConfig_Validation(t *testing.T) {
 				LogFile: "/tmp/test.log",
 			},
 		},
+		{
+			name: "with SOCKS proxy",
+			cfg: &config.Master{
+				Socks: &config.SocksCfg{
+					Host: "127.0.0.1",
+					Port: 1080,
+				},
+			},
+		},
+		{
+			name: "with local port forwarding",
+			cfg: &config.Master{
+				LocalPortForwarding: []*config.LocalPortForwardingCfg{
+					{
+						LocalHost:  "127.0.0.1",
+						LocalPort:  8080,
+						RemoteHost: "example.com",
+						RemotePort: 80,
+					},
+				},
+			},
+		},
+		{
+			name: "with remote port forwarding",
+			cfg: &config.Master{
+				RemotePortForwarding: []*config.RemotePortForwardingCfg{
+					{
+						LocalHost:  "127.0.0.1",
+						LocalPort:  9090,
+						RemoteHost: "localhost",
+						RemotePort: 8080,
+					},
+				},
+			},
+		},
 	}
 
 	for _, tc := range tests {
@@ -79,6 +114,44 @@ func TestMasterConfig_Validation(t *testing.T) {
 
 			if tc.cfg == nil {
 				t.Error("Config should not be nil")
+			}
+		})
+	}
+}
+
+func TestMasterConfig_IsSocksEnabled(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		cfg      *config.Master
+		expected bool
+	}{
+		{
+			name:     "socks enabled",
+			cfg:      &config.Master{Socks: &config.SocksCfg{Host: "127.0.0.1", Port: 1080}},
+			expected: true,
+		},
+		{
+			name:     "socks disabled - nil",
+			cfg:      &config.Master{Socks: nil},
+			expected: false,
+		},
+		{
+			name:     "empty config",
+			cfg:      &config.Master{},
+			expected: false,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			result := tc.cfg.IsSocksEnabled()
+			if result != tc.expected {
+				t.Errorf("IsSocksEnabled() = %v, want %v", result, tc.expected)
 			}
 		})
 	}
