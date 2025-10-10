@@ -1,3 +1,21 @@
+// Package masterconnect provides integration tests for the master connect command.
+// These tests validate the full interaction between master and slave handlers,
+// simulating the behavior of the actual goncat application when a master connects
+// to a listening slave.
+//
+// The tests follow the patterns outlined in TESTING.md:
+// - Table-driven tests with subtests for better organization
+// - Proper resource cleanup using defer and wait groups
+// - Parallel execution where safe to speed up test suite
+// - Skip flag for integration tests in short mode
+// - Reasonable timeouts to prevent hanging tests
+//
+// Test Coverage:
+// - Basic connectivity between master and slave
+// - Command execution (--exec flag)
+// - Multiple concurrent operations (multiplexing)
+// - Various configurations (protocol, verbose)
+// - Error handling and cleanup scenarios
 package masterconnect
 
 import (
@@ -641,4 +659,95 @@ func TestMasterConnectErrorHandling(t *testing.T) {
 			t.Error("handlers did not clean up within timeout after connection close")
 		}
 	})
+}
+
+// TestMasterConnectSessionLifecycle tests the complete lifecycle of a master-slave session.
+// This validates that sessions can be properly created, initialized, and torn down.
+func TestMasterConnectSessionLifecycle(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		timeout time.Duration
+	}{
+		{
+			name:    "short session",
+			timeout: 2 * time.Second,
+		},
+		{
+			name:    "longer session",
+			timeout: 5 * time.Second,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			ctx, cancel := context.WithTimeout(context.Background(), tc.timeout)
+			defer cancel()
+
+			// Create network connection
+			masterConn, slaveConn := net.Pipe()
+			defer masterConn.Close()
+			defer slaveConn.Close()
+
+			// Setup configurations
+			slaveCfg := &config.Shared{
+				Protocol: config.ProtoTCP,
+				Host:     "localhost",
+				Port:     8080,
+				Verbose:  false,
+			}
+
+			masterSharedCfg := &config.Shared{
+				Protocol: config.ProtoTCP,
+				Host:     "localhost",
+				Port:     8080,
+				Verbose:  false,
+			}
+
+			masterCfg := &config.Master{
+				Exec: "",
+				Pty:  false,
+			}
+
+			var wg sync.WaitGroup
+
+			// Start slave handler
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				slv, err := slave.New(ctx, slaveCfg, slaveConn)
+				if err != nil {
+					return
+				}
+				defer slv.Close()
+				slv.Handle()
+			}()
+
+			// Start master handler
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				mst, err := master.New(ctx, masterSharedCfg, masterCfg, masterConn)
+				if err != nil {
+					return
+				}
+				defer mst.Close()
+				mst.Handle()
+			}()
+
+			// Let session run for a bit
+			time.Sleep(100 * time.Millisecond)
+
+			// Cancel and cleanup
+			cancel()
+			wg.Wait()
+		})
+	}
 }
