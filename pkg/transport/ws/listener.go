@@ -16,18 +16,20 @@ import (
 	"github.com/coder/websocket"
 )
 
-// Listener ...
+// Listener implements the transport.Listener interface for WebSocket connections.
+// It wraps an HTTP server that upgrades incoming requests to WebSocket connections.
+// Only one connection is handled at a time; additional connections receive HTTP 500 errors.
 type Listener struct {
 	ctx context.Context
 
-	addr string
-	nl   net.Listener
+	nl net.Listener
 
 	rdy bool
 	mu  sync.Mutex
 }
 
-// NewListener ...
+// NewListener creates a new WebSocket listener on the specified address.
+// If tls is true, the listener will use TLS with an ephemeral self-signed certificate.
 func NewListener(ctx context.Context, addr string, tls bool) (*Listener, error) {
 	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
@@ -70,7 +72,8 @@ func getTLSListener(nl net.Listener) (net.Listener, error) {
 	return tls.NewListener(nl, tlsCfg), nil
 }
 
-// Serve ...
+// Serve starts the HTTP server and handles incoming WebSocket upgrade requests.
+// Each connection is passed to the provided handler after the WebSocket upgrade completes.
 func (l *Listener) Serve(handle transport.Handler) error {
 	s := &http.Server{
 		Handler: newHandler(handle, l),
@@ -138,7 +141,7 @@ func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// Close ...
+// Close stops the listener.
 func (l *Listener) Close() error {
 	return l.nl.Close()
 }

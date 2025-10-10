@@ -149,7 +149,7 @@ func TestListener_SingleConnection(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	buf := make([]byte, 1)
 	conn2.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
-	_, err = conn2.Read(buf)
+	_, _ = conn2.Read(buf) // Intentionally ignoring error - we're checking if connection closes
 	conn2.Close()
 
 	// Signal first handler to finish

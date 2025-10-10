@@ -1,3 +1,6 @@
+// Package ws provides WebSocket transport implementations.
+// It implements the transport.Dialer and transport.Listener interfaces
+// for WebSocket (ws://) and secure WebSocket (wss://) connections.
 package ws
 
 import (
@@ -11,13 +14,14 @@ import (
 	"github.com/coder/websocket"
 )
 
-// Dialer ...
+// Dialer implements the transport.Dialer interface for WebSocket connections.
 type Dialer struct {
 	ctx context.Context
 	url string
 }
 
-// NewDialer ...
+// NewDialer creates a new WebSocket dialer for the specified address and protocol.
+// The proto parameter determines whether to use ws:// or wss://.
 func NewDialer(ctx context.Context, addr string, proto config.Protocol) *Dialer {
 	return &Dialer{
 		ctx: ctx,
@@ -26,7 +30,8 @@ func NewDialer(ctx context.Context, addr string, proto config.Protocol) *Dialer 
 
 }
 
-// Dial ...
+// Dial establishes a WebSocket connection to the configured URL.
+// It returns a net.Conn that wraps the WebSocket connection for binary message exchange.
 func (d *Dialer) Dial() (net.Conn, error) {
 	c, _, err := websocket.Dial(d.ctx, d.url, &websocket.DialOptions{
 		HTTPClient: &http.Client{
