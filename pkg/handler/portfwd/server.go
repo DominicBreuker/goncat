@@ -1,3 +1,6 @@
+// Package portfwd provides client and server implementations for port forwarding
+// over multiplexed connections. It enables forwarding local ports to remote destinations
+// and vice versa through the established connection.
 package portfwd
 
 import (
@@ -10,23 +13,25 @@ import (
 	"net"
 )
 
-// Server ...
+// Server handles incoming connections on a local port and forwards them
+// to a remote destination through a multiplexed control session.
 type Server struct {
 	ctx     context.Context
 	cfg     Config
 	sessCtl ServerControlSession
 }
 
-// Config ...
+// Config contains the configuration for port forwarding, specifying both
+// the local endpoint to listen on and the remote destination to forward to.
 type Config struct {
-	LocalHost string
-	LocalPort int
-
-	RemoteHost string
-	RemotePort int
+	LocalHost  string // Local host address to listen on
+	LocalPort  int    // Local port to listen on
+	RemoteHost string // Remote host to forward connections to
+	RemotePort int    // Remote port to forward connections to
 }
 
-// ServerControlSession ...
+// ServerControlSession represents the interface for communicating over
+// a multiplexed control session to establish new forwarding channels.
 type ServerControlSession interface {
 	SendAndGetOneChannel(m msg.Message) (net.Conn, error)
 }
@@ -35,7 +40,7 @@ func (cfg Config) String() string {
 	return fmt.Sprintf("PortForwarding[%s:%d -> %s:%d]", cfg.LocalHost, cfg.LocalPort, cfg.RemoteHost, cfg.RemotePort)
 }
 
-// NewServer ...
+// NewServer creates a new port forwarding server with the given configuration.
 func NewServer(ctx context.Context, cfg Config, sessCtl ServerControlSession) *Server {
 	return &Server{
 		ctx:     ctx,
@@ -44,7 +49,9 @@ func NewServer(ctx context.Context, cfg Config, sessCtl ServerControlSession) *S
 	}
 }
 
-// Handle ...
+// Handle starts listening on the configured local port and forwards accepted
+// connections to the remote destination. It blocks until the context is cancelled
+// or an unrecoverable error occurs.
 func (srv *Server) Handle() error {
 	addr := format.Addr(srv.cfg.LocalHost, srv.cfg.LocalPort)
 

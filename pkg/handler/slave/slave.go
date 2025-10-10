@@ -1,3 +1,6 @@
+// Package slave provides the slave-side handler for responding to commands
+// from the master over a multiplexed connection. The slave executes commands,
+// handles port forwarding requests, and manages SOCKS proxy connections.
 package slave
 
 import (
@@ -11,7 +14,8 @@ import (
 	"net"
 )
 
-// Slave ...
+// Slave manages the slave side of a multiplexed connection, responding to
+// commands from the master for execution, port forwarding, and proxying.
 type Slave struct {
 	ctx context.Context
 	cfg *config.Shared
@@ -19,7 +23,8 @@ type Slave struct {
 	sess *mux.SlaveSession
 }
 
-// New ...
+// New creates a new Slave handler over the given connection.
+// It accepts a multiplexed session for handling commands from the master.
 func New(ctx context.Context, cfg *config.Shared, conn net.Conn) (*Slave, error) {
 	sess, err := mux.AcceptSession(conn)
 	if err != nil {
@@ -33,12 +38,13 @@ func New(ctx context.Context, cfg *config.Shared, conn net.Conn) (*Slave, error)
 	}, nil
 }
 
-// Close ...
+// Close closes the slave's multiplexed session and all associated resources.
 func (slv *Slave) Close() error {
 	return slv.sess.Close()
 }
 
-// Handle ...
+// Handle processes incoming messages from the master and dispatches them to
+// the appropriate handlers. It blocks until the connection is closed or an error occurs.
 func (slv *Slave) Handle() error {
 	ctx, cancel := context.WithCancel(slv.ctx)
 	defer cancel()
