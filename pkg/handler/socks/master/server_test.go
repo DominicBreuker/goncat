@@ -3,9 +3,104 @@ package master
 import (
 	"bufio"
 	"bytes"
+	"context"
+	"dominicbreuker/goncat/pkg/mux/msg"
 	"dominicbreuker/goncat/pkg/socks"
+	"net"
 	"testing"
 )
+
+// ServerControlSession interface for testing
+type fakeServerControlSession struct {
+	sendAndGetOneChannelFn func(m msg.Message) (net.Conn, error)
+	sendFn                 func(m msg.Message) error
+}
+
+func (f *fakeServerControlSession) SendAndGetOneChannel(m msg.Message) (net.Conn, error) {
+	if f.sendAndGetOneChannelFn != nil {
+		return f.sendAndGetOneChannelFn(m)
+	}
+	return nil, nil
+}
+
+func (f *fakeServerControlSession) Send(m msg.Message) error {
+	if f.sendFn != nil {
+		return f.sendFn(m)
+	}
+	return nil
+}
+
+// TestNewServer verifies server creation and initialization.
+func TestNewServer(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := Config{
+		LocalHost: "127.0.0.1",
+		LocalPort: 0, // Use ephemeral port
+	}
+	sessCtl := &fakeServerControlSession{}
+
+	srv, err := NewServer(ctx, cfg, sessCtl)
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	defer srv.listener.Close()
+
+	if srv.ctx != ctx {
+		t.Error("Server context not set correctly")
+	}
+	if srv.cfg != cfg {
+		t.Error("Server config not set correctly")
+	}
+	if srv.listener == nil {
+		t.Error("Server listener is nil")
+	}
+}
+
+// TestNewServer_InvalidAddress verifies error handling for invalid addresses.
+func TestNewServer_InvalidAddress(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := Config{
+		LocalHost: "invalid::address::format",
+		LocalPort: 1080,
+	}
+	sessCtl := &fakeServerControlSession{}
+
+	_, err := NewServer(ctx, cfg, sessCtl)
+	if err == nil {
+		t.Error("NewServer() expected error with invalid address, got nil")
+	}
+}
+
+// TestServer_LogError verifies error logging functionality.
+func TestServer_LogError(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := Config{
+		LocalHost: "127.0.0.1",
+		LocalPort: 0,
+	}
+	sessCtl := &fakeServerControlSession{}
+
+	srv, err := NewServer(ctx, cfg, sessCtl)
+	if err != nil {
+		t.Fatalf("NewServer() error = %v", err)
+	}
+	defer srv.listener.Close()
+
+	// Test that LogError doesn't panic
+	srv.LogError("test error: %s", "value")
+}
 
 func TestHandleMethodSelection_NoAuthRequested(t *testing.T) {
 	t.Parallel()

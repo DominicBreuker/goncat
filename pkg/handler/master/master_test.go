@@ -3,8 +3,83 @@ package master
 import (
 	"context"
 	"dominicbreuker/goncat/pkg/config"
+	"dominicbreuker/goncat/pkg/mux"
+	"net"
+	"sync"
 	"testing"
 )
+
+// TestNew creates a new master handler and verifies initialization.
+func TestNew(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	ctx := context.Background()
+	cfg := &config.Shared{
+		Verbose: false,
+	}
+	mCfg := &config.Master{
+		Exec: "/bin/sh",
+		Pty:  false,
+	}
+
+	// Start slave side to accept session
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		_, err := mux.AcceptSession(server)
+		if err != nil {
+			t.Errorf("AcceptSession() failed: %v", err)
+		}
+	}()
+
+	master, err := New(ctx, cfg, mCfg, client)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+	defer master.Close()
+
+	if master.ctx != ctx {
+		t.Error("master.ctx not set correctly")
+	}
+	if master.cfg != cfg {
+		t.Error("master.cfg not set correctly")
+	}
+	if master.mCfg != mCfg {
+		t.Error("master.mCfg not set correctly")
+	}
+	if master.sess == nil {
+		t.Error("master.sess is nil")
+	}
+
+	wg.Wait()
+}
+
+// TestNew_SessionError verifies error handling when session creation fails.
+func TestNew_SessionError(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := &config.Shared{}
+	mCfg := &config.Master{}
+
+	// Create a connection that will be immediately closed
+	client, server := net.Pipe()
+	server.Close()
+	client.Close()
+
+	_, err := New(ctx, cfg, mCfg, client)
+	if err == nil {
+		t.Error("New() expected error with closed connection, got nil")
+	}
+}
 
 func TestNew_ConfigValidation(t *testing.T) {
 	t.Parallel()
@@ -32,6 +107,45 @@ func TestNew_ConfigValidation(t *testing.T) {
 	if mCfg.Pty != false {
 		t.Error("expected pty to be false")
 	}
+}
+
+// TestClose verifies that Close properly closes the master session.
+func TestClose(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration-style test in short mode")
+	}
+	t.Parallel()
+
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	ctx := context.Background()
+	cfg := &config.Shared{}
+	mCfg := &config.Master{}
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		slave, err := mux.AcceptSession(server)
+		if err != nil {
+			t.Errorf("AcceptSession() failed: %v", err)
+			return
+		}
+		defer slave.Close()
+	}()
+
+	master, err := New(ctx, cfg, mCfg, client)
+	if err != nil {
+		t.Fatalf("New() error = %v", err)
+	}
+
+	if err := master.Close(); err != nil {
+		t.Errorf("Close() error = %v", err)
+	}
+
+	wg.Wait()
 }
 
 func TestMasterConfig_Scenarios(t *testing.T) {
