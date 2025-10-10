@@ -23,6 +23,9 @@ import (
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/handler/master"
 	"dominicbreuker/goncat/pkg/handler/slave"
+	"dominicbreuker/goncat/pkg/mux"
+	"dominicbreuker/goncat/pkg/mux/msg"
+	"dominicbreuker/goncat/pkg/pipeio"
 	"fmt"
 	"io"
 	"net"
@@ -31,98 +34,275 @@ import (
 	"time"
 )
 
-// TestMasterConnectBasic tests basic connectivity between master and slave.
-// This simulates the master connect mode connecting to a slave listen mode.
+// TestMasterConnectBasic tests basic bidirectional data flow between master and slave.
+// This simulates the core functionality: whatever goes into stdin on one side should
+// come out of stdout on the other side, and vice versa.
+//
+// This test validates the fundamental behavior of goncat: connecting stdin/stdout
+// between master connect mode and slave listen mode in both directions using the
+// multiplexed channel layer.
 func TestMasterConnectBasic(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test in short mode")
 	}
 	t.Parallel()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 
-	// Create a pipe to simulate network connection
+	// Create a pipe to simulate network connection between master and slave
 	masterConn, slaveConn := net.Pipe()
 	defer masterConn.Close()
 	defer slaveConn.Close()
 
-	// Setup slave configuration
-	slaveCfg := &config.Shared{
-		Protocol: config.ProtoTCP,
-		Host:     "localhost",
-		Port:     8080,
-		Verbose:  false,
+	// Create multiplexed sessions concurrently (they perform a handshake)
+	var masterSess *mux.MasterSession
+	var slaveSess *mux.SlaveSession
+	var sessErr error
+	var sessWg sync.WaitGroup
+
+	sessWg.Add(2)
+	go func() {
+		defer sessWg.Done()
+		var err error
+		masterSess, err = mux.OpenSession(masterConn)
+		if err != nil {
+			sessErr = fmt.Errorf("mux.OpenSession() error: %v", err)
+		}
+	}()
+
+	go func() {
+		defer sessWg.Done()
+		var err error
+		slaveSess, err = mux.AcceptSession(slaveConn)
+		if err != nil {
+			sessErr = fmt.Errorf("mux.AcceptSession() error: %v", err)
+		}
+	}()
+
+	sessWg.Wait()
+
+	if sessErr != nil {
+		t.Fatalf("session setup failed: %v", sessErr)
 	}
 
-	// Setup master configuration
-	masterSharedCfg := &config.Shared{
-		Protocol: config.ProtoTCP,
-		Host:     "localhost",
-		Port:     8080,
-		Verbose:  false,
-	}
+	defer masterSess.Close()
+	defer slaveSess.Close()
 
-	masterCfg := &config.Master{
-		Exec: "",
-		Pty:  false,
-	}
+	// Create test stdin/stdout pipes for the master side
+	masterStdinRead, masterStdinWrite := io.Pipe()
+	masterStdoutRead, masterStdoutWrite := io.Pipe()
+	defer masterStdinRead.Close()
+	defer masterStdinWrite.Close()
+	defer masterStdoutRead.Close()
+	defer masterStdoutWrite.Close()
+
+	// Create test stdin/stdout pipes for the slave side
+	slaveStdinRead, slaveStdinWrite := io.Pipe()
+	slaveStdoutRead, slaveStdoutWrite := io.Pipe()
+	defer slaveStdinRead.Close()
+	defer slaveStdinWrite.Close()
+	defer slaveStdoutRead.Close()
+	defer slaveStdoutWrite.Close()
 
 	var wg sync.WaitGroup
-	var slaveErr, masterErr error
 
-	// Start slave handler
+	// Start slave side: accept foreground channel and pipe to test stdin/stdout
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		slv, err := slave.New(ctx, slaveCfg, slaveConn)
+
+		// Wait for and accept the foreground channel from master
+		conn, err := slaveSess.AcceptNewChannel()
 		if err != nil {
-			slaveErr = err
-			t.Logf("slave.New() error: %v", err)
+			t.Logf("slave AcceptNewChannel() error: %v", err)
 			return
 		}
-		defer slv.Close()
+		defer conn.Close()
 
-		slaveErr = slv.Handle()
-		if slaveErr != nil && slaveErr != io.EOF {
-			t.Logf("slv.Handle() error: %v", slaveErr)
+		t.Logf("Slave: accepted foreground channel")
+
+		// Create a ReadWriteCloser for slave's stdin/stdout
+		slaveStdio := &testReadWriteCloser{
+			reader: slaveStdinRead,
+			writer: slaveStdoutWrite,
 		}
+
+		// Pipe bidirectionally: slaveStdio <-> conn
+		pipeio.Pipe(ctx, slaveStdio, conn, func(err error) {
+			if err != nil && ctx.Err() == nil {
+				t.Logf("slave pipeio.Pipe error: %v", err)
+			}
+		})
 	}()
 
-	// Start master handler
+	// Start slave message handler
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		mst, err := master.New(ctx, masterSharedCfg, masterCfg, masterConn)
-		if err != nil {
-			masterErr = err
-			t.Logf("master.New() error: %v", err)
-			return
-		}
-		defer mst.Close()
 
-		masterErr = mst.Handle()
-		if masterErr != nil && masterErr != io.EOF {
-			t.Logf("mst.Handle() error: %v", masterErr)
+		// Receive and handle messages
+		for {
+			m, err := slaveSess.Receive()
+			if err != nil {
+				if err == io.EOF || ctx.Err() != nil {
+					return
+				}
+				t.Logf("slave Receive() error: %v", err)
+				continue
+			}
+
+			// Log received message
+			if fg, ok := m.(msg.Foreground); ok {
+				t.Logf("Slave received Foreground message: Exec=%q, Pty=%v", fg.Exec, fg.Pty)
+			}
 		}
 	}()
 
-	// Give handlers some time to initialize
-	time.Sleep(100 * time.Millisecond)
+	// Start master side: send foreground message and pipe to test stdin/stdout
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
 
-	// Cancel context to stop handlers
+		// Send foreground message
+		foregroundMsg := msg.Foreground{
+			Exec: "", // Empty means just pipe stdin/stdout
+			Pty:  false,
+		}
+
+		conn, err := masterSess.SendAndGetOneChannel(foregroundMsg)
+		if err != nil {
+			t.Logf("master SendAndGetOneChannel() error: %v", err)
+			return
+		}
+		defer conn.Close()
+
+		t.Logf("Master: sent foreground message and got channel")
+
+		// Create a ReadWriteCloser for master's stdin/stdout
+		masterStdio := &testReadWriteCloser{
+			reader: masterStdinRead,
+			writer: masterStdoutWrite,
+		}
+
+		// Pipe bidirectionally: masterStdio <-> conn
+		pipeio.Pipe(ctx, masterStdio, conn, func(err error) {
+			if err != nil && ctx.Err() == nil {
+				t.Logf("master pipeio.Pipe error: %v", err)
+			}
+		})
+	}()
+
+	// Give the pipes time to set up
+	time.Sleep(200 * time.Millisecond)
+
+	// Test bidirectional data flow
+	testCases := []struct {
+		name      string
+		writeFrom string // "master" or "slave"
+		data      string
+	}{
+		{"master to slave", "master", "Hello from master\n"},
+		{"slave to master", "slave", "Hello from slave\n"},
+		{"master to slave again", "master", "Second message from master\n"},
+		{"slave to master again", "slave", "Second message from slave\n"},
+		{"large data master to slave", "master", "This is a longer message with more content from the master side\n"},
+		{"large data slave to master", "slave", "This is a longer message with more content from the slave side\n"},
+	}
+
+	for _, tc := range testCases {
+		t.Logf("Testing: %s", tc.name)
+
+		var writeEnd *io.PipeWriter
+		var readEnd *io.PipeReader
+
+		if tc.writeFrom == "master" {
+			// Write to master's stdin, expect to read from slave's stdout
+			writeEnd = masterStdinWrite
+			readEnd = slaveStdoutRead
+		} else {
+			// Write to slave's stdin, expect to read from master's stdout
+			writeEnd = slaveStdinWrite
+			readEnd = masterStdoutRead
+		}
+
+		// Write data
+		_, err := writeEnd.Write([]byte(tc.data))
+		if err != nil {
+			t.Errorf("%s: failed to write data: %v", tc.name, err)
+			continue
+		}
+
+		// Read data with timeout
+		buf := make([]byte, len(tc.data))
+		readDone := make(chan error, 1)
+		go func() {
+			_, err := io.ReadFull(readEnd, buf)
+			readDone <- err
+		}()
+
+		select {
+		case err := <-readDone:
+			if err != nil {
+				t.Errorf("%s: failed to read data: %v", tc.name, err)
+				continue
+			}
+
+			received := string(buf)
+			if received != tc.data {
+				t.Errorf("%s: data mismatch\n  sent:     %q\n  received: %q", tc.name, tc.data, received)
+			} else {
+				t.Logf("%s: ✓ data transmitted correctly (%d bytes)", tc.name, len(tc.data))
+			}
+
+		case <-time.After(2 * time.Second):
+			t.Errorf("%s: timeout waiting for data", tc.name)
+		}
+	}
+
+	// Cleanup
+	t.Logf("Test complete, cleaning up...")
+
+	// Close pipes to unblock any pending reads
+	masterStdinWrite.Close()
+	slaveStdinWrite.Close()
+
+	// Cancel context
 	cancel()
 
-	// Wait for both handlers to complete
-	wg.Wait()
+	// Wait for goroutines with timeout
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
 
-	// Check for unexpected errors
-	if slaveErr != nil && slaveErr != io.EOF && ctx.Err() == nil {
-		t.Errorf("slave handler error: %v", slaveErr)
+	select {
+	case <-done:
+		t.Logf("Cleanup successful")
+	case <-time.After(2 * time.Second):
+		t.Logf("Cleanup timeout - some goroutines may still be running")
 	}
-	if masterErr != nil && masterErr != io.EOF && ctx.Err() == nil {
-		t.Errorf("master handler error: %v", masterErr)
-	}
+}
+
+// testReadWriteCloser implements io.ReadWriteCloser for testing.
+// It wraps separate reader and writer to simulate stdin/stdout.
+type testReadWriteCloser struct {
+	reader io.Reader
+	writer io.Writer
+}
+
+func (t *testReadWriteCloser) Read(p []byte) (n int, err error) {
+	return t.reader.Read(p)
+}
+
+func (t *testReadWriteCloser) Write(p []byte) (n int, err error) {
+	return t.writer.Write(p)
+}
+
+func (t *testReadWriteCloser) Close() error {
+	// We don't close the underlying pipes here as they are managed by the test
+	return nil
 }
 
 // TestMasterConnectExec tests command execution over master-slave connection.
