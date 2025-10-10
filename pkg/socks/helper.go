@@ -7,6 +7,7 @@ import (
 	"net/netip"
 )
 
+// parseAddrAndPort reads a SOCKS address (IPv4/IPv6/FQDN) and port from r.
 func parseAddrAndPort(r io.Reader) (address Addr, port uint16, error error) {
 	b := []byte{0}
 
@@ -46,7 +47,7 @@ func parseAddrAndPort(r io.Reader) (address Addr, port uint16, error error) {
 	return address, port, nil
 }
 
-// func readIPv4(r io.Reader) (net.IP, error) {
+// readIPv4 reads 4 bytes representing an IPv4 address from r.
 func readIPv4(r io.Reader) (netip.Addr, error) {
 	ip := make([]byte, 4) // IPv4
 	if _, err := io.ReadFull(r, ip); err != nil {
@@ -56,16 +57,18 @@ func readIPv4(r io.Reader) (netip.Addr, error) {
 	return netip.AddrFrom4(([4]byte)(ip)), nil
 }
 
+// readIPv6 reads 16 bytes representing an IPv6 address from r.
 func readIPv6(r io.Reader) (netip.Addr, error) {
 	ip := make([]byte, 16) // IPv6
 	if _, err := io.ReadFull(r, ip); err != nil {
 		return netip.Addr{}, fmt.Errorf("reading ip: %s", err)
 	}
 
-	//return net.IP(ip), nil
 	return netip.AddrFrom16(([16]byte)(ip)), nil
 }
 
+// readFQDN reads a length-prefixed FQDN string from r.
+// The first byte indicates the length of the domain name.
 func readFQDN(r io.Reader) (string, error) {
 	size := []byte{0}
 	if _, err := r.Read(size); err != nil {

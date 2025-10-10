@@ -1,3 +1,8 @@
+// Package socks implements SOCKS5 protocol support as defined in RFC 1928.
+// It provides functionality for parsing and serializing SOCKS5 messages,
+// including method selection, connection requests, and UDP datagrams.
+// The implementation supports IPv4, IPv6, and FQDN address types, and
+// handles TCP CONNECT and UDP ASSOCIATE commands.
 package socks
 
 import (
@@ -51,6 +56,7 @@ const (
 // ErrCommandNotSupported is an error indicating that the command is not supported
 var ErrCommandNotSupported = errors.New("command not supported")
 
+// String returns a human-readable string representation of the command.
 func (cmd Cmd) String() string {
 	switch cmd {
 	case CommandConnect:
@@ -82,6 +88,8 @@ var ErrAddressTypeNotSupported = errors.New("address type not supported")
 // ErrFragmentationNotSupported indicates that a datagram was fragmented, but we don't support that
 var ErrFragmentationNotSupported = errors.New("fragmentation not supported")
 
+// Addr represents a SOCKS address, which can be IPv4, IPv6, or FQDN.
+// It provides methods to convert between different address representations.
 type Addr interface {
 	String() string
 	Bytes() []byte
