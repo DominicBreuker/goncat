@@ -38,6 +38,12 @@ deps := &config.Dependencies{
 
 Uses `config.Dependencies` struct to inject mocks. Helper functions (`GetTCPDialerFunc`, `GetTCPListenerFunc`, `GetStdinFunc`, `GetStdoutFunc`) return either mock or default implementations.
 
-**Current mocks**: TCP network, stdin/stdout. See `simple_test.go` for usage examples.
+**Current mocks**: TCP network, stdin/stdout.
 
-**Adding mocks**: (1) Add function type to `Dependencies`, (2) Add helper function, (3) Update code to use helper, (4) Create mock implementation.
+## Integration Test
+
+`TestEndToEndDataExchange` in `simple_test.go` demonstrates full end-to-end testing:
+- Simulates "goncat master listen tcp://*:12345" and "goncat slave connect tcp://127.0.0.1:12345"
+- Uses mocked TCP network and stdio on both sides
+- Validates bidirectional data flow: master stdin → network → slave stdout and vice versa
+- Tests complete master-slave handler lifecycle with mocked dependencies

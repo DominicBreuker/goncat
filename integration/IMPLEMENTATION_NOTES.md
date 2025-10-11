@@ -125,15 +125,17 @@ cfg := &config.Shared{
 
 ### Integration Tests
 
-1. **TestSlaveConnectToMasterListen**: Slave connects to listening master
-2. **TestMasterConnectToSlaveListen**: Master connects to listening slave
-3. **TestMockTCPBasics**: Basic mock functionality (listener, dialer, data transfer)
+**TestEndToEndDataExchange**: Full end-to-end master-slave communication test
+- Simulates complete `goncat master listen` and `goncat slave connect` scenarios
+- Uses mocked TCP network (MockTCPNetwork) for connection establishment
+- Uses mocked stdio (MockStdio) on both master and slave sides
+- Validates bidirectional data flow:
+  - Master stdin → network → slave stdout
+  - Slave stdin → network → master stdout
+- Tests complete handler lifecycle with all mocked dependencies
+- Demonstrates real-world usage pattern with mocks
 
-All tests verify:
-- Connection establishment
-- Data transfer (echo pattern)
-- Proper cleanup
-- Error conditions
+The test follows the same structure as production code in `cmd/masterlisten/masterlisten.go` and `cmd/slaveconnect/slaveconnect.go`, creating Server/Client instances, Master/Slave handlers, and verifying data transmission through the entire stack.
 
 ### Unit Tests
 
