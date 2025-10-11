@@ -74,7 +74,7 @@ func TestLocalPortForwarding(t *testing.T) {
 
 	// Wait for remote server to start
 	<-remoteServerStarted
-	time.Sleep(100 * time.Millisecond)
+	// Note: The channel close is enough to signal the server is ready
 
 	// Setup master dependencies (network + stdio)
 	// TCPDialer and TCPListener are used for all TCP operations including port forwarding
@@ -131,8 +131,10 @@ func TestLocalPortForwarding(t *testing.T) {
 		masterErr <- nil
 	}()
 
-	// Give master time to start listening
-	time.Sleep(300 * time.Millisecond)
+	// Wait for master to start listening
+	if err := mockNet.WaitForListener("127.0.0.1:12345", 2000); err != nil {
+		t.Fatalf("Master failed to start listening: %v", err)
+	}
 
 	// Start slave using entrypoint (connects to master)
 	go func() {
@@ -143,8 +145,10 @@ func TestLocalPortForwarding(t *testing.T) {
 		slaveErr <- nil
 	}()
 
-	// Give connection time to establish and port forwarding to start
-	time.Sleep(500 * time.Millisecond)
+	// Wait for the forwarded port to be available (local port forwarding listener on master side)
+	if err := mockNet.WaitForListener("127.0.0.1:8000", 2000); err != nil {
+		t.Fatalf("Forwarded port failed to start listening: %v", err)
+	}
 
 	// Now test the port forwarding by connecting a mock client to the forwarded port
 	// This client connects to 127.0.0.1:8000 on the master side

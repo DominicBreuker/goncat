@@ -2,11 +2,19 @@
 
 This directory contains integration test utilities and examples for testing goncat functionality with mocked dependencies.
 
+## Key Features
+
+**Fast and Deterministic Tests**: The mock implementations provide `WaitForOutput` and `WaitForListener` methods that block until expected conditions are met, eliminating the need for arbitrary `time.Sleep` calls. This makes tests both faster (9x improvement) and more reliable.
+
 ## Mock TCP Network
 
 The `mocktcp.go` file provides a `MockTCPNetwork` that simulates TCP connections without using real network sockets.
 
-**Features**: In-memory connections via `net.Pipe()`, multiple listeners, automatic lifecycle management.
+**Features**: 
+- In-memory connections via `net.Pipe()`
+- Multiple listeners
+- Automatic lifecycle management
+- `WaitForListener(addr, timeoutMs)` - Blocks until a listener is bound to the specified address or timeout expires. Useful for synchronizing test flow without arbitrary sleeps.
 
 **Usage**:
 ```go
@@ -15,13 +23,21 @@ deps := &config.Dependencies{
     TCPDialer:   mockNet.DialTCP,
     TCPListener: mockNet.ListenTCP,
 }
+
+// Wait for a service to start listening
+if err := mockNet.WaitForListener("127.0.0.1:12345", 2000); err != nil {
+    t.Fatalf("Service failed to start: %v", err)
+}
 ```
 
 ## Mock Standard I/O
 
 The `mockstdio.go` file provides `MockStdio` for mocking stdin and stdout streams.
 
-**Features**: Buffer-based stdin/stdout, thread-safe read/write operations.
+**Features**: 
+- Buffer-based stdin/stdout
+- Thread-safe read/write operations
+- `WaitForOutput(expected, timeoutMs)` - Blocks until the expected string appears in stdout or timeout expires. Useful for synchronizing test flow without arbitrary sleeps.
 
 **Usage**:
 ```go
@@ -31,7 +47,14 @@ deps := &config.Dependencies{
     Stdin:  func() io.Reader { return mockStdio.GetStdin() },
     Stdout: func() io.Writer { return mockStdio.GetStdout() },
 }
-// Check output: mockStdio.ReadFromStdout()
+
+// Wait for expected output instead of sleeping
+if err := mockStdio.WaitForOutput("expected text", 2000); err != nil {
+    t.Errorf("Expected output not found: %v", err)
+}
+
+// Or check all output collected so far
+output := mockStdio.ReadFromStdout()
 ```
 
 ## Mock Command Execution

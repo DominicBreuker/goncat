@@ -7,7 +7,6 @@ import (
 	"dominicbreuker/goncat/pkg/entrypoint"
 	"dominicbreuker/goncat/test/helpers"
 	"io"
-	"strings"
 	"testing"
 	"time"
 )
@@ -73,8 +72,10 @@ func TestEndToEndDataExchange(t *testing.T) {
 		masterErr <- nil
 	}()
 
-	// Give master time to start listening
-	time.Sleep(200 * time.Millisecond)
+	// Wait for master to start listening
+	if err := mockNet.WaitForListener("127.0.0.1:12345", 2000); err != nil {
+		t.Fatalf("Master failed to start listening: %v", err)
+	}
 
 	// Start slave using entrypoint (connects to master)
 	go func() {
@@ -85,43 +86,31 @@ func TestEndToEndDataExchange(t *testing.T) {
 		slaveErr <- nil
 	}()
 
-	// Give connection time to establish and handlers to start
-	time.Sleep(300 * time.Millisecond)
-
 	// Test master → slave data flow
 	masterInput := "Hello from master!\n"
 	masterStdio.WriteToStdin([]byte(masterInput))
 
-	// Wait for data to flow through the network
-	time.Sleep(500 * time.Millisecond)
-
-	// Verify data arrived at slave's stdout
-	slaveOutput := slaveStdio.ReadFromStdout()
-	if !strings.Contains(slaveOutput, "Hello from master!") {
-		t.Errorf("Expected slave stdout to contain 'Hello from master!', got: %q", slaveOutput)
+	// Wait for data to arrive at slave's stdout
+	if err := slaveStdio.WaitForOutput("Hello from master!", 2000); err != nil {
+		t.Errorf("Data did not arrive at slave: %v", err)
 	}
 
 	// Test slave → master data flow (bidirectional)
 	slaveInput := "Hello from slave!\n"
 	slaveStdio.WriteToStdin([]byte(slaveInput))
 
-	// Wait for data to flow back through the network
-	time.Sleep(500 * time.Millisecond)
-
-	// Verify data arrived at master's stdout
-	masterOutput := masterStdio.ReadFromStdout()
-	if !strings.Contains(masterOutput, "Hello from slave!") {
-		t.Errorf("Expected master stdout to contain 'Hello from slave!', got: %q", masterOutput)
+	// Wait for data to arrive at master's stdout
+	if err := masterStdio.WaitForOutput("Hello from slave!", 2000); err != nil {
+		t.Errorf("Data did not arrive at master: %v", err)
 	}
 
 	// Test multiple messages to ensure continuous bidirectional communication
 	masterInput2 := "Second message from master\n"
 	masterStdio.WriteToStdin([]byte(masterInput2))
-	time.Sleep(300 * time.Millisecond)
 
-	slaveOutput2 := slaveStdio.ReadFromStdout()
-	if !strings.Contains(slaveOutput2, "Second message from master") {
-		t.Errorf("Expected slave to receive second message, got: %q", slaveOutput2)
+	// Wait for second message to arrive at slave's stdout
+	if err := slaveStdio.WaitForOutput("Second message from master", 2000); err != nil {
+		t.Errorf("Second message did not arrive at slave: %v", err)
 	}
 
 	// Cleanup
