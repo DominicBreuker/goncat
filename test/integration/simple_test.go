@@ -5,6 +5,7 @@ import (
 	"dominicbreuker/goncat/mocks"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/entrypoint"
+	"dominicbreuker/goncat/test/helpers"
 	"io"
 	"strings"
 	"testing"
@@ -43,32 +44,12 @@ func TestEndToEndDataExchange(t *testing.T) {
 	}
 
 	// Master configuration - simulates "master listen 'tcp://*:12345'"
-	masterSharedCfg := &config.Shared{
-		Protocol: config.ProtoTCP,
-		Host:     "127.0.0.1",
-		Port:     12345,
-		SSL:      false,
-		Key:      "",
-		Verbose:  false,
-		Deps:     masterDeps,
-	}
-
-	masterCfg := &config.Master{
-		Exec:    "", // No exec, just foreground piping
-		Pty:     false,
-		LogFile: "",
-	}
+	masterSharedCfg := helpers.DefaultSharedConfig(masterDeps)
+	masterCfg := helpers.DefaultMasterConfig()
+	// No exec, just foreground piping (default)
 
 	// Slave configuration - simulates "slave connect tcp://127.0.0.1:12345"
-	slaveSharedCfg := &config.Shared{
-		Protocol: config.ProtoTCP,
-		Host:     "127.0.0.1",
-		Port:     12345,
-		SSL:      false,
-		Key:      "",
-		Verbose:  false,
-		Deps:     slaveDeps,
-	}
+	slaveSharedCfg := helpers.DefaultSharedConfig(slaveDeps)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()

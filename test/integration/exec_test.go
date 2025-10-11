@@ -5,6 +5,7 @@ import (
 	"dominicbreuker/goncat/mocks"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/entrypoint"
+	"dominicbreuker/goncat/test/helpers"
 	"io"
 	"strings"
 	"testing"
@@ -47,32 +48,12 @@ func TestExecCommandExecution(t *testing.T) {
 	}
 
 	// Master configuration - simulates "master listen 'tcp://*:12345' --exec /bin/sh"
-	masterSharedCfg := &config.Shared{
-		Protocol: config.ProtoTCP,
-		Host:     "127.0.0.1",
-		Port:     12345,
-		SSL:      false,
-		Key:      "",
-		Verbose:  false,
-		Deps:     masterDeps,
-	}
-
-	masterCfg := &config.Master{
-		Exec:    "/bin/sh", // Execute /bin/sh on slave
-		Pty:     false,
-		LogFile: "",
-	}
+	masterSharedCfg := helpers.DefaultSharedConfig(masterDeps)
+	masterCfg := helpers.DefaultMasterConfig()
+	masterCfg.Exec = "/bin/sh" // Execute /bin/sh on slave
 
 	// Slave configuration - simulates "slave connect tcp://127.0.0.1:12345"
-	slaveSharedCfg := &config.Shared{
-		Protocol: config.ProtoTCP,
-		Host:     "127.0.0.1",
-		Port:     12345,
-		SSL:      false,
-		Key:      "",
-		Verbose:  false,
-		Deps:     slaveDeps,
-	}
+	slaveSharedCfg := helpers.DefaultSharedConfig(slaveDeps)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -111,35 +92,54 @@ func TestExecCommandExecution(t *testing.T) {
 	// Give connection time to establish and handlers to start
 	time.Sleep(300 * time.Millisecond)
 
-	// Test exec functionality: master writes command input, should be echoed back
-	// The mock exec echoes stdin to stdout, simulating a shell
-	commandInput := "echo hello from shell\n"
-	masterStdio.WriteToStdin([]byte(commandInput))
-
-	// Wait for data to flow through the network to slave, get executed, and return
+	// Test 1: Echo command - the mock shell processes "echo <text>" commands
+	masterStdio.WriteToStdin([]byte("echo hello world\n"))
 	time.Sleep(500 * time.Millisecond)
 
-	// Verify the command output came back to master's stdout
 	masterOutput := masterStdio.ReadFromStdout()
-	if !strings.Contains(masterOutput, "echo hello from shell") {
-		t.Errorf("Expected master stdout to contain command echo, got: %q", masterOutput)
+	if !strings.Contains(masterOutput, "hello world") {
+		t.Errorf("Expected master stdout to contain 'hello world', got: %q", masterOutput)
 	}
 
-	// Test bidirectional communication with the executed command
-	commandInput2 := "second command\n"
-	masterStdio.WriteToStdin([]byte(commandInput2))
+	// Test 2: Whoami command - the mock shell responds with mockcmd[/bin/sh]
+	masterStdio.WriteToStdin([]byte("whoami\n"))
 	time.Sleep(300 * time.Millisecond)
 
-	masterOutput2 := masterStdio.ReadFromStdout()
-	if !strings.Contains(masterOutput2, "second command") {
-		t.Errorf("Expected master to receive second command echo, got: %q", masterOutput2)
+	masterOutput = masterStdio.ReadFromStdout()
+	if !strings.Contains(masterOutput, "mockcmd[/bin/sh]") {
+		t.Errorf("Expected master stdout to contain 'mockcmd[/bin/sh]', got: %q", masterOutput)
+	}
+
+	// Test 3: Unsupported command - should get error response
+	masterStdio.WriteToStdin([]byte("unsupported\n"))
+	time.Sleep(300 * time.Millisecond)
+
+	masterOutput = masterStdio.ReadFromStdout()
+	if !strings.Contains(masterOutput, "command not supported by mock") {
+		t.Errorf("Expected master stdout to contain error message, got: %q", masterOutput)
+	}
+
+	// Test 4: Exit command - this should cause the shell to terminate and slave to exit
+	masterStdio.WriteToStdin([]byte("exit\n"))
+	time.Sleep(500 * time.Millisecond)
+
+	// Wait for slave to complete after shell exits
+	select {
+	case err := <-slaveErr:
+		if err != nil {
+			t.Logf("Slave completed with error: %v", err)
+		} else {
+			t.Log("Slave completed successfully after shell exit")
+		}
+	case <-time.After(2 * time.Second):
+		t.Log("Slave did not exit after shell termination (this may be expected)")
 	}
 
 	// Cleanup
 	cancel()
 	time.Sleep(200 * time.Millisecond)
 
-	// Check for errors (non-blocking)
+	// Check master status (non-blocking)
 	select {
 	case err := <-masterErr:
 		if err != nil {
@@ -147,14 +147,5 @@ func TestExecCommandExecution(t *testing.T) {
 		}
 	default:
 		t.Log("Master still running (expected)")
-	}
-
-	select {
-	case err := <-slaveErr:
-		if err != nil {
-			t.Logf("Slave completed with: %v", err)
-		}
-	default:
-		t.Log("Slave still running (expected)")
 	}
 }

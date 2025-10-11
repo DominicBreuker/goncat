@@ -5,19 +5,21 @@ import (
 	"dominicbreuker/goncat/pkg/config"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 )
 
 // MockExec provides a mock implementation of command execution for testing.
-// It simulates running a command by echoing input back to output.
+// It simulates running a command like /bin/sh, responding to specific commands.
 type MockExec struct{}
 
-// NewMockExec creates a new mock exec that echoes input to output.
+// NewMockExec creates a new mock exec that simulates shell behavior.
 func NewMockExec() *MockExec {
 	return &MockExec{}
 }
 
-// Command returns a mock command that echoes data from stdin to stdout.
+// Command returns a mock command that simulates /bin/sh behavior.
+// It responds to specific commands like "echo" and "whoami", and rejects others.
 func (m *MockExec) Command(program string) config.Cmd {
 	return &mockCmd{
 		program: program,
@@ -92,17 +94,36 @@ func (m *mockCmd) Start() error {
 
 	m.started = true
 
-	// Start a goroutine to echo stdin to stdout
+	// Start a goroutine to simulate shell behavior
 	go func() {
 		defer m.stdoutWrite.Close()
 		defer m.stderrWrite.Close()
 
+		// Process commands line by line
 		buf := make([]byte, 4096)
+		var line []byte
 		for {
 			n, err := m.stdinRead.Read(buf)
 			if n > 0 {
-				// Echo to stdout
-				m.stdoutWrite.Write(buf[:n])
+				line = append(line, buf[:n]...)
+				// Process complete lines
+				for len(line) > 0 {
+					idx := -1
+					for i := 0; i < len(line); i++ {
+						if line[i] == '\n' {
+							idx = i
+							break
+						}
+					}
+					if idx == -1 {
+						break // No complete line yet
+					}
+
+					// Process the line
+					cmd := string(line[:idx])
+					line = line[idx+1:]
+					m.processCommand(cmd)
+				}
 			}
 			if err != nil {
 				break
@@ -115,6 +136,32 @@ func (m *mockCmd) Start() error {
 	}()
 
 	return nil
+}
+
+// processCommand simulates shell command execution for /bin/sh.
+func (m *mockCmd) processCommand(cmd string) {
+	// Trim whitespace
+	cmd = strings.TrimSpace(cmd)
+
+	if cmd == "" {
+		return
+	}
+
+	// Check if command starts with "echo "
+	if strings.HasPrefix(cmd, "echo ") {
+		// Extract the echo argument and write it to stdout
+		arg := cmd[5:] // Remove "echo "
+		m.stdoutWrite.Write([]byte(arg + "\n"))
+	} else if cmd == "whoami" {
+		// Respond with mock shell identifier
+		m.stdoutWrite.Write([]byte("mockcmd[" + m.program + "]\n"))
+	} else if cmd == "exit" {
+		// Close stdin to signal exit
+		m.stdinRead.Close()
+	} else {
+		// Unsupported command
+		m.stderrWrite.Write([]byte("command not supported by mock: " + cmd + "\n"))
+	}
 }
 
 func (m *mockCmd) Wait() error {
