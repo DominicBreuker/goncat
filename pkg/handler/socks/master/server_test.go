@@ -32,9 +32,6 @@ func (f *fakeServerControlSession) Send(m msg.Message) error {
 
 // TestNewServer verifies server creation and initialization.
 func TestNewServer(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
@@ -80,9 +77,6 @@ func TestNewServer_InvalidAddress(t *testing.T) {
 
 // TestServer_LogError verifies error logging functionality.
 func TestServer_LogError(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
@@ -348,9 +342,6 @@ func TestConfig_StringFormat(t *testing.T) {
 
 // TestNewUDPRelay_InvalidAddress verifies error handling for invalid addresses.
 func TestNewUDPRelay_InvalidAddress(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()

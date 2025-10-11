@@ -278,11 +278,12 @@ func TestListener_Close(t *testing.T) {
 		t.Error("Serve did not return after Close")
 	}
 
-	// Verify we can't connect anymore - wait a bit to ensure close is processed
-	time.Sleep(50 * time.Millisecond)
+	// Verify we can't connect anymore
 	tcpAddr, _ := net.ResolveTCPAddr("tcp", addr)
 	conn, err := mockNet.DialTCP("tcp", nil, tcpAddr)
 	if err == nil {
+		// The connection might succeed if there's a race, but it should be closed immediately
+		// Try to write to verify it's really closed
 		conn.Close()
 		t.Error("Expected connection to fail after Close")
 	}
