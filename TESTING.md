@@ -181,6 +181,87 @@ func (f *fakeConn) Close() error {
 }
 ```
 
+## Dependency Injection & Mocks
+
+The project uses dependency injection to support testing without real system resources. Most functions that interact with external systems (network, filesystem, command execution) accept an optional `*config.Dependencies` parameter.
+
+### Mock Infrastructure
+
+The `mocks/` package provides mock implementations:
+- **MockTCPNetwork**: In-memory TCP network using `net.Pipe()`
+- **MockStdio**: Simulated stdin/stdout with buffers
+- **MockExec**: Simulated command execution without spawning processes
+
+### Using Mocks in Unit Tests
+
+When writing unit tests, prefer mocks over real system resources:
+
+```go
+func TestClient_Connect(t *testing.T) {
+    // Create mock network
+    mockNet := mocks.NewMockTCPNetwork()
+    deps := &config.Dependencies{
+        TCPDialer:   mockNet.DialTCP,
+        TCPListener: mockNet.ListenTCP,
+    }
+
+    // Create a listener on mock network
+    tcpAddr, _ := net.ResolveTCPAddr("tcp", "127.0.0.1:12345")
+    listener, _ := mockNet.ListenTCP("tcp", tcpAddr)
+    defer listener.Close()
+
+    // Test dialing with mock network
+    dialer, _ := tcp.NewDialer("127.0.0.1:12345", deps)
+    conn, err := dialer.Dial()
+    if err != nil {
+        t.Fatalf("Dial() error = %v", err)
+    }
+    defer conn.Close()
+}
+```
+
+### Using MockExec for Command Testing
+
+```go
+func TestRunCommand(t *testing.T) {
+    mockExec := mocks.NewMockExec()
+    deps := &config.Dependencies{
+        ExecCommand: mockExec.Command,
+    }
+
+    conn := newFakeConn()
+    conn.readBuf.WriteString("echo hello\n")
+    conn.readBuf.WriteString("exit\n")
+
+    err := exec.Run(ctx, conn, "/bin/sh", deps)
+    if err != nil {
+        t.Fatalf("Run() error = %v", err)
+    }
+
+    output := conn.writeBuf.String()
+    if !strings.Contains(output, "hello") {
+        t.Errorf("output = %q, want to contain 'hello'", output)
+    }
+}
+```
+
+### Benefits of Mocks
+
+- **Fast**: No network latency or process spawning
+- **Reliable**: No port conflicts or race conditions
+- **Isolated**: Tests don't affect or depend on system state
+- **CI-friendly**: No special privileges or resources needed
+- **Deterministic**: Predictable behavior without timing issues
+
+### When to Use Real Resources
+
+Avoid mocks for:
+- Integration tests validating complete workflows
+- E2E tests in `test/e2e/` using Docker
+- Tests specifically validating real system behavior
+
+See `test/integration/README.md` for integration testing with mocks.
+
 ## Benchmarks
 
 - Reset timer after setup: `b.ResetTimer()`
@@ -245,7 +326,8 @@ go test -run TestSpecific ./...  # Run specific test
 - Keep tests independent - no global state leaks
 - Each test should set up its own fixtures
 - Tests should be runnable in any order
-- Use `-short` flag to skip slow tests: `if testing.Short() { t.Skip(...) }`
+- Prefer mocks over real resources to keep tests fast and reliable
+- Use `-short` flag only for truly slow tests (e.g., those that must use real resources)
 
 ## External Dependencies
 
