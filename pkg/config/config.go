@@ -3,7 +3,9 @@
 // and master/slave specific configurations.
 package config
 
-import "fmt"
+import (
+	"fmt"
+)
 
 // Shared contains configuration settings common to both master and slave modes,
 // including network protocol, connection details, and security settings.
@@ -14,6 +16,7 @@ type Shared struct {
 	SSL      bool
 	Key      string
 	Verbose  bool
+	Deps     *Dependencies
 }
 
 // Protocol represents the network protocol type used for communication.

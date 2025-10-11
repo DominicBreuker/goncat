@@ -55,7 +55,7 @@ func (mst *Master) handleForgroundPlain(ctx context.Context) error {
 		}
 	}
 
-	terminal.Pipe(ctx, conn, mst.cfg.Verbose)
+	terminal.Pipe(ctx, conn, mst.cfg.Verbose, mst.cfg.Deps)
 
 	return nil
 }

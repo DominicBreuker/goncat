@@ -6,9 +6,8 @@ import (
 	"context"
 	"dominicbreuker/goncat/cmd/shared"
 	"dominicbreuker/goncat/pkg/clean"
-	"dominicbreuker/goncat/pkg/client"
 	"dominicbreuker/goncat/pkg/config"
-	"dominicbreuker/goncat/pkg/handler/slave"
+	"dominicbreuker/goncat/pkg/entrypoint"
 	"dominicbreuker/goncat/pkg/log"
 	"fmt"
 	"strings"
@@ -60,23 +59,7 @@ func GetCommand() *cli.Command {
 				return fmt.Errorf("exiting")
 			}
 
-			c := client.New(ctx, cfg)
-			if err := c.Connect(); err != nil {
-				return fmt.Errorf("connecting: %s", err)
-			}
-			defer c.Close()
-
-			h, err := slave.New(ctx, cfg, c.GetConnection())
-			if err != nil {
-				return fmt.Errorf("slave.New(): %s", err)
-			}
-			defer h.Close()
-
-			if err := h.Handle(); err != nil {
-				return fmt.Errorf("handling: %s", err)
-			}
-
-			return nil
+			return entrypoint.SlaveConnect(ctx, cfg)
 		},
 		Flags: getFlags(),
 	}

@@ -4,6 +4,7 @@ package terminal
 
 import (
 	"context"
+	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/pipeio"
 	"dominicbreuker/goncat/pkg/pty"
@@ -17,8 +18,8 @@ import (
 )
 
 // Pipe establishes bidirectional I/O between standard I/O and a network connection.
-func Pipe(ctx context.Context, conn net.Conn, verbose bool) {
-	pipeio.Pipe(ctx, pipeio.NewStdio(), conn, func(err error) {
+func Pipe(ctx context.Context, conn net.Conn, verbose bool, deps *config.Dependencies) {
+	pipeio.Pipe(ctx, pipeio.NewStdio(deps), conn, func(err error) {
 		if verbose {
 			log.ErrorMsg("Pipe(stdio, conn): %s\n", err)
 		}
@@ -44,7 +45,7 @@ func PipeWithPTY(ctx context.Context, connCtl, connData net.Conn, verbose bool) 
 	ctx, cancel := context.WithCancel(ctx)
 	go syncTerminalSize(ctx, connCtl)
 
-	Pipe(ctx, connData, verbose)
+	Pipe(ctx, connData, verbose, nil)
 	cancel()
 
 	return nil

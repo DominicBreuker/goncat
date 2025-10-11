@@ -10,7 +10,7 @@ services:
     hostname: the_slave
     command: sh -c '/opt/dist/goncat.elf slave listen $TRANSPORT://:8080'
     volumes:
-      - ../dist:/opt/dist:ro
+      - ../../dist:/opt/dist:ro
     healthcheck:
       test: ["CMD-SHELL", "netstat -an | grep 8080 | grep LISTEN"] 
       interval: 5s
@@ -28,7 +28,7 @@ services:
       server:
         condition: service_healthy
     volumes:
-      - ../dist:/opt/dist:ro
+      - ../../dist:/opt/dist:ro
       - .:/opt/tests:ro
     hostname: the_master
     command: sh -c '/opt/tests/test-runner.sh "$TRANSPORT" /opt/tests/$TEST_SET/test-*.sh'

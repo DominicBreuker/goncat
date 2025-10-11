@@ -1,6 +1,8 @@
 package pipeio
 
 import (
+	"dominicbreuker/goncat/pkg/config"
+	"io"
 	"os"
 
 	"github.com/muesli/cancelreader"
@@ -10,27 +12,36 @@ import (
 // It uses cancelable reading from stdin when supported, allowing reads
 // to be interrupted via Close.
 type Stdio struct {
-	stdin            *os.File
+	stdin            io.Reader
 	cancellableStdin cancelreader.CancelReader
 
-	stdout *os.File
+	stdout io.Writer
 }
 
 // NewStdio creates a new Stdio with cancelable stdin reading if supported by the platform.
+// The deps parameter is optional and can be nil to use os.Stdin/os.Stdout.
 // On platforms where cancelable reading is not supported, Read operations will use
-// standard os.Stdin directly and cannot be interrupted via Close.
-func NewStdio() *Stdio {
+// the provided stdin directly and cannot be interrupted via Close.
+func NewStdio(deps *config.Dependencies) *Stdio {
+	stdinFunc := config.GetStdinFunc(deps)
+	stdoutFunc := config.GetStdoutFunc(deps)
+
+	stdin := stdinFunc()
+	stdout := stdoutFunc()
+
 	out := Stdio{
-		stdin:  os.Stdin,
-		stdout: os.Stdout,
+		stdin:  stdin,
+		stdout: stdout,
 	}
 
-	cancellableStdin, err := (cancelreader.NewReader(os.Stdin))
-	if err != nil {
-		return &out
+	// Try to create a cancelable reader if stdin is an os.File
+	if stdinFile, ok := stdin.(*os.File); ok {
+		cancellableStdin, err := cancelreader.NewReader(stdinFile)
+		if err == nil {
+			out.cancellableStdin = cancellableStdin
+		}
 	}
 
-	out.cancellableStdin = cancellableStdin
 	return &out
 }
 

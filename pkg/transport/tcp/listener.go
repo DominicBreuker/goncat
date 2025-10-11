@@ -1,6 +1,7 @@
 package tcp
 
 import (
+	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/transport"
 	"fmt"
@@ -18,13 +19,16 @@ type Listener struct {
 }
 
 // NewListener creates a new TCP listener on the specified address.
-func NewListener(addr string) (*Listener, error) {
+// The deps parameter is optional and can be nil to use default implementations.
+func NewListener(addr string, deps *config.Dependencies) (*Listener, error) {
 	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %s", addr, err)
 	}
 
-	nl, err := net.ListenTCP("tcp", tcpAddr)
+	listenerFn := config.GetTCPListenerFunc(deps)
+
+	nl, err := listenerFn("tcp", tcpAddr)
 	if err != nil {
 		return nil, fmt.Errorf("listen(tcp, %s): %s", addr, err)
 	}

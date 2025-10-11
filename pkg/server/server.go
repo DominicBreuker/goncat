@@ -81,7 +81,7 @@ func (s *Server) Serve() error {
 	case config.ProtoWS, config.ProtoWSS:
 		s.l, err = ws.NewListener(s.ctx, addr, s.cfg.Protocol == config.ProtoWSS)
 	default:
-		s.l, err = tcp.NewListener(addr)
+		s.l, err = tcp.NewListener(addr, s.cfg.Deps)
 	}
 	if err != nil {
 		return fmt.Errorf("tcp.New(%s): %s", addr, err)

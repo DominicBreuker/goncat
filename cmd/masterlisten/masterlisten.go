@@ -6,11 +6,9 @@ import (
 	"context"
 	"dominicbreuker/goncat/cmd/shared"
 	"dominicbreuker/goncat/pkg/config"
-	"dominicbreuker/goncat/pkg/handler/master"
+	"dominicbreuker/goncat/pkg/entrypoint"
 	"dominicbreuker/goncat/pkg/log"
-	"dominicbreuker/goncat/pkg/server"
 	"fmt"
-	"net"
 	"strings"
 
 	"github.com/urfave/cli/v3"
@@ -63,38 +61,9 @@ func GetCommand() *cli.Command {
 				return fmt.Errorf("exiting")
 			}
 
-			s, err := server.New(ctx, cfg, makeHandler(ctx, cfg, mCfg))
-			if err != nil {
-				return fmt.Errorf("server.New(): %s", err)
-			}
-
-			if err := s.Serve(); err != nil {
-				return fmt.Errorf("serving: %s", err)
-			}
-			defer s.Close()
-
-			return nil
+			return entrypoint.MasterListen(ctx, cfg, mCfg)
 		},
 		Flags: getFlags(),
-	}
-}
-
-func makeHandler(ctx context.Context, cfg *config.Shared, mCfg *config.Master) func(conn net.Conn) error {
-	return func(conn net.Conn) error {
-		defer log.InfoMsg("Connection to %s closed\n", conn.RemoteAddr())
-		defer conn.Close()
-
-		mst, err := master.New(ctx, cfg, mCfg, conn)
-		if err != nil {
-			return fmt.Errorf("master.New(): %s", err)
-		}
-		defer mst.Close()
-
-		if err := mst.Handle(); err != nil {
-			return fmt.Errorf("handle: %s", err)
-		}
-
-		return nil
 	}
 }
 

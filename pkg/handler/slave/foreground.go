@@ -29,7 +29,7 @@ func (slv *Slave) handleForeground(ctx context.Context, m msg.Foreground) error 
 	defer conn.Close()
 
 	if m.Exec == "" {
-		terminal.Pipe(ctx, conn, slv.cfg.Verbose)
+		terminal.Pipe(ctx, conn, slv.cfg.Verbose, slv.cfg.Deps)
 	} else {
 		if m.Pty {
 			connPtyCtl, err := slv.sess.AcceptNewChannel()
