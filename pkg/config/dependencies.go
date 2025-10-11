@@ -10,13 +10,13 @@ import (
 // Dependencies contains injectable dependencies for testing and customization.
 // All fields are optional and will use default implementations if nil.
 type Dependencies struct {
-	TCPDialer        TCPDialerFunc
-	TCPListener      TCPListenerFunc
-	PortFwdListener  PortFwdListenerFunc
-	PortFwdDialer    PortFwdDialerFunc
-	Stdin            StdinFunc
-	Stdout           StdoutFunc
-	ExecCommand      ExecCommandFunc
+	TCPDialer       TCPDialerFunc
+	TCPListener     TCPListenerFunc
+	PortFwdListener PortFwdListenerFunc
+	PortFwdDialer   PortFwdDialerFunc
+	Stdin           StdinFunc
+	Stdout          StdoutFunc
+	ExecCommand     ExecCommandFunc
 }
 
 // TCPDialerFunc is a function that dials a TCP connection.
