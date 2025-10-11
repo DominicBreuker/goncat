@@ -2,6 +2,7 @@ package portfwd
 
 import (
 	"context"
+	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/format"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
@@ -13,9 +14,10 @@ import (
 // Client handles establishing connections to remote destinations
 // in response to port forwarding requests from the control session.
 type Client struct {
-	ctx     context.Context
-	m       msg.Connect
-	sessCtl ClientControlSession
+	ctx      context.Context
+	m        msg.Connect
+	sessCtl  ClientControlSession
+	dialerFn config.PortFwdDialerFunc
 }
 
 // ClientControlSession represents the interface for obtaining a channel
@@ -26,11 +28,13 @@ type ClientControlSession interface {
 
 // NewClient creates a new port forwarding client that will connect to
 // the destination specified in the message.
-func NewClient(ctx context.Context, m msg.Connect, sessCtl ClientControlSession) *Client {
+// The deps parameter is optional and can be nil to use default implementations.
+func NewClient(ctx context.Context, m msg.Connect, sessCtl ClientControlSession, deps *config.Dependencies) *Client {
 	return &Client{
-		ctx:     ctx,
-		m:       m,
-		sessCtl: sessCtl,
+		ctx:      ctx,
+		m:        m,
+		sessCtl:  sessCtl,
+		dialerFn: config.GetPortFwdDialerFunc(deps),
 	}
 }
 
@@ -50,13 +54,16 @@ func (h *Client) Handle() error {
 		return fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %s", addr, err)
 	}
 
-	connLocal, err := net.DialTCP("tcp", nil, tcpAddr)
+	connLocal, err := h.dialerFn("tcp", nil, tcpAddr)
 	if err != nil {
 		return fmt.Errorf("net.Dial(tcp, %s): %s", addr, err)
 	}
 	defer connLocal.Close()
 
-	connLocal.SetKeepAlive(true)
+	// Try to enable keep-alive if it's a TCP connection
+	if tcpConn, ok := connLocal.(*net.TCPConn); ok {
+		tcpConn.SetKeepAlive(true)
+	}
 
 	pipeio.Pipe(h.ctx, connRemote, connLocal, func(err error) {
 		log.ErrorMsg("Handling connect to %s: %s", addr, err)
