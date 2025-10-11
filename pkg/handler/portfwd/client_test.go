@@ -2,6 +2,8 @@ package portfwd
 
 import (
 	"context"
+	"dominicbreuker/goncat/mocks"
+	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"errors"
 	"net"
@@ -112,9 +114,6 @@ func TestNewClient_DifferentPorts(t *testing.T) {
 
 // TestClient_Handle_GetChannelError verifies error handling when GetOneChannel fails.
 func TestClient_Handle_GetChannelError(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
@@ -140,9 +139,6 @@ func TestClient_Handle_GetChannelError(t *testing.T) {
 
 // TestClient_Handle_InvalidAddress verifies error handling for invalid destination addresses.
 func TestClient_Handle_InvalidAddress(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
@@ -172,16 +168,17 @@ func TestClient_Handle_InvalidAddress(t *testing.T) {
 
 // TestClient_Handle_DialError verifies error handling when dialing the destination fails.
 func TestClient_Handle_DialError(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
-	// Use localhost with a port that's very unlikely to be listening
-	// This will fail quickly with "connection refused" rather than timeout
+	// Use mock network with no listener to simulate connection refused
+	mockNet := mocks.NewMockTCPNetwork()
+	deps := &config.Dependencies{
+		TCPDialer: mockNet.DialTCP,
+	}
+
 	m := msg.Connect{
 		RemoteHost: "127.0.0.1",
-		RemotePort: 1, // Port 1 requires root, should be refused
+		RemotePort: 12345, // No listener on this address
 	}
 
 	// Create a fake channel
@@ -196,7 +193,7 @@ func TestClient_Handle_DialError(t *testing.T) {
 		},
 	}
 
-	client := NewClient(ctx, m, sessCtl, nil)
+	client := NewClient(ctx, m, sessCtl, deps)
 	err := client.Handle()
 
 	if err == nil {
@@ -206,15 +203,16 @@ func TestClient_Handle_DialError(t *testing.T) {
 
 // TestClient_Handle_TableDriven tests various error scenarios using table-driven approach.
 func TestClient_Handle_TableDriven(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
+
+	// Create mock network for connection refused test
+	mockNet := mocks.NewMockTCPNetwork()
 
 	tests := []struct {
 		name      string
 		msg       msg.Connect
 		channelFn func() (net.Conn, error)
+		deps      *config.Dependencies
 		wantErr   bool
 	}{
 		{
@@ -226,6 +224,7 @@ func TestClient_Handle_TableDriven(t *testing.T) {
 			channelFn: func() (net.Conn, error) {
 				return nil, errors.New("channel error")
 			},
+			deps:    nil,
 			wantErr: true,
 		},
 		{
@@ -240,18 +239,22 @@ func TestClient_Handle_TableDriven(t *testing.T) {
 				go func() { client.Close() }()
 				return server, nil
 			},
+			deps:    nil,
 			wantErr: true,
 		},
 		{
 			name: "connection refused",
 			msg: msg.Connect{
 				RemoteHost: "127.0.0.1",
-				RemotePort: 1, // Port 1 should be refused
+				RemotePort: 54321, // No listener on this address
 			},
 			channelFn: func() (net.Conn, error) {
 				client, server := net.Pipe()
 				go func() { client.Close() }()
 				return server, nil
+			},
+			deps: &config.Dependencies{
+				TCPDialer: mockNet.DialTCP,
 			},
 			wantErr: true,
 		},
@@ -267,7 +270,7 @@ func TestClient_Handle_TableDriven(t *testing.T) {
 				channelFn: tc.channelFn,
 			}
 
-			client := NewClient(ctx, tc.msg, sessCtl, nil)
+			client := NewClient(ctx, tc.msg, sessCtl, tc.deps)
 			err := client.Handle()
 
 			if (err != nil) != tc.wantErr {
@@ -279,9 +282,6 @@ func TestClient_Handle_TableDriven(t *testing.T) {
 
 // TestClient_ContextCancellation verifies that the client respects context cancellation.
 func TestClient_ContextCancellation(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -313,25 +313,28 @@ func TestClient_ContextCancellation(t *testing.T) {
 
 // TestClient_Handle_SuccessfulConnection tests the successful connection path.
 func TestClient_Handle_SuccessfulConnection(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
 
-	// Start a local TCP server to accept connections
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	// Use mock TCP network
+	mockNet := mocks.NewMockTCPNetwork()
+	deps := &config.Dependencies{
+		TCPDialer:   mockNet.DialTCP,
+		TCPListener: mockNet.ListenTCP,
+	}
+
+	// Start a listener on the mock network
+	tcpAddr, _ := net.ResolveTCPAddr("tcp", "127.0.0.1:12350")
+	listener, err := mockNet.ListenTCP("tcp", tcpAddr)
 	if err != nil {
 		t.Fatalf("failed to create test listener: %v", err)
 	}
 	defer listener.Close()
 
-	addr := listener.Addr().(*net.TCPAddr)
-
 	m := msg.Connect{
-		RemoteHost: addr.IP.String(),
-		RemotePort: addr.Port,
+		RemoteHost: "127.0.0.1",
+		RemotePort: 12350,
 	}
 
 	// Create a fake remote channel
@@ -353,7 +356,7 @@ func TestClient_Handle_SuccessfulConnection(t *testing.T) {
 		}
 	}()
 
-	client := NewClient(ctx, m, sessCtl, nil)
+	client := NewClient(ctx, m, sessCtl, deps)
 
 	// Run Handle in goroutine since it blocks
 	done := make(chan error, 1)
