@@ -10,13 +10,11 @@ import (
 // Dependencies contains injectable dependencies for testing and customization.
 // All fields are optional and will use default implementations if nil.
 type Dependencies struct {
-	TCPDialer       TCPDialerFunc
-	TCPListener     TCPListenerFunc
-	PortFwdListener PortFwdListenerFunc
-	PortFwdDialer   PortFwdDialerFunc
-	Stdin           StdinFunc
-	Stdout          StdoutFunc
-	ExecCommand     ExecCommandFunc
+	TCPDialer   TCPDialerFunc
+	TCPListener TCPListenerFunc
+	Stdin       StdinFunc
+	Stdout      StdoutFunc
+	ExecCommand ExecCommandFunc
 }
 
 // TCPDialerFunc is a function that dials a TCP connection.
@@ -26,14 +24,6 @@ type TCPDialerFunc func(network string, laddr, raddr *net.TCPAddr) (net.Conn, er
 // TCPListenerFunc is a function that creates a TCP listener.
 // It returns a net.Listener to allow for mock implementations.
 type TCPListenerFunc func(network string, laddr *net.TCPAddr) (net.Listener, error)
-
-// PortFwdListenerFunc is a function that creates a listener for port forwarding.
-// It returns a net.Listener to allow for mock implementations in port forwarding scenarios.
-type PortFwdListenerFunc func(network string, laddr *net.TCPAddr) (net.Listener, error)
-
-// PortFwdDialerFunc is a function that dials a connection for port forwarding.
-// It returns a net.Conn to allow for mock implementations in port forwarding scenarios.
-type PortFwdDialerFunc func(network string, laddr, raddr *net.TCPAddr) (net.Conn, error)
 
 // StdinFunc is a function that returns a reader for stdin.
 // It returns an io.Reader to allow for mock implementations.
@@ -115,28 +105,6 @@ func GetExecCommandFunc(deps *Dependencies) ExecCommandFunc {
 	}
 	return func(program string) Cmd {
 		return &realCmd{cmd: exec.Command(program)}
-	}
-}
-
-// GetPortFwdListenerFunc returns the port forwarding listener function from dependencies, or a default implementation.
-// If deps is nil or deps.PortFwdListener is nil, returns a function that uses net.ListenTCP.
-func GetPortFwdListenerFunc(deps *Dependencies) PortFwdListenerFunc {
-	if deps != nil && deps.PortFwdListener != nil {
-		return deps.PortFwdListener
-	}
-	return func(network string, laddr *net.TCPAddr) (net.Listener, error) {
-		return net.ListenTCP(network, laddr)
-	}
-}
-
-// GetPortFwdDialerFunc returns the port forwarding dialer function from dependencies, or a default implementation.
-// If deps is nil or deps.PortFwdDialer is nil, returns a function that uses net.DialTCP.
-func GetPortFwdDialerFunc(deps *Dependencies) PortFwdDialerFunc {
-	if deps != nil && deps.PortFwdDialer != nil {
-		return deps.PortFwdDialer
-	}
-	return func(network string, laddr, raddr *net.TCPAddr) (net.Conn, error) {
-		return net.DialTCP(network, laddr, raddr)
 	}
 }
 

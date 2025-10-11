@@ -17,7 +17,7 @@ type Client struct {
 	ctx      context.Context
 	m        msg.Connect
 	sessCtl  ClientControlSession
-	dialerFn config.PortFwdDialerFunc
+	dialerFn config.TCPDialerFunc
 }
 
 // ClientControlSession represents the interface for obtaining a channel
@@ -34,7 +34,7 @@ func NewClient(ctx context.Context, m msg.Connect, sessCtl ClientControlSession,
 		ctx:      ctx,
 		m:        m,
 		sessCtl:  sessCtl,
-		dialerFn: config.GetPortFwdDialerFunc(deps),
+		dialerFn: config.GetTCPDialerFunc(deps),
 	}
 }
 

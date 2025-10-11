@@ -20,7 +20,7 @@ type Server struct {
 	ctx        context.Context
 	cfg        Config
 	sessCtl    ServerControlSession
-	listenerFn config.PortFwdListenerFunc
+	listenerFn config.TCPListenerFunc
 }
 
 // Config contains the configuration for port forwarding, specifying both
@@ -50,7 +50,7 @@ func NewServer(ctx context.Context, cfg Config, sessCtl ServerControlSession, de
 		ctx:        ctx,
 		cfg:        cfg,
 		sessCtl:    sessCtl,
-		listenerFn: config.GetPortFwdListenerFunc(deps),
+		listenerFn: config.GetTCPListenerFunc(deps),
 	}
 }
 

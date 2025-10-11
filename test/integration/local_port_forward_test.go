@@ -76,24 +76,21 @@ func TestLocalPortForwarding(t *testing.T) {
 	<-remoteServerStarted
 	time.Sleep(100 * time.Millisecond)
 
-	// Setup master dependencies with port forwarding mocks
+	// Setup master dependencies (network + stdio)
+	// TCPDialer and TCPListener are used for all TCP operations including port forwarding
 	masterDeps := &config.Dependencies{
-		TCPDialer:       mockNet.DialTCP,
-		TCPListener:     mockNet.ListenTCP,
-		PortFwdListener: mockNet.ListenTCP, // Use mock network for port forwarding listener
-		PortFwdDialer:   mockNet.DialTCP,   // Use mock network for port forwarding dialer
-		Stdin:           func() io.Reader { return masterStdio.GetStdin() },
-		Stdout:          func() io.Writer { return masterStdio.GetStdout() },
+		TCPDialer:   mockNet.DialTCP,
+		TCPListener: mockNet.ListenTCP,
+		Stdin:       func() io.Reader { return masterStdio.GetStdin() },
+		Stdout:      func() io.Writer { return masterStdio.GetStdout() },
 	}
 
-	// Setup slave dependencies with port forwarding mocks
+	// Setup slave dependencies (network + stdio)
 	slaveDeps := &config.Dependencies{
-		TCPDialer:       mockNet.DialTCP,
-		TCPListener:     mockNet.ListenTCP,
-		PortFwdListener: mockNet.ListenTCP, // Use mock network for port forwarding listener
-		PortFwdDialer:   mockNet.DialTCP,   // Use mock network for port forwarding dialer
-		Stdin:           func() io.Reader { return slaveStdio.GetStdin() },
-		Stdout:          func() io.Writer { return slaveStdio.GetStdout() },
+		TCPDialer:   mockNet.DialTCP,
+		TCPListener: mockNet.ListenTCP,
+		Stdin:       func() io.Reader { return slaveStdio.GetStdin() },
+		Stdout:      func() io.Writer { return slaveStdio.GetStdout() },
 	}
 
 	// Master configuration with local port forwarding
