@@ -7,7 +7,6 @@ import (
 	"dominicbreuker/goncat/pkg/entrypoint"
 	"dominicbreuker/goncat/test/helpers"
 	"io"
-	"strings"
 	"testing"
 	"time"
 )
@@ -77,8 +76,10 @@ func TestExecCommandExecution(t *testing.T) {
 		masterErr <- nil
 	}()
 
-	// Give master time to start listening
-	time.Sleep(200 * time.Millisecond)
+	// Wait for master to start listening
+	if err := mockNet.WaitForListener("127.0.0.1:12345", 2000); err != nil {
+		t.Fatalf("Master failed to start listening: %v", err)
+	}
 
 	// Start slave using entrypoint (connects to master)
 	go func() {
@@ -89,39 +90,32 @@ func TestExecCommandExecution(t *testing.T) {
 		slaveErr <- nil
 	}()
 
-	// Give connection time to establish and handlers to start
-	time.Sleep(300 * time.Millisecond)
-
 	// Test 1: Echo command - the mock shell processes "echo <text>" commands
 	masterStdio.WriteToStdin([]byte("echo hello world\n"))
-	time.Sleep(500 * time.Millisecond)
 
-	masterOutput := masterStdio.ReadFromStdout()
-	if !strings.Contains(masterOutput, "hello world") {
-		t.Errorf("Expected master stdout to contain 'hello world', got: %q", masterOutput)
+	// Wait for the output to appear
+	if err := masterStdio.WaitForOutput("hello world", 2000); err != nil {
+		t.Errorf("Echo command output did not appear: %v", err)
 	}
 
 	// Test 2: Whoami command - the mock shell responds with mockcmd[/bin/sh]
 	masterStdio.WriteToStdin([]byte("whoami\n"))
-	time.Sleep(300 * time.Millisecond)
 
-	masterOutput = masterStdio.ReadFromStdout()
-	if !strings.Contains(masterOutput, "mockcmd[/bin/sh]") {
-		t.Errorf("Expected master stdout to contain 'mockcmd[/bin/sh]', got: %q", masterOutput)
+	// Wait for the output to appear
+	if err := masterStdio.WaitForOutput("mockcmd[/bin/sh]", 2000); err != nil {
+		t.Errorf("Whoami command output did not appear: %v", err)
 	}
 
 	// Test 3: Unsupported command - should get error response
 	masterStdio.WriteToStdin([]byte("unsupported\n"))
-	time.Sleep(300 * time.Millisecond)
 
-	masterOutput = masterStdio.ReadFromStdout()
-	if !strings.Contains(masterOutput, "command not supported by mock") {
-		t.Errorf("Expected master stdout to contain error message, got: %q", masterOutput)
+	// Wait for the error message to appear
+	if err := masterStdio.WaitForOutput("command not supported by mock", 2000); err != nil {
+		t.Errorf("Error message did not appear: %v", err)
 	}
 
 	// Test 4: Exit command - this should cause the shell to terminate and slave to exit
 	masterStdio.WriteToStdin([]byte("exit\n"))
-	time.Sleep(500 * time.Millisecond)
 
 	// Wait for slave to complete after shell exits
 	select {

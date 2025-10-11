@@ -11,15 +11,18 @@ import (
 // MockTCPNetwork simulates a TCP network for testing without real network connections.
 // It allows creating listeners and dialers that communicate through in-memory pipes.
 type MockTCPNetwork struct {
-	listeners map[string]*mockTCPListener
-	mu        sync.Mutex
+	listeners    map[string]*mockTCPListener
+	mu           sync.Mutex
+	listenerCond *sync.Cond // Condition variable to signal listener changes
 }
 
 // NewMockTCPNetwork creates a new mock TCP network.
 func NewMockTCPNetwork() *MockTCPNetwork {
-	return &MockTCPNetwork{
+	m := &MockTCPNetwork{
 		listeners: make(map[string]*mockTCPListener),
 	}
+	m.listenerCond = sync.NewCond(&m.mu)
+	return m
 }
 
 // ListenTCP creates a mock TCP listener on the specified address.
@@ -43,6 +46,7 @@ func (m *MockTCPNetwork) ListenTCP(network string, laddr *net.TCPAddr) (net.List
 		network: m,
 	}
 	m.listeners[addr] = listener
+	m.listenerCond.Broadcast() // Signal that a new listener is available
 
 	return listener, nil
 }
@@ -90,6 +94,36 @@ func (m *MockTCPNetwork) DialTCP(network string, laddr, raddr *net.TCPAddr) (net
 	}
 
 	return mockClient, nil
+}
+
+// WaitForListener waits for a listener to be created on the specified address within the given timeout.
+// It returns nil if the listener is found, or an error if the timeout expires.
+// The timeout is specified in milliseconds.
+func (m *MockTCPNetwork) WaitForListener(addr string, timeoutMs int) error {
+	deadline := time.Now().Add(time.Duration(timeoutMs) * time.Millisecond)
+	
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	for {
+		// Check if the listener already exists
+		if _, exists := m.listeners[addr]; exists {
+			return nil
+		}
+		
+		// Check if we've exceeded the timeout
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout waiting for listener on %s", addr)
+		}
+		
+		// Wait for a signal that a new listener is available, with a small timeout
+		// to periodically check the deadline
+		go func() {
+			time.Sleep(50 * time.Millisecond)
+			m.listenerCond.Broadcast()
+		}()
+		m.listenerCond.Wait()
+	}
 }
 
 // mockTCPListener is a mock implementation of net.TCPListener.
