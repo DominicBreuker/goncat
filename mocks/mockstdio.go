@@ -1,5 +1,5 @@
-// Package integration provides mock implementations for integration testing.
-package integration
+// Package mocks provides mock implementations for testing.
+package mocks
 
 import (
 	"bytes"

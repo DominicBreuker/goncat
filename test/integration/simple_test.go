@@ -2,14 +2,10 @@ package integration
 
 import (
 	"context"
-	"dominicbreuker/goncat/pkg/client"
+	"dominicbreuker/goncat/mocks"
 	"dominicbreuker/goncat/pkg/config"
-	"dominicbreuker/goncat/pkg/handler/master"
-	"dominicbreuker/goncat/pkg/handler/slave"
-	"dominicbreuker/goncat/pkg/server"
-	"fmt"
+	"dominicbreuker/goncat/pkg/entrypoint"
 	"io"
-	"net"
 	"strings"
 	"testing"
 	"time"
@@ -22,11 +18,11 @@ import (
 //   - "goncat slave connect tcp://127.0.0.1:12345" (slave connecting)
 func TestEndToEndDataExchange(t *testing.T) {
 	// Create mock network for TCP connections
-	mockNet := NewMockTCPNetwork()
+	mockNet := mocks.NewMockTCPNetwork()
 
 	// Create mock stdio for master and slave
-	masterStdio := NewMockStdio()
-	slaveStdio := NewMockStdio()
+	masterStdio := mocks.NewMockStdio()
+	slaveStdio := mocks.NewMockStdio()
 	defer masterStdio.Close()
 	defer slaveStdio.Close()
 
@@ -81,41 +77,15 @@ func TestEndToEndDataExchange(t *testing.T) {
 	masterErr := make(chan error, 1)
 	slaveErr := make(chan error, 1)
 
-	// Master handler - similar to makeHandler in cmd/masterlisten/masterlisten.go
-	makeHandler := func(ctx context.Context, cfg *config.Shared, mCfg *config.Master) func(conn net.Conn) error {
-		return func(conn net.Conn) error {
-			defer conn.Close()
-
-			mst, err := master.New(ctx, cfg, mCfg, conn)
-			if err != nil {
-				return fmt.Errorf("master.New(): %w", err)
-			}
-			defer mst.Close()
-
-			if err := mst.Handle(); err != nil {
-				return fmt.Errorf("master.Handle(): %w", err)
-			}
-
-			return nil
-		}
-	}
-
-	// Start master server (listens for connections)
+	// Start master server using entrypoint (listens for connections)
 	go func() {
-		s, err := server.New(ctx, masterSharedCfg, makeHandler(ctx, masterSharedCfg, masterCfg))
-		if err != nil {
-			masterErr <- fmt.Errorf("server.New(): %w", err)
-			return
-		}
-		defer s.Close()
-
-		if err := s.Serve(); err != nil {
+		if err := entrypoint.MasterListen(ctx, masterSharedCfg, masterCfg); err != nil {
 			// Context cancellation is expected
 			select {
 			case <-ctx.Done():
 				masterErr <- nil
 			default:
-				masterErr <- fmt.Errorf("server.Serve(): %w", err)
+				masterErr <- err
 			}
 			return
 		}
@@ -125,27 +95,12 @@ func TestEndToEndDataExchange(t *testing.T) {
 	// Give master time to start listening
 	time.Sleep(200 * time.Millisecond)
 
-	// Start slave (connects to master) - similar to cmd/slaveconnect/slaveconnect.go
+	// Start slave using entrypoint (connects to master)
 	go func() {
-		c := client.New(ctx, slaveSharedCfg)
-		if err := c.Connect(); err != nil {
-			slaveErr <- fmt.Errorf("client.Connect(): %w", err)
+		if err := entrypoint.SlaveConnect(ctx, slaveSharedCfg); err != nil {
+			slaveErr <- err
 			return
 		}
-		defer c.Close()
-
-		h, err := slave.New(ctx, slaveSharedCfg, c.GetConnection())
-		if err != nil {
-			slaveErr <- fmt.Errorf("slave.New(): %w", err)
-			return
-		}
-		defer h.Close()
-
-		if err := h.Handle(); err != nil {
-			slaveErr <- fmt.Errorf("slave.Handle(): %w", err)
-			return
-		}
-
 		slaveErr <- nil
 	}()
 

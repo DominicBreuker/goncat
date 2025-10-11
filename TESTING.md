@@ -5,10 +5,11 @@ This document provides comprehensive testing guidelines for the goncat project. 
 ## Overview
 
 Our testing strategy includes:
-- **Unit tests**: Test individual functions and components in isolation
-- **Integration tests**: Test interactions between components and full workflows
+- **Unit tests**: Test individual functions and components in isolation (in `*_test.go` files)
+- **Integration tests**: Test complete flows with mocked dependencies (in `test/integration/`)
+- **E2E tests**: End-to-end tests with real binaries in Docker (in `test/e2e/`)
 - **Coverage goals**: Aim for meaningful coverage of edge cases and error paths, not just 100% line coverage
-- **Test organization**: Tests live alongside the code they test in `*_test.go` files
+- **Test organization**: Unit tests live alongside code; integration/E2E tests in `test/` directory
 
 ## Structure & Naming
 
@@ -327,6 +328,51 @@ Tests serve as documentation:
 See existing tests for examples:
 - `cmd/shared/parsers_test.go` - table-driven tests with error cases
 - More examples will be added as we expand test coverage
+
+## Integration Tests
+
+Integration tests in `test/integration/` validate complete workflows using mocked dependencies. These tests:
+- Use mocked network connections (`mocks/mocktcp.go`) and stdio (`mocks/mockstdio.go`)
+- Test the four operation modes via entrypoint functions in `pkg/entrypoint/`
+- Validate bidirectional data flow without real network or terminal I/O
+- Run fast (~2 seconds) and are fully deterministic
+
+### Writing Integration Tests
+
+1. **Setup mocks**: Use helpers from `test/helpers/` to create mock dependencies
+2. **Configure**: Create `config.Shared` and mode-specific configs (e.g., `config.Master`)
+3. **Use entrypoints**: Call `entrypoint.MasterListen()`, `entrypoint.SlaveConnect()`, etc.
+4. **Validate**: Check that data flows correctly through mocked stdio
+
+Example structure:
+```go
+func TestMyFlow(t *testing.T) {
+    mockNet := mocks.NewMockTCPNetwork()
+    masterStdio := mocks.NewMockStdio()
+    slaveSt dio := mocks.NewMockStdio()
+    
+    // Setup configs with mocked dependencies
+    masterCfg := &config.Shared{
+        Protocol: config.ProtoTCP,
+        Deps: &config.Dependencies{
+            TCPDialer: mockNet.DialTCP,
+            TCPListener: mockNet.ListenTCP,
+            Stdin: func() io.Reader { return masterStdio.GetStdin() },
+            Stdout: func() io.Writer { return masterStdio.GetStdout() },
+        },
+    }
+    
+    // Start master and slave using entrypoint functions
+    go entrypoint.MasterListen(ctx, masterCfg, masterModeCfg)
+    go entrypoint.SlaveConnect(ctx, slaveCfg)
+    
+    // Write to master stdin, verify appears on slave stdout
+    masterStdio.WriteToStdin([]byte("test"))
+    output := slaveStdio.ReadFromStdout()
+}
+```
+
+**Important**: Integration tests must remain passing. They validate the complete tool behavior.
 
 ## Summary
 

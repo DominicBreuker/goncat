@@ -82,10 +82,20 @@ go test -cover ./...   # Same as above
 - Reports code coverage for each package
 - See `TESTING.md` for comprehensive testing guidelines
 
-**Integration Tests:**
+**Integration Tests (Mocked):**
 ```bash
-make test              # All tests (unit + integration)
-make test-integration  # Only integration tests
+go test ./test/integration/...  # High-level integration tests with mocks
+```
+- Fast execution: ~2 seconds
+- Uses mocked network and stdio (no real TCP or terminal I/O)
+- Tests complete master-slave communication flows
+- Located in `test/integration/` directory
+- See `test/integration/README.md` for details
+
+**E2E Tests (Docker):**
+```bash
+make test              # All tests (unit + E2E)
+make test-integration  # Only E2E tests
 ```
 - **REQUIRES:** Docker and Docker Compose installed
 - **REQUIRES:** Linux binary built first (runs `make build-linux` automatically)
@@ -93,15 +103,17 @@ make test-integration  # Only integration tests
 - Tests all transport protocols: tcp, ws, wss
 - Uses Alpine Linux containers with expect for testing
 - Total test time: ~2-3 minutes
-- Tests are in `tests/` directory with expect scripts
+- Tests are in `test/e2e/` directory with expect scripts
 
-**Integration Test Details:**
-- Uses `docker compose` with test configurations in `tests/` directory
+**E2E Test Details:**
+- Uses `docker compose` with test configurations in `test/e2e/` directory
 - Two main test scenarios:
   - `slave-listen` (bind shell): master connects to listening slave
   - `slave-connect` (reverse shell): slave connects to listening master
 - Tests verify: basic connectivity, exec mode, PTY mode
 - All tests run with `--exit-code-from` to propagate test failures
+
+**IMPORTANT:** All integration tests in `test/integration/` must be kept running. These tests use mocked dependencies and validate the complete tool flow.
 
 **Testing Guidelines:**
 - See `TESTING.md` for comprehensive testing guidelines
@@ -140,6 +152,7 @@ go.sum           - Go dependency checksums
 - `slaveconnect/`, `slavelisten/` - Slave connection handlers
 
 **pkg/** - Core functionality packages
+- `entrypoint/` - Entry functions for the four operation modes (masterlisten, masterconnect, slavelisten, slaveconnect)
 - `transport/` - Protocol implementations (tcp, ws/websocket)
 - `crypto/` - TLS certificate generation and mutual auth
 - `pty/` - Cross-platform PTY support (separate implementations for Unix and Windows)
@@ -156,12 +169,14 @@ go.sum           - Go dependency checksums
 - `pipeio/` - I/O piping utilities
 - `format/` - Output formatting with color support
 
-**tests/** - Integration test infrastructure
-- `Dockerfile` - Alpine Linux with expect for testing
-- `docker-compose.slave-*.yml` - Test orchestration configs
-- `test-runner.sh` - Test execution wrapper
-- `lib.tcl` - Expect library for tests
-- `master-connect/`, `master-listen/` - Test scenarios
+**test/** - Test infrastructure
+- `integration/` - High-level integration tests with mocked dependencies
+- `e2e/` - End-to-end tests using Docker (Alpine Linux with expect)
+- `helpers/` - Common test utilities and helper functions
+
+**mocks/** - Mock implementations for testing
+- `mocktcp.go` - Mock TCP network using net.Pipe()
+- `mockstdio.go` - Mock stdin/stdout for testing I/O
 
 ### Key Source Files
 

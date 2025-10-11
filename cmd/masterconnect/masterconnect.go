@@ -5,9 +5,8 @@ package masterconnect
 import (
 	"context"
 	"dominicbreuker/goncat/cmd/shared"
-	"dominicbreuker/goncat/pkg/client"
 	"dominicbreuker/goncat/pkg/config"
-	"dominicbreuker/goncat/pkg/handler/master"
+	"dominicbreuker/goncat/pkg/entrypoint"
 	"dominicbreuker/goncat/pkg/log"
 	"fmt"
 	"strings"
@@ -65,23 +64,7 @@ func GetCommand() *cli.Command {
 				return fmt.Errorf("exiting")
 			}
 
-			c := client.New(ctx, cfg)
-			if err := c.Connect(); err != nil {
-				return fmt.Errorf("connecting: %s", err)
-			}
-			defer c.Close()
-
-			h, err := master.New(ctx, cfg, mCfg, c.GetConnection())
-			if err != nil {
-				return fmt.Errorf("master.New(): %s", err)
-			}
-			defer h.Close()
-
-			if err := h.Handle(); err != nil {
-				return fmt.Errorf("handling: %s", err)
-			}
-
-			return nil
+			return entrypoint.MasterConnect(ctx, cfg, mCfg)
 		},
 		Flags: getFlags(),
 	}
