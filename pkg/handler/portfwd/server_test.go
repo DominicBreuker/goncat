@@ -72,7 +72,7 @@ func TestNewServer(t *testing.T) {
 		RemotePort: 9090,
 	}
 
-	srv := NewServer(ctx, cfg, nil)
+	srv := NewServer(ctx, cfg, nil, nil)
 
 	if srv == nil {
 		t.Fatal("NewServer() returned nil")
@@ -113,7 +113,7 @@ func TestNewServer_AllFields(t *testing.T) {
 	}
 
 	sessCtl := &fakeServerControlSession{}
-	srv := NewServer(ctx, cfg, sessCtl)
+	srv := NewServer(ctx, cfg, sessCtl, nil)
 
 	if srv.ctx != ctx {
 		t.Error("Server context not set correctly")
@@ -148,7 +148,7 @@ func TestServer_HandlePortForwardingConn_SendAndGetError(t *testing.T) {
 		},
 	}
 
-	srv := NewServer(ctx, cfg, sessCtl)
+	srv := NewServer(ctx, cfg, sessCtl, nil)
 
 	// Create a fake local connection
 	client, server := net.Pipe()
@@ -177,7 +177,7 @@ func TestServer_Handle_InvalidAddress(t *testing.T) {
 	}
 
 	sessCtl := &fakeServerControlSession{}
-	srv := NewServer(ctx, cfg, sessCtl)
+	srv := NewServer(ctx, cfg, sessCtl, nil)
 
 	err := srv.Handle()
 	if err == nil {
@@ -210,7 +210,7 @@ func TestServer_Handle_PortInUse(t *testing.T) {
 	}
 
 	sessCtl := &fakeServerControlSession{}
-	srv := NewServer(ctx, cfg, sessCtl)
+	srv := NewServer(ctx, cfg, sessCtl, nil)
 
 	err = srv.Handle()
 	if err == nil {
@@ -234,7 +234,7 @@ func TestServer_Handle_ContextCancellation(t *testing.T) {
 	}
 
 	sessCtl := &fakeServerControlSession{}
-	srv := NewServer(ctx, cfg, sessCtl)
+	srv := NewServer(ctx, cfg, sessCtl, nil)
 
 	// Cancel context before calling Handle
 	cancel()
@@ -280,7 +280,7 @@ func TestServer_HandlePortForwardingConn_Success(t *testing.T) {
 		},
 	}
 
-	srv := NewServer(ctx, cfg, sessCtl)
+	srv := NewServer(ctx, cfg, sessCtl, nil)
 
 	// Create a fake local connection
 	localClient, localServer := net.Pipe()
@@ -353,7 +353,7 @@ func TestServer_Handle_TableDriven(t *testing.T) {
 			defer cancel()
 
 			sessCtl := &fakeServerControlSession{}
-			srv := NewServer(ctx, tc.cfg, sessCtl)
+			srv := NewServer(ctx, tc.cfg, sessCtl, nil)
 
 			// For successful cases, cancel immediately
 			if !tc.wantErr {
@@ -459,7 +459,7 @@ func TestServer_Handle_AcceptConnection(t *testing.T) {
 		},
 	}
 
-	srv := NewServer(ctx, cfg, sessCtl)
+	srv := NewServer(ctx, cfg, sessCtl, nil)
 
 	// Start server in background
 	serverErr := make(chan error, 1)
@@ -509,7 +509,7 @@ func TestServer_Handle_AcceptAndForward(t *testing.T) {
 		},
 	}
 
-	srv := NewServer(ctx, cfg, sessCtl)
+	srv := NewServer(ctx, cfg, sessCtl, nil)
 
 	serverDone := make(chan error, 1)
 
@@ -525,7 +525,7 @@ func TestServer_Handle_AcceptAndForward(t *testing.T) {
 
 	// Update config with the port we know is free
 	cfg.LocalPort = addr.Port
-	srv = NewServer(ctx, cfg, sessCtl)
+	srv = NewServer(ctx, cfg, sessCtl, nil)
 
 	// Start server
 	go func() {

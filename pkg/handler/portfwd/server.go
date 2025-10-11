@@ -5,6 +5,7 @@ package portfwd
 
 import (
 	"context"
+	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/format"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
@@ -16,9 +17,10 @@ import (
 // Server handles incoming connections on a local port and forwards them
 // to a remote destination through a multiplexed control session.
 type Server struct {
-	ctx     context.Context
-	cfg     Config
-	sessCtl ServerControlSession
+	ctx        context.Context
+	cfg        Config
+	sessCtl    ServerControlSession
+	listenerFn config.TCPListenerFunc
 }
 
 // Config contains the configuration for port forwarding, specifying both
@@ -42,11 +44,13 @@ func (cfg Config) String() string {
 }
 
 // NewServer creates a new port forwarding server with the given configuration.
-func NewServer(ctx context.Context, cfg Config, sessCtl ServerControlSession) *Server {
+// The deps parameter is optional and can be nil to use default implementations.
+func NewServer(ctx context.Context, cfg Config, sessCtl ServerControlSession, deps *config.Dependencies) *Server {
 	return &Server{
-		ctx:     ctx,
-		cfg:     cfg,
-		sessCtl: sessCtl,
+		ctx:        ctx,
+		cfg:        cfg,
+		sessCtl:    sessCtl,
+		listenerFn: config.GetTCPListenerFunc(deps),
 	}
 }
 
@@ -61,7 +65,7 @@ func (srv *Server) Handle() error {
 		return fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %s", addr, err)
 	}
 
-	l, err := net.ListenTCP("tcp", tcpAddr)
+	l, err := srv.listenerFn("tcp", tcpAddr)
 	if err != nil {
 		return fmt.Errorf("listen(tcp, %s): %s", addr, err)
 	}

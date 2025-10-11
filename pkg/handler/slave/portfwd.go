@@ -11,7 +11,7 @@ import (
 // It establishes a connection to the requested destination and pipes data.
 func (slv *Slave) handleConnectAsync(ctx context.Context, m msg.Connect) {
 	go func() {
-		h := portfwd.NewClient(ctx, m, slv.sess)
+		h := portfwd.NewClient(ctx, m, slv.sess, slv.cfg.Deps)
 		if err := h.Handle(); err != nil {
 			log.ErrorMsg("Running connect job: %s", err)
 		}
@@ -31,7 +31,7 @@ func (slv *Slave) handlePortFwdAsync(ctx context.Context, m msg.PortFwd) {
 			RemotePort: m.LocalPort,
 		}
 
-		h := portfwd.NewServer(ctx, cfg, slv.sess)
+		h := portfwd.NewServer(ctx, cfg, slv.sess, slv.cfg.Deps)
 		if err := h.Handle(); err != nil {
 			log.ErrorMsg("Remote port forwarding: %s: %s\n", cfg, err)
 		}

@@ -23,7 +23,7 @@ func (mst *Master) startLocalPortFwdJob(ctx context.Context, wg *sync.WaitGroup,
 			RemoteHost: lpf.RemoteHost,
 			RemotePort: lpf.RemotePort,
 		}
-		h := portfwd.NewServer(ctx, cfg, mst.sess)
+		h := portfwd.NewServer(ctx, cfg, mst.sess, mst.cfg.Deps)
 		if err := h.Handle(); err != nil {
 			log.ErrorMsg("Local port forwarding: %s: %s\n", lpf, err)
 		}
@@ -55,7 +55,7 @@ func (mst *Master) startRemotePortFwdJob(ctx context.Context, wg *sync.WaitGroup
 // This is used for remote port forwarding when the slave forwards a connection back to the master.
 func (mst *Master) handleConnectAsync(ctx context.Context, m msg.Connect) {
 	go func() {
-		h := portfwd.NewClient(ctx, m, mst.sess)
+		h := portfwd.NewClient(ctx, m, mst.sess, mst.cfg.Deps)
 		if err := h.Handle(); err != nil {
 			log.ErrorMsg("Running connect job: %s", err)
 		}

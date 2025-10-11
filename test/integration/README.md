@@ -76,6 +76,26 @@ Uses `config.Dependencies` struct to inject mocks. Helper functions (`GetTCPDial
 - Tests that the slave terminates when the shell exits
 - Tests the --exec feature without spawning real processes
 
+### TestLocalPortForwarding
+`TestLocalPortForwarding` in `local_port_forward_test.go` demonstrates local port forwarding testing:
+- Simulates "goncat master listen tcp://*:12345 -L 8000:127.0.0.1:9000" and "goncat slave connect tcp://127.0.0.1:12345"
+- Uses mocked TCP network for all connections (master-slave tunnel, forwarded port, and remote server)
+- Creates a mock remote server at 127.0.0.1:9000 that responds with unique, verifiable data
+- Tests a mock client connecting to the forwarded port 8000 on the master side
+- Validates complete bidirectional data flow through the port forwarding tunnel
+- Tests multiple connections to ensure stability
+- Demonstrates realistic port forwarding scenario entirely in-memory
+
+### TestRemotePortForwarding
+`TestRemotePortForwarding` in `remote_port_forward_test.go` demonstrates remote port forwarding testing:
+- Simulates "goncat master listen tcp://*:12345 -R 127.0.0.1:8000:127.0.0.1:9000" and "goncat slave connect tcp://127.0.0.1:12345"
+- Uses mocked TCP network for all connections (master-slave tunnel, forwarded port on slave, and remote server on master)
+- Creates a mock remote server at 127.0.0.1:9000 on the master side that responds with unique, verifiable data
+- Tests a mock client connecting to the forwarded port 8000 on the slave side
+- Validates complete bidirectional data flow through the reverse port forwarding tunnel
+- Tests multiple connections to ensure stability
+- Demonstrates the reverse of local port forwarding: slave binds the port, master provides the destination
+
 ## Test Helpers
 
 The `test/helpers/` directory contains utilities to reduce boilerplate in tests:
