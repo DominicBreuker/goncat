@@ -64,7 +64,7 @@ func TestRun_Echo(t *testing.T) {
 	// Run the command in a goroutine and cancel when it starts
 	done := make(chan error, 1)
 	go func() {
-		done <- Run(ctx, conn, "echo")
+		done <- Run(ctx, conn, "echo", nil)
 	}()
 
 	// Cancel immediately to test context cancellation handling
@@ -92,7 +92,7 @@ func TestRun_InvalidCommand(t *testing.T) {
 
 	conn := newFakeConn()
 
-	err := Run(ctx, conn, "nonexistent-command-12345")
+	err := Run(ctx, conn, "nonexistent-command-12345", nil)
 	if err == nil {
 		t.Error("Run() with invalid command should return error")
 	}
