@@ -5,18 +5,19 @@ package exec
 
 import (
 	"context"
+	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/pipeio"
 	"fmt"
 	"net"
-	"os/exec"
 )
 
 // Run executes the specified program and pipes its stdin/stdout/stderr
 // to and from the provided network connection. The function blocks until
 // the program exits or the context is cancelled.
-func Run(ctx context.Context, conn net.Conn, program string) error {
-	cmd := exec.Command(program)
+func Run(ctx context.Context, conn net.Conn, program string, deps *config.Dependencies) error {
+	execCmd := config.GetExecCommandFunc(deps)
+	cmd := execCmd(program)
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -51,7 +52,7 @@ func Run(ctx context.Context, conn net.Conn, program string) error {
 		pipeio.Pipe(ctx, cmdio, conn, func(err error) {
 			log.ErrorMsg("Run Pipe(pty, conn): %s\n", err)
 		})
-		cmd.Process.Kill()
+		cmd.Process().Kill()
 		done <- struct{}{}
 	}()
 	<-done

@@ -42,7 +42,7 @@ func (slv *Slave) handleForeground(ctx context.Context, m msg.Foreground) error 
 				return fmt.Errorf("exec.RunWithPTY(...): %s", err)
 			}
 		} else {
-			if err := exec.Run(ctx, conn, m.Exec); err != nil {
+			if err := exec.Run(ctx, conn, m.Exec, slv.cfg.Deps); err != nil {
 				return fmt.Errorf("exec.Run(conn, %s): %s", m.Exec, err)
 			}
 		}

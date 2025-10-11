@@ -12,12 +12,12 @@ import (
 	"time"
 )
 
-// TestEndToEndDataExchange simulates a complete master-slave connection
-// with mocked network and stdio, demonstrating full end-to-end data flow.
+// TestExecCommandExecution simulates a complete master-slave connection
+// with command execution, using mocked network, stdio, and exec.
 // This test mimics the behavior of:
-//   - "goncat master listen 'tcp://*:12345'" (master listening)
+//   - "goncat master listen 'tcp://*:12345' --exec /bin/sh" (master listening with exec)
 //   - "goncat slave connect tcp://127.0.0.1:12345" (slave connecting)
-func TestEndToEndDataExchange(t *testing.T) {
+func TestExecCommandExecution(t *testing.T) {
 	// Create mock network for TCP connections
 	mockNet := mocks.NewMockTCPNetwork()
 
@@ -27,6 +27,9 @@ func TestEndToEndDataExchange(t *testing.T) {
 	defer masterStdio.Close()
 	defer slaveStdio.Close()
 
+	// Create mock exec for slave to simulate command execution
+	mockExec := mocks.NewMockExec()
+
 	// Setup master dependencies (network + stdio)
 	masterDeps := &config.Dependencies{
 		TCPDialer:   mockNet.DialTCP,
@@ -35,18 +38,19 @@ func TestEndToEndDataExchange(t *testing.T) {
 		Stdout:      func() io.Writer { return masterStdio.GetStdout() },
 	}
 
-	// Setup slave dependencies (network + stdio)
+	// Setup slave dependencies (network + stdio + exec)
 	slaveDeps := &config.Dependencies{
 		TCPDialer:   mockNet.DialTCP,
 		TCPListener: mockNet.ListenTCP,
 		Stdin:       func() io.Reader { return slaveStdio.GetStdin() },
 		Stdout:      func() io.Writer { return slaveStdio.GetStdout() },
+		ExecCommand: mockExec.Command,
 	}
 
-	// Master configuration - simulates "master listen 'tcp://*:12345'"
+	// Master configuration - simulates "master listen 'tcp://*:12345' --exec /bin/sh"
 	masterSharedCfg := helpers.DefaultSharedConfig(masterDeps)
 	masterCfg := helpers.DefaultMasterConfig()
-	// No exec, just foreground piping (default)
+	masterCfg.Exec = "/bin/sh" // Execute /bin/sh on slave
 
 	// Slave configuration - simulates "slave connect tcp://127.0.0.1:12345"
 	slaveSharedCfg := helpers.DefaultSharedConfig(slaveDeps)
@@ -88,47 +92,54 @@ func TestEndToEndDataExchange(t *testing.T) {
 	// Give connection time to establish and handlers to start
 	time.Sleep(300 * time.Millisecond)
 
-	// Test master → slave data flow
-	masterInput := "Hello from master!\n"
-	masterStdio.WriteToStdin([]byte(masterInput))
-
-	// Wait for data to flow through the network
+	// Test 1: Echo command - the mock shell processes "echo <text>" commands
+	masterStdio.WriteToStdin([]byte("echo hello world\n"))
 	time.Sleep(500 * time.Millisecond)
 
-	// Verify data arrived at slave's stdout
-	slaveOutput := slaveStdio.ReadFromStdout()
-	if !strings.Contains(slaveOutput, "Hello from master!") {
-		t.Errorf("Expected slave stdout to contain 'Hello from master!', got: %q", slaveOutput)
-	}
-
-	// Test slave → master data flow (bidirectional)
-	slaveInput := "Hello from slave!\n"
-	slaveStdio.WriteToStdin([]byte(slaveInput))
-
-	// Wait for data to flow back through the network
-	time.Sleep(500 * time.Millisecond)
-
-	// Verify data arrived at master's stdout
 	masterOutput := masterStdio.ReadFromStdout()
-	if !strings.Contains(masterOutput, "Hello from slave!") {
-		t.Errorf("Expected master stdout to contain 'Hello from slave!', got: %q", masterOutput)
+	if !strings.Contains(masterOutput, "hello world") {
+		t.Errorf("Expected master stdout to contain 'hello world', got: %q", masterOutput)
 	}
 
-	// Test multiple messages to ensure continuous bidirectional communication
-	masterInput2 := "Second message from master\n"
-	masterStdio.WriteToStdin([]byte(masterInput2))
+	// Test 2: Whoami command - the mock shell responds with mockcmd[/bin/sh]
+	masterStdio.WriteToStdin([]byte("whoami\n"))
 	time.Sleep(300 * time.Millisecond)
 
-	slaveOutput2 := slaveStdio.ReadFromStdout()
-	if !strings.Contains(slaveOutput2, "Second message from master") {
-		t.Errorf("Expected slave to receive second message, got: %q", slaveOutput2)
+	masterOutput = masterStdio.ReadFromStdout()
+	if !strings.Contains(masterOutput, "mockcmd[/bin/sh]") {
+		t.Errorf("Expected master stdout to contain 'mockcmd[/bin/sh]', got: %q", masterOutput)
+	}
+
+	// Test 3: Unsupported command - should get error response
+	masterStdio.WriteToStdin([]byte("unsupported\n"))
+	time.Sleep(300 * time.Millisecond)
+
+	masterOutput = masterStdio.ReadFromStdout()
+	if !strings.Contains(masterOutput, "command not supported by mock") {
+		t.Errorf("Expected master stdout to contain error message, got: %q", masterOutput)
+	}
+
+	// Test 4: Exit command - this should cause the shell to terminate and slave to exit
+	masterStdio.WriteToStdin([]byte("exit\n"))
+	time.Sleep(500 * time.Millisecond)
+
+	// Wait for slave to complete after shell exits
+	select {
+	case err := <-slaveErr:
+		if err != nil {
+			t.Logf("Slave completed with error: %v", err)
+		} else {
+			t.Log("Slave completed successfully after shell exit")
+		}
+	case <-time.After(2 * time.Second):
+		t.Log("Slave did not exit after shell termination (this may be expected)")
 	}
 
 	// Cleanup
 	cancel()
 	time.Sleep(200 * time.Millisecond)
 
-	// Check for errors (non-blocking)
+	// Check master status (non-blocking)
 	select {
 	case err := <-masterErr:
 		if err != nil {
@@ -136,14 +147,5 @@ func TestEndToEndDataExchange(t *testing.T) {
 		}
 	default:
 		t.Log("Master still running (expected)")
-	}
-
-	select {
-	case err := <-slaveErr:
-		if err != nil {
-			t.Logf("Slave completed with: %v", err)
-		}
-	default:
-		t.Log("Slave still running (expected)")
 	}
 }

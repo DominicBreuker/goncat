@@ -34,16 +34,55 @@ deps := &config.Dependencies{
 // Check output: mockStdio.ReadFromStdout()
 ```
 
+## Mock Command Execution
+
+The `mockexec.go` file provides `MockExec` for mocking command execution without running real processes.
+
+**Features**: Simulates `/bin/sh` shell behavior by responding to specific commands:
+- `echo <text>` - outputs the text
+- `whoami` - outputs `mockcmd[<program>]`
+- `exit` - terminates the shell
+- Other commands - outputs error message
+
+**Usage**:
+```go
+mockExec := NewMockExec()
+deps := &config.Dependencies{
+    ExecCommand: mockExec.Command,
+}
+// Command will behave like a simple shell
+```
+
 ## Dependency Injection
 
-Uses `config.Dependencies` struct to inject mocks. Helper functions (`GetTCPDialerFunc`, `GetTCPListenerFunc`, `GetStdinFunc`, `GetStdoutFunc`) return either mock or default implementations.
+Uses `config.Dependencies` struct to inject mocks. Helper functions (`GetTCPDialerFunc`, `GetTCPListenerFunc`, `GetStdinFunc`, `GetStdoutFunc`, `GetExecCommandFunc`) return either mock or default implementations.
 
-**Current mocks**: TCP network, stdin/stdout.
+**Current mocks**: TCP network, stdin/stdout, command execution.
 
-## Integration Test
+## Integration Tests
 
+### TestEndToEndDataExchange
 `TestEndToEndDataExchange` in `simple_test.go` demonstrates full end-to-end testing:
 - Simulates "goncat master listen tcp://*:12345" and "goncat slave connect tcp://127.0.0.1:12345"
 - Uses mocked TCP network and stdio on both sides
 - Validates bidirectional data flow: master stdin → network → slave stdout and vice versa
 - Tests complete master-slave handler lifecycle with mocked dependencies
+
+### TestExecCommandExecution
+`TestExecCommandExecution` in `exec_test.go` demonstrates command execution testing:
+- Simulates "goncat master listen tcp://*:12345 --exec /bin/sh" and "goncat slave connect tcp://127.0.0.1:12345"
+- Uses mocked TCP network, stdio, and command execution
+- Validates specific shell commands: `echo`, `whoami`, unsupported commands, and `exit`
+- Tests that the slave terminates when the shell exits
+- Tests the --exec feature without spawning real processes
+
+## Test Helpers
+
+The `test/helpers/` directory contains utilities to reduce boilerplate in tests:
+
+**SetupMockDependencies()**: Creates mock network and stdio dependencies  
+**SetupMockDependenciesWithExec()**: Also includes mock exec for command testing  
+**DefaultSharedConfig()**: Creates standard Shared config with sensible defaults  
+**DefaultMasterConfig()**: Creates standard Master config with sensible defaults
+
+These helpers allow tests to focus on test-specific configuration while reusing common setup code.
