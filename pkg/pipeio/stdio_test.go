@@ -65,9 +65,6 @@ func TestStdio_Read(t *testing.T) {
 }
 
 func TestStdio_ReadWithCancellable(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test that interacts with stdin in short mode")
-	}
 	t.Parallel()
 
 	// Create a Stdio with a cancellable stdin
@@ -144,9 +141,6 @@ func TestStdio_Write(t *testing.T) {
 }
 
 func TestStdio_CloseWithCancellable(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test that uses cancelreader in short mode")
-	}
 	t.Parallel()
 
 	// Create a pipe for testing

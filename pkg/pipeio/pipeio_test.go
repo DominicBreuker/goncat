@@ -55,9 +55,6 @@ func (f *fakeRWC) Close() error {
 }
 
 func TestPipe_BasicBidirectionalCopy(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -125,9 +122,6 @@ func TestPipe_BasicBidirectionalCopy(t *testing.T) {
 }
 
 func TestPipe_ContextCancellation(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -165,9 +159,6 @@ func TestPipe_ContextCancellation(t *testing.T) {
 }
 
 func TestPipe_EOF(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
@@ -208,9 +199,6 @@ func TestPipe_EOF(t *testing.T) {
 }
 
 func TestPipe_ErrorLogging(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
@@ -251,9 +239,6 @@ func TestPipe_ErrorLogging(t *testing.T) {
 }
 
 func TestPipe_IgnoresCancelReaderError(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
@@ -296,9 +281,6 @@ func TestPipe_IgnoresCancelReaderError(t *testing.T) {
 }
 
 func TestPipe_IgnoresConnectionResetError(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
@@ -341,9 +323,6 @@ func TestPipe_IgnoresConnectionResetError(t *testing.T) {
 }
 
 func TestPipe_ClosesBothConnections(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
