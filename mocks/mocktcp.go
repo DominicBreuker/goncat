@@ -101,21 +101,21 @@ func (m *MockTCPNetwork) DialTCP(network string, laddr, raddr *net.TCPAddr) (net
 // The timeout is specified in milliseconds.
 func (m *MockTCPNetwork) WaitForListener(addr string, timeoutMs int) error {
 	deadline := time.Now().Add(time.Duration(timeoutMs) * time.Millisecond)
-	
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	for {
 		// Check if the listener already exists
 		if _, exists := m.listeners[addr]; exists {
 			return nil
 		}
-		
+
 		// Check if we've exceeded the timeout
 		if time.Now().After(deadline) {
 			return fmt.Errorf("timeout waiting for listener on %s", addr)
 		}
-		
+
 		// Wait for a signal that a new listener is available, with a small timeout
 		// to periodically check the deadline
 		go func() {

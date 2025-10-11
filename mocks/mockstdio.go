@@ -85,21 +85,21 @@ func (m *MockStdio) GetStdout() io.Writer {
 // The timeout is specified in milliseconds.
 func (m *MockStdio) WaitForOutput(expected string, timeoutMs int) error {
 	deadline := time.Now().Add(time.Duration(timeoutMs) * time.Millisecond)
-	
+
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	for {
 		// Check if the expected string is already in the output buffer
 		if strings.Contains(m.outputBuf.String(), expected) {
 			return nil
 		}
-		
+
 		// Check if we've exceeded the timeout
 		if time.Now().After(deadline) {
 			return fmt.Errorf("timeout waiting for output %q, got: %q", expected, m.outputBuf.String())
 		}
-		
+
 		// Wait for a signal that new output is available, with a small timeout
 		// to periodically check the deadline
 		go func() {
