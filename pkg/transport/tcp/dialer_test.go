@@ -1,6 +1,8 @@
 package tcp
 
 import (
+	"dominicbreuker/goncat/mocks"
+	"dominicbreuker/goncat/pkg/config"
 	"net"
 	"testing"
 )
@@ -59,18 +61,22 @@ func TestNewDialer(t *testing.T) {
 }
 
 func TestDialer_Dial(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping network test in short mode")
+	// Use mock TCP network instead of real network
+	mockNet := mocks.NewMockTCPNetwork()
+	deps := &config.Dependencies{
+		TCPDialer:   mockNet.DialTCP,
+		TCPListener: mockNet.ListenTCP,
 	}
 
-	// Start a local listener
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	addr := "127.0.0.1:12345"
+
+	// Create a listener on the mock network
+	tcpAddr, _ := net.ResolveTCPAddr("tcp", addr)
+	listener, err := mockNet.ListenTCP("tcp", tcpAddr)
 	if err != nil {
-		t.Fatalf("Failed to create test listener: %v", err)
+		t.Fatalf("Failed to create mock listener: %v", err)
 	}
 	defer listener.Close()
-
-	addr := listener.Addr().String()
 
 	// Accept one connection
 	go func() {
@@ -80,8 +86,8 @@ func TestDialer_Dial(t *testing.T) {
 		}
 	}()
 
-	// Test dialing
-	d, err := NewDialer(addr, nil)
+	// Test dialing with mock network
+	d, err := NewDialer(addr, deps)
 	if err != nil {
 		t.Fatalf("NewDialer() error = %v", err)
 	}
@@ -95,19 +101,33 @@ func TestDialer_Dial(t *testing.T) {
 	}
 	defer conn.Close()
 
-	// Verify it's a TCP connection
-	if _, ok := conn.(*net.TCPConn); !ok {
-		t.Error("Dial() did not return a TCPConn")
+	// Verify connection works by writing and reading
+	testData := []byte("hello")
+	go func() {
+		serverConn, _ := listener.Accept()
+		if serverConn != nil {
+			buf := make([]byte, len(testData))
+			serverConn.Read(buf)
+			serverConn.Close()
+		}
+	}()
+
+	_, err = conn.Write(testData)
+	if err != nil {
+		t.Errorf("Write() error = %v", err)
 	}
 }
 
 func TestDialer_Dial_Failure(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping network test in short mode")
+	// Use mock TCP network instead of real network
+	mockNet := mocks.NewMockTCPNetwork()
+	deps := &config.Dependencies{
+		TCPDialer:   mockNet.DialTCP,
+		TCPListener: mockNet.ListenTCP,
 	}
 
-	// Try to dial a non-existent server
-	d, err := NewDialer("127.0.0.1:1", nil)
+	// Try to dial a non-existent server (no listener created)
+	d, err := NewDialer("127.0.0.1:1", deps)
 	if err != nil {
 		t.Fatalf("NewDialer() error = %v", err)
 	}
