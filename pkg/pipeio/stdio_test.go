@@ -2,8 +2,10 @@ package pipeio
 
 import (
 	"bytes"
+	"dominicbreuker/goncat/mocks"
 	"io"
 	"os"
+	"strings"
 	"testing"
 
 	"github.com/muesli/cancelreader"
@@ -38,29 +40,15 @@ func TestStdio_Close(t *testing.T) {
 }
 
 func TestStdio_Read(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test that interacts with stdin in short mode")
-	}
 	t.Parallel()
 
-	// Create a Stdio with a fake stdin for testing
+	// Create simple test stdin using bytes.Buffer
 	testData := []byte("test input")
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe() error = %v", err)
-	}
-	defer r.Close()
-	defer w.Close()
-
-	// Write test data
-	go func() {
-		w.Write(testData)
-		w.Close()
-	}()
+	stdin := bytes.NewReader(testData)
 
 	stdio := &Stdio{
-		stdin:  r,
-		stdout: os.Stdout,
+		stdin:  stdin,
+		stdout: io.Discard,
 	}
 
 	buf := make([]byte, 1024)
@@ -123,22 +111,15 @@ func TestStdio_ReadWithCancellable(t *testing.T) {
 }
 
 func TestStdio_Write(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test that interacts with stdout in short mode")
-	}
 	t.Parallel()
 
-	// Create a Stdio with a fake stdout for testing
-	r, w, err := os.Pipe()
-	if err != nil {
-		t.Fatalf("os.Pipe() error = %v", err)
-	}
-	defer r.Close()
-	defer w.Close()
+	// Use mock stdio for testing - directly construct Stdio to avoid cancelreader issues
+	mockStdio := mocks.NewMockStdio()
+	defer mockStdio.Close()
 
 	stdio := &Stdio{
-		stdin:  os.Stdin,
-		stdout: w,
+		stdin:  mockStdio.GetStdin(),
+		stdout: mockStdio.GetStdout(),
 	}
 
 	testData := []byte("test output")
@@ -150,20 +131,15 @@ func TestStdio_Write(t *testing.T) {
 		t.Errorf("Write() wrote %d bytes, want %d", n, len(testData))
 	}
 
-	// Close writer to signal EOF to reader
-	w.Close()
+	// Wait for output to be captured
+	if err := mockStdio.WaitForOutput(string(testData), 1000); err != nil {
+		t.Fatalf("WaitForOutput() error = %v", err)
+	}
 
-	// Read back what was written
-	buf := make([]byte, 1024)
-	readN, err := r.Read(buf)
-	if err != nil && err != io.EOF {
-		t.Fatalf("r.Read() error = %v", err)
-	}
-	if readN != len(testData) {
-		t.Errorf("r.Read() read %d bytes, want %d", readN, len(testData))
-	}
-	if !bytes.Equal(buf[:readN], testData) {
-		t.Errorf("Write() wrote %q, want %q", buf[:readN], testData)
+	// Verify what was written to stdout
+	output := mockStdio.ReadFromStdout()
+	if !strings.Contains(output, string(testData)) {
+		t.Errorf("Write() wrote %q, want to contain %q", output, string(testData))
 	}
 }
 
