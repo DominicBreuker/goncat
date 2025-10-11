@@ -52,7 +52,17 @@ type Shared struct {
 
 Both `pkg/client/client.go` and `pkg/server/server.go` were updated to pass the `Deps` from their config to the transport constructors.
 
-### 4. Mock Implementation (`integration/mocktcp.go`)
+### 4. Helper Functions
+
+Added convenience functions to `pkg/config/config.go`:
+- `GetTCPDialerFunc(deps)` - Returns mock or default TCP dialer
+- `GetTCPListenerFunc(deps)` - Returns mock or default TCP listener  
+- `GetStdinFunc(deps)` - Returns mock or default stdin
+- `GetStdoutFunc(deps)` - Returns mock or default stdout
+
+These keep the calling code clean: `dialerFn := config.GetTCPDialerFunc(deps)`
+
+### 5. Mock TCP Implementation (`integration/mocktcp.go`)
 
 The `MockTCPNetwork` provides in-memory connection simulation:
 
@@ -137,15 +147,28 @@ All existing unit tests continue to pass with `nil` dependencies, ensuring backw
 4. **Deterministic**: Predictable behavior, easy debugging
 5. **Extensible**: Pattern can be applied to other dependencies (stdio, filesystem, etc.)
 
+### 6. Mock Stdio Implementation (`integration/mockstdio.go`)
+
+The `MockStdio` provides buffer-based stdin/stdout:
+
+- **Buffer-based**: Uses `bytes.Buffer` for in-memory I/O
+- **Thread-safe**: Mutex protects concurrent access
+- **Simple API**: `WriteToStdin()`, `ReadFromStdout()` for test control
+
+Updated `pkg/pipeio/stdio.go` to accept `*config.Dependencies` and use injected stdin/stdout functions.
+
+Updated `pkg/terminal/terminal.go` to pass dependencies through to `NewStdio()`.
+
+Updated master/slave handlers to pass `cfg.Deps` to `terminal.Pipe()`.
+
 ## Future Enhancements
 
 Potential areas for expansion:
 
 1. **WebSocket mocking**: Add similar injection for WebSocket transport
-2. **IO mocking**: Mock stdin/stdout for PTY tests
-3. **Filesystem mocking**: Mock file operations for logging tests
-4. **Time mocking**: Control time for timeout tests
-5. **Error injection**: Simulate network failures
+2. **Filesystem mocking**: Mock file operations for logging tests
+3. **Time mocking**: Control time for timeout tests
+4. **Error injection**: Simulate network failures
 
 ## Implementation Challenges
 

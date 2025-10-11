@@ -23,13 +23,7 @@ func NewDialer(addr string, deps *config.Dependencies) (*Dialer, error) {
 		return nil, fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %s", addr, err)
 	}
 
-	// Default dialer wraps net.DialTCP to match the interface
-	dialerFn := config.TCPDialerFunc(func(network string, laddr, raddr *net.TCPAddr) (net.Conn, error) {
-		return net.DialTCP(network, laddr, raddr)
-	})
-	if deps != nil && deps.TCPDialer != nil {
-		dialerFn = deps.TCPDialer
-	}
+	dialerFn := config.GetTCPDialerFunc(deps)
 
 	return &Dialer{
 		tcpAddr:  tcpAddr,

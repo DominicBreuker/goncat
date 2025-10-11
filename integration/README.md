@@ -4,70 +4,40 @@ This directory contains integration test utilities and examples for testing gonc
 
 ## Mock TCP Network
 
-The `mocktcp.go` file provides a `MockTCPNetwork` that simulates TCP connections without using real network sockets. This enables fast, reliable integration tests that don't require actual network access.
+The `mocktcp.go` file provides a `MockTCPNetwork` that simulates TCP connections without using real network sockets.
 
-### Features
+**Features**: In-memory connections via `net.Pipe()`, multiple listeners, automatic lifecycle management.
 
-- **In-memory connections**: Uses `net.Pipe()` to create connected pairs of connections
-- **Multiple listeners**: Supports multiple listeners on different addresses
-- **Connection tracking**: Automatically manages connection lifecycle
-- **Interface compatibility**: Returns `net.Listener` and `net.Conn` interfaces for seamless integration
-
-### Usage
-
+**Usage**:
 ```go
-// Create a mock network
 mockNet := NewMockTCPNetwork()
-
-// Create dependencies with the mock
 deps := &config.Dependencies{
     TCPDialer:   mockNet.DialTCP,
     TCPListener: mockNet.ListenTCP,
 }
-
-// Use in configurations
-cfg := &config.Shared{
-    Protocol: config.ProtoTCP,
-    Host:     "127.0.0.1",
-    Port:     12345,
-    Deps:     deps,
-}
-
-// Now server.New() and client.New() will use the mock network
 ```
 
-### Example Test
+## Mock Standard I/O
 
-See `simple_test.go` for a complete example that demonstrates:
-- Creating a master server that listens for connections
-- Creating a slave client that connects to the server
-- Sending and receiving data through the mocked connection
-- Proper cleanup and goroutine coordination
+The `mockstdio.go` file provides `MockStdio` for mocking stdin and stdout streams.
+
+**Features**: Buffer-based stdin/stdout, thread-safe read/write operations.
+
+**Usage**:
+```go
+mockStdio := NewMockStdio()
+mockStdio.WriteToStdin([]byte("input data"))
+deps := &config.Dependencies{
+    Stdin:  func() io.Reader { return mockStdio.GetStdin() },
+    Stdout: func() io.Writer { return mockStdio.GetStdout() },
+}
+// Check output: mockStdio.ReadFromStdout()
+```
 
 ## Dependency Injection
 
-The dependency injection system is implemented through the `config.Dependencies` struct in `pkg/config/config.go`. This allows injecting mock implementations for:
+Uses `config.Dependencies` struct to inject mocks. Helper functions (`GetTCPDialerFunc`, `GetTCPListenerFunc`, `GetStdinFunc`, `GetStdoutFunc`) return either mock or default implementations.
 
-- **TCP Dialer**: Mock `net.DialTCP` functionality
-- **TCP Listener**: Mock `net.ListenTCP` functionality
+**Current mocks**: TCP network, stdin/stdout. See `simple_test.go` for usage examples.
 
-Future enhancements may include mocking other dependencies like:
-- Standard input/output
-- File system operations
-- Time functions
-
-## Adding New Mocks
-
-To add a new mockable dependency:
-
-1. Add a new function type to `config.Dependencies` struct
-2. Update the relevant package to use the injected dependency if provided
-3. Create a mock implementation in the `integration/` directory
-4. Write tests demonstrating the mock usage
-
-## Notes
-
-- All mocks should implement standard Go interfaces when possible
-- Mocks should be minimal and focused on the behavior needed for testing
-- Production code should use `nil` for `Deps` field to use default implementations
-- Tests should clean up resources properly (close connections, cancel contexts, etc.)
+**Adding mocks**: (1) Add function type to `Dependencies`, (2) Add helper function, (3) Update code to use helper, (4) Create mock implementation.
