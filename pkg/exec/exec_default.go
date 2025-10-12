@@ -27,8 +27,6 @@ func RunWithPTY(ctx context.Context, connCtl, connData net.Conn, program string,
 	if err != nil {
 		return fmt.Errorf("starting pty: %s", err)
 	}
-	defer tty.Close()
-	defer pty.Close()
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setctty: true,
@@ -50,6 +48,7 @@ func RunWithPTY(ctx context.Context, connCtl, connData net.Conn, program string,
 
 	go func() {
 		cmd.Wait()
+		tty.Close()
 		close(cmdDone)
 	}()
 
@@ -62,6 +61,7 @@ func RunWithPTY(ctx context.Context, connCtl, connData net.Conn, program string,
 			}
 		})
 		cmd.Process.Kill()
+		pty.Close()
 		close(pipeDone)
 	}()
 

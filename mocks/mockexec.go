@@ -24,6 +24,7 @@ func (m *MockExec) Command(program string) config.Cmd {
 	return &mockCmd{
 		program: program,
 		exec:    m,
+		doneCh:  make(chan struct{}),
 	}
 }
 
@@ -38,8 +39,8 @@ type mockCmd struct {
 	stderrPipe  *io.PipeReader
 	stderrWrite *io.PipeWriter
 	started     bool
-	finished    bool
 	mu          sync.Mutex
+	doneCh      chan struct{}
 }
 
 func (m *mockCmd) StdoutPipe() (io.ReadCloser, error) {
@@ -86,20 +87,17 @@ func (m *mockCmd) StderrPipe() (io.ReadCloser, error) {
 
 func (m *mockCmd) Start() error {
 	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	if m.started {
+		m.mu.Unlock()
 		return fmt.Errorf("command already started")
 	}
-
 	m.started = true
+	m.mu.Unlock()
 
 	// Start a goroutine to simulate shell behavior
 	go func() {
-		defer m.stdoutWrite.Close()
-		defer m.stderrWrite.Close()
+		defer close(m.doneCh) // Signal completion to Wait()
 
-		// Process commands line by line
 		buf := make([]byte, 4096)
 		var line []byte
 		for {
@@ -107,19 +105,11 @@ func (m *mockCmd) Start() error {
 			if n > 0 {
 				line = append(line, buf[:n]...)
 				// Process complete lines
-				for len(line) > 0 {
-					idx := -1
-					for i := 0; i < len(line); i++ {
-						if line[i] == '\n' {
-							idx = i
-							break
-						}
-					}
+				for {
+					idx := strings.IndexByte(string(line), '\n')
 					if idx == -1 {
 						break // No complete line yet
 					}
-
-					// Process the line
 					cmd := string(line[:idx])
 					line = line[idx+1:]
 					m.processCommand(cmd)
@@ -130,9 +120,9 @@ func (m *mockCmd) Start() error {
 			}
 		}
 
-		m.mu.Lock()
-		m.finished = true
-		m.mu.Unlock()
+		// After stdin closes and all output is processed, close writers
+		m.stdoutWrite.Close()
+		m.stderrWrite.Close()
 	}()
 
 	return nil
@@ -140,43 +130,33 @@ func (m *mockCmd) Start() error {
 
 // processCommand simulates shell command execution for /bin/sh.
 func (m *mockCmd) processCommand(cmd string) {
-	// Trim whitespace
+	fmt.Printf("processCommand: %q\n", cmd)
 	cmd = strings.TrimSpace(cmd)
-
 	if cmd == "" {
 		return
 	}
 
-	// Check if command starts with "echo "
 	if strings.HasPrefix(cmd, "echo ") {
-		// Extract the echo argument and write it to stdout
-		arg := cmd[5:] // Remove "echo "
-		m.stdoutWrite.Write([]byte(arg + "\n"))
+		if m.stdoutWrite != nil {
+			_, _ = m.stdoutWrite.Write([]byte(cmd[5:] + "\n"))
+		}
 	} else if cmd == "whoami" {
-		// Respond with mock shell identifier
-		m.stdoutWrite.Write([]byte("mockcmd[" + m.program + "]\n"))
+		if m.stdoutWrite != nil {
+			_, _ = m.stdoutWrite.Write([]byte("mockcmd[" + m.program + "]\n"))
+		}
 	} else if cmd == "exit" {
-		// Close stdin to signal exit
-		m.stdinRead.Close()
+		if m.stdinRead != nil {
+			m.stdinRead.Close()
+		}
 	} else {
-		// Unsupported command
-		m.stderrWrite.Write([]byte("command not supported by mock: " + cmd + "\n"))
+		if m.stderrWrite != nil {
+			_, _ = m.stderrWrite.Write([]byte("command not supported by mock: " + cmd + "\n"))
+		}
 	}
 }
 
 func (m *mockCmd) Wait() error {
-	// Wait for the command to finish
-	for {
-		m.mu.Lock()
-		finished := m.finished
-		m.mu.Unlock()
-
-		if finished {
-			break
-		}
-		// Small sleep to avoid busy waiting
-		// In a real implementation, we would use proper synchronization
-	}
+	<-m.doneCh // Wait for goroutine to finish
 	return nil
 }
 
@@ -204,6 +184,12 @@ func (m *mockProcess) Kill() error {
 		m.cmd.stderrWrite.Close()
 	}
 
-	m.cmd.finished = true
+	// Signal done if not already
+	select {
+	case <-m.cmd.doneCh:
+		// already closed
+	default:
+		close(m.cmd.doneCh)
+	}
 	return nil
 }

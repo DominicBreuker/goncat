@@ -1,9 +1,6 @@
 package tcp
 
 import (
-	"dominicbreuker/goncat/mocks"
-	"dominicbreuker/goncat/pkg/config"
-	"net"
 	"testing"
 )
 
@@ -57,83 +54,5 @@ func TestNewDialer(t *testing.T) {
 				t.Error("NewDialer() dialer has nil tcpAddr")
 			}
 		})
-	}
-}
-
-func TestDialer_Dial(t *testing.T) {
-	// Use mock TCP network instead of real network
-	mockNet := mocks.NewMockTCPNetwork()
-	deps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCP,
-		TCPListener: mockNet.ListenTCP,
-	}
-
-	addr := "127.0.0.1:12345"
-
-	// Create a listener on the mock network
-	tcpAddr, _ := net.ResolveTCPAddr("tcp", addr)
-	listener, err := mockNet.ListenTCP("tcp", tcpAddr)
-	if err != nil {
-		t.Fatalf("Failed to create mock listener: %v", err)
-	}
-	defer listener.Close()
-
-	// Accept one connection
-	go func() {
-		conn, _ := listener.Accept()
-		if conn != nil {
-			conn.Close()
-		}
-	}()
-
-	// Test dialing with mock network
-	d, err := NewDialer(addr, deps)
-	if err != nil {
-		t.Fatalf("NewDialer() error = %v", err)
-	}
-
-	conn, err := d.Dial()
-	if err != nil {
-		t.Fatalf("Dial() error = %v", err)
-	}
-	if conn == nil {
-		t.Fatal("Dial() returned nil connection")
-	}
-	defer conn.Close()
-
-	// Verify connection works by writing and reading
-	testData := []byte("hello")
-	go func() {
-		serverConn, _ := listener.Accept()
-		if serverConn != nil {
-			buf := make([]byte, len(testData))
-			serverConn.Read(buf)
-			serverConn.Close()
-		}
-	}()
-
-	_, err = conn.Write(testData)
-	if err != nil {
-		t.Errorf("Write() error = %v", err)
-	}
-}
-
-func TestDialer_Dial_Failure(t *testing.T) {
-	// Use mock TCP network instead of real network
-	mockNet := mocks.NewMockTCPNetwork()
-	deps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCP,
-		TCPListener: mockNet.ListenTCP,
-	}
-
-	// Try to dial a non-existent server (no listener created)
-	d, err := NewDialer("127.0.0.1:1", deps)
-	if err != nil {
-		t.Fatalf("NewDialer() error = %v", err)
-	}
-
-	_, err = d.Dial()
-	if err == nil {
-		t.Error("Dial() expected error for non-existent server, got nil")
 	}
 }

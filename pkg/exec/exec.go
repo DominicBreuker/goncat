@@ -42,25 +42,38 @@ func Run(ctx context.Context, conn net.Conn, program string, deps *config.Depend
 	}
 
 	// Wait for both the command to exit and I/O copying to complete
-	cmdDone := make(chan struct{})
-	pipeDone := make(chan struct{})
+	cmdDone := make(chan error, 1) // buffered, so goroutine won't block
+	pipeDone := make(chan error, 1)
 
 	go func() {
-		cmd.Wait()
-		close(cmdDone)
+		cmdDone <- cmd.Wait()
 	}()
 
 	go func() {
-		pipeio.Pipe(ctx, cmdio, conn, func(err error) {
+		pipeDone <- pipeio.Pipe(ctx, cmdio, conn, func(err error) {
 			log.ErrorMsg("Run Pipe(pty, conn): %s\n", err)
 		})
-		cmd.Process().Kill()
-		close(pipeDone)
 	}()
 
-	// Wait for both goroutines to complete
-	<-cmdDone
-	<-pipeDone
+	// Wait for both goroutines to complete and collect errors.
+	var cmdErr, pipeErr error
+	for i := 0; i < 2; i++ {
+		select {
+		case err := <-cmdDone:
+			cmdErr = err
+		case err := <-pipeDone:
+			pipeErr = err
+		}
+	}
 
+	// Ensure the process is killed after I/O is done, not before.
+	_ = cmd.Process().Kill() // Defensive: ensure cleanup
+
+	if pipeErr != nil {
+		return pipeErr
+	}
+	if cmdErr != nil {
+		return cmdErr
+	}
 	return nil
 }

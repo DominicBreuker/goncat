@@ -1,6 +1,7 @@
 package pipeio
 
 import (
+	"fmt"
 	"io"
 	"sync"
 )
@@ -24,11 +25,13 @@ func NewCmdio(stdout, stderr io.Reader, stdin io.WriteCloser) *Cmdio {
 
 // Read reads from the combined stdout/stderr stream.
 func (s *Cmdio) Read(p []byte) (n int, err error) {
+	fmt.Printf("Cmdio.Read returns: %q\n", p[:n])
 	return s.r.Read(p)
 }
 
 // Write writes to the command's stdin.
 func (s *Cmdio) Write(p []byte) (n int, err error) {
+	fmt.Printf("Cmdio.Write writes: %q\n", p)
 	return s.w.Write(p)
 }
 
@@ -42,67 +45,62 @@ func (s *Cmdio) Close() error {
 // Reading continues until both readers return an error (typically io.EOF).
 // Data from both readers is interleaved in the order it becomes available.
 type multiReader struct {
-	r1 io.Reader
-	r2 io.Reader
-
 	dataCh chan []byte
 	errCh  chan error
-	once   sync.Once
+	closed chan struct{}
+	wg     sync.WaitGroup
 }
 
-// newMultiReader creates a new multiReader that reads from both r1 and r2 concurrently.
-// The returned reader will provide data from both sources until both have been exhausted.
 func newMultiReader(r1, r2 io.Reader) *multiReader {
 	mr := &multiReader{
-		r1: r1,
-		r2: r2,
-
-		dataCh: make(chan []byte),
-		errCh:  make(chan error, 2), // buffer for errors from both readers
+		dataCh: make(chan []byte, 8), // buffered to avoid blocking
+		errCh:  make(chan error, 2),  // buffered for both EOFs
+		closed: make(chan struct{}),
 	}
 
+	// Start readers
+	mr.wg.Add(2)
 	go mr.readFrom(r1)
 	go mr.readFrom(r2)
+
+	// Close dataCh when both readers finish
+	go func() {
+		mr.wg.Wait()
+		close(mr.dataCh)
+		close(mr.closed)
+	}()
 
 	return mr
 }
 
-// readFrom continuously reads from r and sends data to the dataCh channel.
-// It sends any errors to errCh when reading is complete.
 func (mr *multiReader) readFrom(r io.Reader) {
-	buffer := make([]byte, 4096)
+	defer mr.wg.Done()
+	buf := make([]byte, 4096)
 	for {
-		n, err := r.Read(buffer)
+		n, err := r.Read(buf)
 		if n > 0 {
+			// It's important to copy the buffer, since buf is reused
 			data := make([]byte, n)
-			copy(data, buffer[:n])
-			mr.dataCh <- data
+			copy(data, buf[:n])
+			select {
+			case mr.dataCh <- data:
+			case <-mr.closed:
+				return
+			}
 		}
 		if err != nil {
-			mr.errCh <- err
+			// Signal error and stop reading
 			return
 		}
 	}
 }
 
+// Read pulls data from either reader, interleaved in the order it arrives.
 func (mr *multiReader) Read(p []byte) (n int, err error) {
-	mr.once.Do(func() {
-		go func() {
-			var errCount int
-			for range mr.errCh {
-				errCount++
-				if errCount == 2 {
-					close(mr.dataCh)
-				}
-			}
-		}()
-	})
-
 	data, ok := <-mr.dataCh
 	if !ok {
 		return 0, io.EOF
 	}
-
 	n = copy(p, data)
 	return n, nil
 }

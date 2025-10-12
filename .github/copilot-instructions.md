@@ -75,8 +75,8 @@ make staticcheck       # Run staticcheck (installs if needed)
 
 **Unit Tests:**
 ```bash
-make test-unit         # Unit tests with coverage report
-go test -cover ./...   # Same as above
+make test-unit               # Unit tests with coverage report and race checks
+go test -cover -race ./...   # Same as above
 ```
 - Fast execution: ~2-3 seconds
 - Reports code coverage for each package
