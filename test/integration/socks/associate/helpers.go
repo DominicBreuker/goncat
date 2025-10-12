@@ -262,8 +262,11 @@ func CreateSOCKSClient(t *testing.T, setup *TestSetup) *SOCKSClient {
 	udpRelayPort := int(remaining[addrLen])<<8 | int(remaining[addrLen+1])
 	udpRelayAddr := &net.UDPAddr{IP: udpRelayIP, Port: udpRelayPort}
 
-	// Give relay goroutines time to start
-	time.Sleep(200 * time.Millisecond)
+	// Wait for the UDP relay to be ready
+	if err := setup.MockUDPNet.WaitForListener(udpRelayAddr.String(), 2000); err != nil {
+		t.Fatalf("UDP relay failed to start: %v", err)
+		return nil
+	}
 
 	// Create UDP connection for the client
 	clientUDPAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:0")
@@ -299,9 +302,7 @@ func (c *SOCKSClient) SendUDPDatagram(t *testing.T, data string) (string, error)
 		return "", fmt.Errorf("failed to send UDP datagram: %v", err)
 	}
 
-	// Wait for response
-	time.Sleep(500 * time.Millisecond)
-
+	// Wait for response (using read deadline for timeout)
 	responseBuf := make([]byte, 65507)
 	c.UDPConn.SetReadDeadline(time.Now().Add(3 * time.Second))
 	n, _, err := c.UDPConn.ReadFrom(responseBuf)

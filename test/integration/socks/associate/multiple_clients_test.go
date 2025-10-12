@@ -5,7 +5,6 @@ import (
 	"strings"
 	"sync"
 	"testing"
-	"time"
 )
 
 // TestMultipleClients tests SOCKS5 UDP ASSOCIATE with multiple concurrent clients.
@@ -83,9 +82,6 @@ func TestMultipleClients(t *testing.T) {
 			results <- clientResult{clientID: clientID, success: true, response: response}
 			t.Logf("[Client %d] ✓ Test successful!", clientID)
 		}(i)
-
-		// Stagger client creation to avoid race conditions
-		time.Sleep(100 * time.Millisecond)
 	}
 
 	// Wait for all clients to complete
@@ -111,7 +107,6 @@ func TestMultipleClients(t *testing.T) {
 
 	// Cleanup
 	setup.Cancel()
-	time.Sleep(200 * time.Millisecond)
 
 	// Check for errors (non-blocking)
 	select {

@@ -3,7 +3,6 @@ package associate
 import (
 	"strings"
 	"testing"
-	"time"
 )
 
 // TestSingleClient tests SOCKS5 UDP ASSOCIATE with a single client.
@@ -47,7 +46,6 @@ func TestSingleClient(t *testing.T) {
 
 	// Cleanup
 	setup.Cancel()
-	time.Sleep(200 * time.Millisecond)
 
 	// Check for errors (non-blocking)
 	select {
