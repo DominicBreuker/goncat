@@ -3,6 +3,7 @@ package master
 import (
 	"bufio"
 	"context"
+	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/format"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/socks"
@@ -19,7 +20,7 @@ type Server struct {
 	cfg     Config
 	sessCtl ServerControlSession
 
-	listener *net.TCPListener
+	listener net.Listener
 }
 
 // NewServer creates a new SOCKS5 proxy server that listens on the configured address.
@@ -31,7 +32,9 @@ func NewServer(ctx context.Context, cfg Config, sessCtl ServerControlSession) (*
 		return nil, fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %s", addr, err)
 	}
 
-	l, err := net.ListenTCP("tcp", tcpAddr)
+	// Get the TCP listener function from dependencies or use default
+	listenerFn := config.GetTCPListenerFunc(cfg.Deps)
+	l, err := listenerFn("tcp", tcpAddr)
 	if err != nil {
 		return nil, fmt.Errorf("listen(tcp, %s): %s", addr, err)
 	}

@@ -37,7 +37,7 @@ func TestNewTCPRelay(t *testing.T) {
 	}
 	sessCtl := &fakeClientControlSession{}
 
-	relay := NewTCPRelay(ctx, m, sessCtl)
+	relay := NewTCPRelay(ctx, m, sessCtl, nil)
 
 	if relay == nil {
 		t.Fatal("NewTCPRelay() returned nil")
@@ -98,7 +98,7 @@ func TestNewTCPRelay_DifferentHosts(t *testing.T) {
 			}
 			sessCtl := &fakeClientControlSession{}
 
-			relay := NewTCPRelay(ctx, m, sessCtl)
+			relay := NewTCPRelay(ctx, m, sessCtl, nil)
 
 			if relay == nil {
 				t.Fatal("NewTCPRelay() returned nil")
@@ -129,7 +129,7 @@ func TestTCPRelay_Handle_GetChannelError(t *testing.T) {
 		},
 	}
 
-	relay := NewTCPRelay(ctx, m, sessCtl)
+	relay := NewTCPRelay(ctx, m, sessCtl, nil)
 	err := relay.Handle()
 
 	if err == nil {

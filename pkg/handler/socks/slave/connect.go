@@ -2,6 +2,7 @@ package slave
 
 import (
 	"context"
+	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/format"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
@@ -17,14 +18,16 @@ type TCPRelay struct {
 	ctx     context.Context
 	m       msg.SocksConnect
 	sessCtl ClientControlSession
+	deps    *config.Dependencies
 }
 
 // NewTCPRelay creates a new TCP relay for handling a SOCKS5 CONNECT request.
-func NewTCPRelay(ctx context.Context, m msg.SocksConnect, sessCtl ClientControlSession) *TCPRelay {
+func NewTCPRelay(ctx context.Context, m msg.SocksConnect, sessCtl ClientControlSession, deps *config.Dependencies) *TCPRelay {
 	return &TCPRelay{
 		ctx:     ctx,
 		m:       m,
 		sessCtl: sessCtl,
+		deps:    deps,
 	}
 }
 
@@ -56,7 +59,9 @@ func (tr *TCPRelay) Handle() error {
 		return fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %s", addr, err)
 	}
 
-	connLocal, err := net.DialTCP("tcp", nil, tcpAddr)
+	// Get the TCP dialer function from dependencies or use default
+	dialerFn := config.GetTCPDialerFunc(tr.deps)
+	conn, err := dialerFn("tcp", nil, tcpAddr)
 	if err != nil {
 		if isErrorConnectionRefused(err) {
 			if err := socks.WriteReplyError(connRemote, socks.ReplyConnectionRefused); err != nil {
@@ -80,15 +85,18 @@ func (tr *TCPRelay) Handle() error {
 
 		return fmt.Errorf("net.Dial(tcp, %s): %s", addr, err)
 	}
-	defer connLocal.Close()
+	defer conn.Close()
 
-	if err := socks.WriteReplySuccessConnect(connRemote, connLocal.LocalAddr()); err != nil {
+	if err := socks.WriteReplySuccessConnect(connRemote, conn.LocalAddr()); err != nil {
 		return fmt.Errorf("socks.WriteReplySuccess(): %s", err)
 	}
 
-	connLocal.SetKeepAlive(true)
+	// Try to enable keep-alive if it's a TCP connection
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		tcpConn.SetKeepAlive(true)
+	}
 
-	pipeio.Pipe(tr.ctx, connRemote, connLocal, func(err error) {
+	pipeio.Pipe(tr.ctx, connRemote, conn, func(err error) {
 		log.ErrorMsg("Handling connect to %s: %s", addr, err)
 	})
 

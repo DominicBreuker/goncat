@@ -11,7 +11,7 @@ import (
 // It establishes a TCP connection to the requested destination.
 func (slv *Slave) handleSocksConnectAsync(ctx context.Context, m msg.SocksConnect) {
 	go func() {
-		tr := socksslave.NewTCPRelay(ctx, m, slv.sess)
+		tr := socksslave.NewTCPRelay(ctx, m, slv.sess, slv.cfg.Deps)
 		if err := tr.Handle(); err != nil {
 			log.ErrorMsg("Running SocksConnect job: %s\n", err)
 		}

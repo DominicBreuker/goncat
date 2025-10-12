@@ -15,6 +15,7 @@ func (mst *Master) startSocksProxyJob(ctx context.Context, wg *sync.WaitGroup) e
 	cfg := socksmaster.Config{
 		LocalHost: mst.mCfg.Socks.Host,
 		LocalPort: mst.mCfg.Socks.Port,
+		Deps:      mst.cfg.Deps,
 	}
 	srv, err := socksmaster.NewServer(ctx, cfg, mst.sess)
 	if err != nil {
