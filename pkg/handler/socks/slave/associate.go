@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net"
+	"sync"
 )
 
 // UDPRelay manages UDP datagram forwarding for SOCKS5 ASSOCIATE requests on the slave side.
@@ -20,6 +21,7 @@ type UDPRelay struct {
 	ConnRemote net.Conn
 
 	cancel   context.CancelFunc
+	mu       sync.RWMutex
 	isClosed bool
 	sessCtl  ClientControlSession
 }
@@ -54,11 +56,20 @@ func NewUDPRelay(ctx context.Context, sessCtl ClientControlSession, deps *config
 
 // Close shuts down the UDP relay and closes all connections.
 func (r *UDPRelay) Close() error {
+	r.mu.Lock()
 	r.isClosed = true
+	r.mu.Unlock()
 
 	r.cancel()
 	defer r.ConnRemote.Close()
 	return r.ConnLocal.Close()
+}
+
+// closed checks if the relay has been closed (thread-safe).
+func (r *UDPRelay) closed() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.isClosed
 }
 
 // LogError logs an error message with a prefix to indicate where it comes from
@@ -89,13 +100,13 @@ func (r *UDPRelay) localToRemote() {
 
 		buff := make([]byte, 65507)
 		for {
-			if r.isClosed {
+			if r.closed() {
 				return
 			}
 
 			n, remoteAddr, err := r.ConnLocal.ReadFrom(buff)
 			if err != nil {
-				if r.isClosed {
+				if r.closed() {
 					return // ignore errors if closed
 				}
 
@@ -134,7 +145,7 @@ func (r *UDPRelay) localToRemote() {
 				Port: pkt.addr.Port,
 				Data: pkt.data,
 			}); err != nil {
-				if r.isClosed {
+				if r.closed() {
 					return // ignore errors if closed
 				}
 
@@ -197,7 +208,7 @@ func (r *UDPRelay) remoteToLocal() error {
 
 // sendToDst sends a UDP datagram to the specified destination address and port.
 func (r *UDPRelay) sendToDst(addr string, port int, data []byte) error {
-	if r.isClosed {
+	if r.closed() {
 		return fmt.Errorf("use of closed relay")
 	}
 
