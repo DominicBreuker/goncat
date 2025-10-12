@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -17,6 +18,7 @@ type fakeConn struct {
 	readBuf  *bytes.Buffer
 	writeBuf *bytes.Buffer
 	closed   bool
+	mu       sync.Mutex
 }
 
 func newFakeConn() *fakeConn {
@@ -27,6 +29,8 @@ func newFakeConn() *fakeConn {
 }
 
 func (f *fakeConn) Read(p []byte) (n int, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.closed {
 		return 0, io.EOF
 	}
@@ -34,6 +38,8 @@ func (f *fakeConn) Read(p []byte) (n int, err error) {
 }
 
 func (f *fakeConn) Write(p []byte) (n int, err error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if f.closed {
 		return 0, io.ErrClosedPipe
 	}
@@ -66,28 +72,16 @@ func TestRun_Echo(t *testing.T) {
 	conn.readBuf.WriteString("echo hello world\n")
 	conn.readBuf.WriteString("exit\n")
 
-	// Run the command in a goroutine
-	done := make(chan error, 1)
-	go func() {
-		done <- Run(ctx, conn, "/bin/sh", deps)
-	}()
-
-	// Wait for command to complete
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Errorf("Run() error = %v", err)
-		}
-	case <-time.After(1 * time.Second):
-		t.Fatal("Run() did not complete in time")
+	// Run the command - it now waits for both cmd.Wait() and pipeio.Pipe() to complete
+	err := Run(ctx, conn, "/bin/sh", deps)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
 	}
 
-	// Give time for pipeio.Pipe to finish copying buffered data
-	// Run() returns when cmd.Wait() completes, but pipeio.Pipe may still be copying
-	time.Sleep(200 * time.Millisecond)
-
-	// Verify output
+	// Verify output - Run() now ensures all data is copied before returning
+	conn.mu.Lock()
 	output := conn.writeBuf.String()
+	conn.mu.Unlock()
 	if !strings.Contains(output, "hello world") {
 		t.Errorf("Run() output = %q, want to contain 'hello world'", output)
 	}
@@ -108,28 +102,16 @@ func TestRun_InvalidCommand(t *testing.T) {
 	conn.readBuf.WriteString("unsupported-command\n")
 	conn.readBuf.WriteString("exit\n")
 
-	// Run the command in a goroutine
-	done := make(chan error, 1)
-	go func() {
-		done <- Run(ctx, conn, "/bin/sh", deps)
-	}()
-
-	// Wait for command to complete
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Errorf("Run() error = %v", err)
-		}
-	case <-time.After(1 * time.Second):
-		t.Fatal("Run() did not complete in time")
+	// Run the command - it now waits for both cmd.Wait() and pipeio.Pipe() to complete
+	err := Run(ctx, conn, "/bin/sh", deps)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
 	}
 
-	// Give time for pipeio.Pipe to finish copying buffered data
-	// Run() returns when cmd.Wait() completes, but pipeio.Pipe may still be copying
-	time.Sleep(200 * time.Millisecond)
-
-	// Verify that error message is in output
+	// Verify that error message is in output - Run() now ensures all data is copied before returning
+	conn.mu.Lock()
 	output := conn.writeBuf.String()
+	conn.mu.Unlock()
 	if !strings.Contains(output, "command not supported") {
 		t.Errorf("Run() output = %q, want to contain 'command not supported'", output)
 	}
@@ -150,28 +132,16 @@ func TestRun_Whoami(t *testing.T) {
 	conn.readBuf.WriteString("whoami\n")
 	conn.readBuf.WriteString("exit\n")
 
-	// Run the command in a goroutine
-	done := make(chan error, 1)
-	go func() {
-		done <- Run(ctx, conn, "/bin/sh", deps)
-	}()
-
-	// Wait for command to complete
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Errorf("Run() error = %v", err)
-		}
-	case <-time.After(1 * time.Second):
-		t.Fatal("Run() did not complete in time")
+	// Run the command - it now waits for both cmd.Wait() and pipeio.Pipe() to complete
+	err := Run(ctx, conn, "/bin/sh", deps)
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
 	}
 
-	// Give time for pipeio.Pipe to finish copying buffered data
-	// Run() returns when cmd.Wait() completes, but pipeio.Pipe may still be copying
-	time.Sleep(200 * time.Millisecond)
-
-	// Verify output contains mock shell identifier
+	// Verify output contains mock shell identifier - Run() now ensures all data is copied before returning
+	conn.mu.Lock()
 	output := conn.writeBuf.String()
+	conn.mu.Unlock()
 	if !strings.Contains(output, "mockcmd[/bin/sh]") {
 		t.Errorf("Run() output = %q, want to contain 'mockcmd[/bin/sh]'", output)
 	}
