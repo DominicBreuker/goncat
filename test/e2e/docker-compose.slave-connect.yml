@@ -30,7 +30,7 @@ services:
       dockerfile: Dockerfile
     hostname: server-companion
     command: >
-      sh -c 'socat -v TCP-LISTEN:9000,fork,reuseaddr EXEC:"/bin/sh -c \"read line; echo server-companion says: \\\$line\""'
+      sh -c 'while true; do nc -l -p 9000 -e sh -c "read line; echo server-companion says: \$line"; done'
     healthcheck:
       test: ["CMD-SHELL", "netstat -an | grep 9000 | grep LISTEN"]
       interval: 5s
@@ -69,7 +69,7 @@ services:
       dockerfile: Dockerfile
     hostname: client-companion
     command: >
-      sh -c 'socat -v TCP-LISTEN:9000,fork,reuseaddr EXEC:"/bin/sh -c \"read line; echo client-companion says: \\\$line\""'
+      sh -c 'while true; do nc -l -p 9000 -e sh -c "read line; echo client-companion says: \$line"; done'
     healthcheck:
       test: ["CMD-SHELL", "netstat -an | grep 9000 | grep LISTEN"]
       interval: 5s

@@ -21,11 +21,11 @@ sleep 1
 # This should forward through the slave to server-companion:9000
 set spawn_id_master $spawn_id
 
-spawn socat - TCP:localhost:7000
+spawn nc localhost 7000
 set spawn_id_client $spawn_id
 
 # Send a test message through the forwarded port
-send "test message\n"
+send "test message\r"
 
 # Wait for the response from server-companion
 expect {
