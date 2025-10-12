@@ -19,8 +19,8 @@ Expect::server_connected
 sleep 3
 
 # Now execute a command on the slave that connects to the forwarded port
-# We need to ensure the shell and socat command complete before the connection closes
-send "(printf 'test message' | socat - TCP:localhost:7000; sleep 1) & wait\r"
+# Use sh -c with echo to pipe data into socat, keeping the connection open longer
+send "sh -c 'echo test message | socat - TCP:localhost:7000,shut-none'\r"
 
 # Wait for the response from master-companion
 expect {
