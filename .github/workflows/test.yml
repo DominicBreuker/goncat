@@ -28,5 +28,8 @@ jobs:
         make build
         ls -lh ./dist
 
-    - name: run tests
-      run: make test
+    - name: run unit tests with race detection
+      run: make test-unit-with-race
+
+    - name: run integration tests
+      run: make test-integration

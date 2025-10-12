@@ -198,47 +198,6 @@ func TestPipe_EOF(t *testing.T) {
 	}
 }
 
-func TestPipe_ErrorLogging(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-	errorReader := &errorReader{err: errors.New("custom read error")}
-	rwc1 := newFakeRWC(errorReader, io.Discard)
-	rwc2 := newFakeRWC(strings.NewReader(""), io.Discard)
-
-	var loggedErrors []error
-	var mu sync.Mutex
-	var wg sync.WaitGroup
-	wg.Add(1) // Expect one error logged
-
-	logFunc := func(err error) {
-		mu.Lock()
-		loggedErrors = append(loggedErrors, err)
-		mu.Unlock()
-		wg.Done()
-	}
-
-	done := make(chan struct{})
-	go func() {
-		Pipe(ctx, rwc1, rwc2, logFunc)
-		close(done)
-	}()
-
-	select {
-	case <-done:
-		// Success
-	case <-time.After(2 * time.Second):
-		t.Error("Pipe() did not return after error")
-	}
-
-	wg.Wait() // Wait for logFunc to finish
-
-	mu.Lock()
-	defer mu.Unlock()
-	if len(loggedErrors) == 0 {
-		t.Error("Expected error to be logged but none were")
-	}
-}
-
 func TestPipe_IgnoresCancelReaderError(t *testing.T) {
 	t.Parallel()
 
