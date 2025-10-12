@@ -65,6 +65,14 @@ func (m *MockTCPNetwork) DialTCP(network string, laddr, raddr *net.TCPAddr) (net
 		return nil, fmt.Errorf("connection refused: no listener on %s", raddr.String())
 	}
 
+	// If laddr is nil, generate a mock ephemeral local address
+	if laddr == nil {
+		laddr = &net.TCPAddr{
+			IP:   net.IPv4(127, 0, 0, 1),
+			Port: 50000 + (int(time.Now().UnixNano()) % 10000), // Mock ephemeral port
+		}
+	}
+
 	// Create a pair of connected pipes
 	clientConn, serverConn := net.Pipe()
 
@@ -156,12 +164,12 @@ func (l *mockTCPListener) Close() error {
 	}
 	l.closed = true
 	close(l.closeCh)
-	
+
 	// Remove the listener from the network's map
 	l.network.mu.Lock()
 	delete(l.network.listeners, l.addr.String())
 	l.network.mu.Unlock()
-	
+
 	return nil
 }
 

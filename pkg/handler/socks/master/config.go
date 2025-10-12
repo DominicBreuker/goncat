@@ -10,8 +10,8 @@ import (
 
 // Config contains the configuration for the SOCKS5 proxy server on the master side.
 type Config struct {
-	LocalHost string              // Local host address to bind the SOCKS5 server to
-	LocalPort int                 // Local port to bind the SOCKS5 server to
+	LocalHost string               // Local host address to bind the SOCKS5 server to
+	LocalPort int                  // Local port to bind the SOCKS5 server to
 	Deps      *config.Dependencies // Dependencies for testing and customization
 }
 
