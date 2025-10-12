@@ -1,5 +1,16 @@
 #!/bin/sh
-# Echo server for slave-companion
-# Listens on port 9000 and echoes back messages with a prefix
+# TCP and UDP echo servers for slave-companion
+# TCP: Listens on port 9000
+# UDP: Listens on port 9001
 
-nc -lk -p 9000 -e sh /opt/echo-handler.sh
+# Start TCP echo server in background
+(
+    while true; do
+        nc -lk -p 9000 -e sh /opt/echo-handler.sh || sleep 1
+    done
+) &
+
+# Start UDP echo server in foreground
+while true; do
+    socat UDP4-RECVFROM:9001,fork,reuseaddr EXEC:"/opt/udp-echo-handler.sh" || sleep 1
+done

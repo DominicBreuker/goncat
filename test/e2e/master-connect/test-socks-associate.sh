@@ -4,19 +4,7 @@ source "/opt/tests/lib.tcl"
 
 set transport [lindex $argv 0];
 
-set timeout 10
-
-# NOTE: SOCKS ASSOCIATE (UDP tunneling) test
-# Unfortunately, socat does not support SOCKS5 UDP ASSOCIATE command directly.
-# This would require implementing a custom SOCKS5 client that:
-# 1. Sends ASSOCIATE command to proxy
-# 2. Receives UDP relay address
-# 3. Sends UDP datagrams to relay address with SOCKS5 UDP header
-# 4. Receives UDP datagrams back from relay
-#
-# For now, we'll verify that the SOCKS proxy starts up correctly with -D flag
-# and that the TCP connection works. Full UDP ASSOCIATE testing would require
-# a dedicated SOCKS5 UDP client implementation.
+set timeout 15
 
 # Start goncat master with SOCKS proxy
 # -D 127.0.0.1:1080 enables SOCKS5 proxy including UDP ASSOCIATE support
@@ -25,18 +13,43 @@ spawn /opt/dist/goncat.elf master connect $transport://slave:8080 -D 127.0.0.1:1
 Expect::server_connected
 
 # Give the SOCKS proxy a moment to be ready
-sleep 1
+sleep 2
 
-# For now, we just verify the SOCKS proxy is running
-# A full test would need to:
-# - Connect to SOCKS proxy on TCP
-# - Send SOCKS5 ASSOCIATE command
-# - Receive UDP relay endpoint
-# - Send UDP packet with SOCKS5 header to relay endpoint
-# - Receive UDP response from slave-companion
+# Save the spawn_id for the master connection
+set spawn_id_master $spawn_id
 
-puts "\n✓ SOCKS proxy with UDP ASSOCIATE support started successfully"
-puts "  (Full UDP ASSOCIATE testing requires custom SOCKS5 UDP client)"
+# Now test UDP ASSOCIATE by using the Python SOCKS5 UDP test client
+# This will send a UDP datagram through the SOCKS proxy to slave-companion:9001 (UDP echo server)
+spawn python3 /opt/socks5-udp-test.py localhost 1080 slave-companion 9001
+set spawn_id_test $spawn_id
+
+# Enable logging to see all output
+log_user 1
+
+# Wait for the test result
+expect {
+    -i $spawn_id_test
+    "*✓ UDP ASSOCIATE test successful!*" {
+        puts "\n✓ SOCKS UDP ASSOCIATE test successful!"
+    }
+    "*✗ Error:*" {
+        puts stderr "\n✗ SOCKS UDP ASSOCIATE test failed"
+        exit 1
+    }
+    timeout {
+        puts stderr "\n✗ Timeout waiting for UDP ASSOCIATE test result"
+        exit 1
+    }
+    eof {
+        puts stderr "\n✗ Unexpected EOF from test client"
+        exit 1
+    }
+}
+
+# Clean up the test client
+close -i $spawn_id_test
+wait -i $spawn_id_test
 
 # Clean up the master connection
+set spawn_id $spawn_id_master
 Expect::close_and_wait
