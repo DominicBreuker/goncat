@@ -3,12 +3,16 @@
 // multiplexed control session to the slave.
 package master
 
-import "fmt"
+import (
+	"dominicbreuker/goncat/pkg/config"
+	"fmt"
+)
 
 // Config contains the configuration for the SOCKS5 proxy server on the master side.
 type Config struct {
-	LocalHost string // Local host address to bind the SOCKS5 server to
-	LocalPort int    // Local port to bind the SOCKS5 server to
+	LocalHost string               // Local host address to bind the SOCKS5 server to
+	LocalPort int                  // Local port to bind the SOCKS5 server to
+	Deps      *config.Dependencies // Dependencies for testing and customization
 }
 
 func (cfg Config) String() string {

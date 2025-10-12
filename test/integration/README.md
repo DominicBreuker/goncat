@@ -119,6 +119,18 @@ Uses `config.Dependencies` struct to inject mocks. Helper functions (`GetTCPDial
 - Tests multiple connections to ensure stability
 - Demonstrates the reverse of local port forwarding: slave binds the port, master provides the destination
 
+### TestSocksConnect
+`TestSocksConnect` in `socks_connect_test.go` demonstrates SOCKS5 proxy testing:
+- Simulates "goncat master listen tcp://*:12345 -D 127.0.0.1:1080" and "goncat slave connect tcp://127.0.0.1:12345"
+- Uses mocked TCP network for all connections (master-slave tunnel, SOCKS proxy, and destination server)
+- Creates a mock destination server at 127.0.0.1:8080 on the slave side that responds with unique, verifiable data
+- Implements full SOCKS5 client handshake (method selection, CONNECT request)
+- Tests a mock SOCKS client connecting to the proxy at 127.0.0.1:1080 on the master side
+- Validates complete bidirectional data flow through the SOCKS proxy tunnel
+- Tests multiple connections to ensure stability
+- Demonstrates realistic SOCKS proxy scenario entirely in-memory
+- Note: Only tests SOCKS CONNECT; ASSOCIATE (UDP) is not tested due to lack of UDP mocking
+
 ## Test Helpers
 
 The `test/helpers/` directory contains utilities to reduce boilerplate in tests:
