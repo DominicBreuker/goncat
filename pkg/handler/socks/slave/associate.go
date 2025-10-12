@@ -77,7 +77,11 @@ func (r *UDPRelay) Serve() error {
 func (r *UDPRelay) localToRemote() {
 	writeRemote := gob.NewEncoder(r.ConnRemote)
 
-	data := make(chan []byte)
+	type udpPacket struct {
+		data []byte
+		addr *net.UDPAddr
+	}
+	data := make(chan udpPacket)
 
 	go func() {
 		defer close(data)
@@ -99,8 +103,17 @@ func (r *UDPRelay) localToRemote() {
 				return
 			}
 
+			// Extract UDP address
+			udpAddr, ok := remoteAddr.(*net.UDPAddr)
+			if !ok {
+				continue
+			}
+
+			// Copy data and send to channel
+			b := make([]byte, n)
+			copy(b, buff[:n])
 			select {
-			case data <- buff[:n]:
+			case data <- udpPacket{data: b, addr: udpAddr}:
 			case <-r.ctx.Done():
 				return
 			}
@@ -111,13 +124,15 @@ func (r *UDPRelay) localToRemote() {
 		select {
 		case <-r.ctx.Done():
 			return
-		case b, ok := <-data:
+		case pkt, ok := <-data:
 			if !ok {
 				return
 			}
 
 			if err := writeRemote.Encode(&msg.SocksDatagram{
-				Data: b,
+				Addr: pkt.addr.IP.String(),
+				Port: pkt.addr.Port,
+				Data: pkt.data,
 			}); err != nil {
 				if r.isClosed {
 					return // ignore errors if closed

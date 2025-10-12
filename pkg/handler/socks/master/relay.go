@@ -157,6 +157,9 @@ func writeUDPRequest(conn net.PacketConn, ip netip.Addr, port uint16, data []byt
 	var packet []byte
 	packet = append(packet, socks.RSV, socks.RSV, socks.FRAG) // RSV, RSV, FRAG=0
 
+	// Unmap IPv4-mapped IPv6 addresses to pure IPv4
+	ip = ip.Unmap()
+
 	if ip.Is4() {
 		packet = append(packet, byte(socks.AddressTypeIPv4))
 		ipBytes := ip.As4()
@@ -201,7 +204,8 @@ func (r *UDPRelay) LocalToRemote() {
 
 			// Extract IP and port from the client address
 			if udpAddr, ok := clientAddr.(*net.UDPAddr); ok {
-				if (r.ClientIP == netip.Addr{}) {
+				// Update client IP if it's not set or is unspecified (0.0.0.0 or ::)
+				if !r.ClientIP.IsValid() || r.ClientIP.IsUnspecified() {
 					addr, ok := netip.AddrFromSlice(udpAddr.IP)
 					if ok {
 						r.ClientIP = addr
