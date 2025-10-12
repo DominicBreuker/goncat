@@ -367,7 +367,7 @@ func TestNewUDPRelay_InvalidAddress(t *testing.T) {
 		t.Fatalf("Failed to create test request: %v", err)
 	}
 
-	_, err = NewUDPRelay(ctx, invalidAddr, req, client)
+	_, err = NewUDPRelay(ctx, invalidAddr, req, client, nil)
 	if err == nil {
 		t.Error("NewUDPRelay() expected error with invalid address, got nil")
 	}

@@ -25,7 +25,7 @@ func TestNewUDPRelay_Success(t *testing.T) {
 		},
 	}
 
-	relay, err := NewUDPRelay(ctx, sessCtl)
+	relay, err := NewUDPRelay(ctx, sessCtl, nil)
 	if err != nil {
 		t.Fatalf("NewUDPRelay() returned error: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestNewUDPRelay_GetChannelError(t *testing.T) {
 		},
 	}
 
-	relay, err := NewUDPRelay(ctx, sessCtl)
+	relay, err := NewUDPRelay(ctx, sessCtl, nil)
 	if err == nil {
 		if relay != nil {
 			relay.Close()
@@ -82,7 +82,7 @@ func TestUDPRelay_Close(t *testing.T) {
 		},
 	}
 
-	relay, err := NewUDPRelay(ctx, sessCtl)
+	relay, err := NewUDPRelay(ctx, sessCtl, nil)
 	if err != nil {
 		t.Fatalf("NewUDPRelay() returned error: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestUDPRelay_LogError(t *testing.T) {
 		},
 	}
 
-	relay, err := NewUDPRelay(ctx, sessCtl)
+	relay, err := NewUDPRelay(ctx, sessCtl, nil)
 	if err != nil {
 		t.Fatalf("NewUDPRelay() returned error: %v", err)
 	}
@@ -147,7 +147,7 @@ func TestUDPRelay_SendToDst_WhenClosed(t *testing.T) {
 		},
 	}
 
-	relay, err := NewUDPRelay(ctx, sessCtl)
+	relay, err := NewUDPRelay(ctx, sessCtl, nil)
 	if err != nil {
 		t.Fatalf("NewUDPRelay() returned error: %v", err)
 	}
@@ -179,7 +179,7 @@ func TestUDPRelay_SendToDst_InvalidAddr(t *testing.T) {
 		},
 	}
 
-	relay, err := NewUDPRelay(ctx, sessCtl)
+	relay, err := NewUDPRelay(ctx, sessCtl, nil)
 	if err != nil {
 		t.Fatalf("NewUDPRelay() returned error: %v", err)
 	}
@@ -210,7 +210,7 @@ func TestUDPRelay_ContextPropagation(t *testing.T) {
 		},
 	}
 
-	relay, err := NewUDPRelay(ctx, sessCtl)
+	relay, err := NewUDPRelay(ctx, sessCtl, nil)
 	if err != nil {
 		t.Fatalf("NewUDPRelay() returned error: %v", err)
 	}

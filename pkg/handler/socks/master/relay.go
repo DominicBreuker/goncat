@@ -2,6 +2,7 @@ package master
 
 import (
 	"context"
+	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"dominicbreuker/goncat/pkg/socks"
@@ -17,7 +18,7 @@ import (
 // It relays UDP packets between the local SOCKS5 client and the remote destination.
 type UDPRelay struct {
 	ctx  context.Context
-	Conn *net.UDPConn
+	Conn net.PacketConn // Changed from *net.UDPConn to support mocking
 
 	ConnRemote  net.Conn
 	readRemote  *gob.Decoder
@@ -31,15 +32,17 @@ type UDPRelay struct {
 
 // NewUDPRelay creates a new UDP relay for handling SOCKS5 UDP ASSOCIATE requests.
 // It binds a local UDP port and sets up communication with the remote end.
-func NewUDPRelay(ctx context.Context, addr string, sr *socks.Request, connRemote net.Conn) (*UDPRelay, error) {
+func NewUDPRelay(ctx context.Context, addr string, sr *socks.Request, connRemote net.Conn, deps *config.Dependencies) (*UDPRelay, error) {
 	udpAddr, err := net.ResolveUDPAddr("udp", addr+":")
 	if err != nil {
 		return nil, fmt.Errorf("net.ResolveUDPAddr(udp, %s:): %s", addr, err)
 	}
 
-	conn, err := net.ListenUDP("udp", udpAddr)
+	// Get the UDP listener function from dependencies or use default
+	listenerFn := config.GetUDPListenerFunc(deps)
+	conn, err := listenerFn("udp", udpAddr)
 	if err != nil {
-		return nil, fmt.Errorf("net.ListenUDP(udp, %s): %s", udpAddr, err)
+		return nil, fmt.Errorf("ListenUDP(udp, %s): %s", udpAddr, err)
 	}
 
 	// we serve a relay but must ensure its lifetime is bound to the TCP connection
@@ -134,7 +137,8 @@ func (r *UDPRelay) readFromRemote() (*msg.SocksDatagram, error) {
 // sendToLocal sends a UDP datagram to the local SOCKS5 client.
 func (r *UDPRelay) sendToLocal(data *msg.SocksDatagram) error {
 	if (r.ClientIP != netip.Addr{}) && r.ClientPort != 0 {
-		err := socks.WriteUDPRequestAddrPort(r.Conn, r.ClientIP, r.ClientPort, data.Data)
+		// Use the existing WriteUDPRequest helper for PacketConn
+		err := writeUDPRequest(r.Conn, r.ClientIP, r.ClientPort, data.Data)
 		if err != nil {
 			return fmt.Errorf("writing to local conn: %s", err)
 		}
@@ -143,6 +147,41 @@ func (r *UDPRelay) sendToLocal(data *msg.SocksDatagram) error {
 	}
 
 	return nil
+}
+
+// writeUDPRequest writes a SOCKS5 UDP datagram to a PacketConn.
+// This is similar to socks.WriteUDPRequestAddrPort but works with PacketConn.
+func writeUDPRequest(conn net.PacketConn, ip netip.Addr, port uint16, data []byte) error {
+	// Build the SOCKS5 UDP request header
+	// Format: RSV RSV FRAG ATYP ADDR PORT DATA
+	var packet []byte
+	packet = append(packet, socks.RSV, socks.RSV, socks.FRAG) // RSV, RSV, FRAG=0
+	
+	if ip.Is4() {
+		packet = append(packet, byte(socks.AddressTypeIPv4))
+		ipBytes := ip.As4()
+		packet = append(packet, ipBytes[:]...)
+	} else if ip.Is6() {
+		packet = append(packet, byte(socks.AddressTypeIPv6))
+		ipBytes := ip.As16()
+		packet = append(packet, ipBytes[:]...)
+	} else {
+		return fmt.Errorf("IP %s was neither IPv4 nor IPv6", ip)
+	}
+	
+	// Add port (network byte order, big-endian)
+	packet = append(packet, byte(port>>8), byte(port))
+	
+	// Add data payload
+	packet = append(packet, data...)
+
+	// Write to the client using PacketConn
+	clientAddr := &net.UDPAddr{
+		IP:   net.IP(ip.AsSlice()),
+		Port: int(port),
+	}
+	_, err := conn.WriteTo(packet, clientAddr)
+	return err
 }
 
 // LocalToRemote reads UDP datagrams from the local SOCKS5 client and forwards them
@@ -156,14 +195,21 @@ func (r *UDPRelay) LocalToRemote() {
 
 		buff := make([]byte, 65507)
 		for {
-			n, clientAddr, err := r.Conn.ReadFromUDPAddrPort(buff)
+			n, clientAddr, err := r.Conn.ReadFrom(buff)
 			// Read the manual before handling errors: https://pkg.go.dev/net#PacketConn
 			// ... Callers should always process the n > 0 bytes returned before considering the error err...
-			if (r.ClientIP == netip.Addr{}) {
-				r.ClientIP = clientAddr.Addr()
-			}
-			if r.ClientPort == 0 {
-				r.ClientPort = clientAddr.Port()
+			
+			// Extract IP and port from the client address
+			if udpAddr, ok := clientAddr.(*net.UDPAddr); ok {
+				if (r.ClientIP == netip.Addr{}) {
+					addr, ok := netip.AddrFromSlice(udpAddr.IP)
+					if ok {
+						r.ClientIP = addr
+					}
+				}
+				if r.ClientPort == 0 {
+					r.ClientPort = uint16(udpAddr.Port)
+				}
 			}
 
 			if n > 0 {

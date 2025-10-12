@@ -2,6 +2,7 @@ package slave
 
 import (
 	"context"
+	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"encoding/gob"
@@ -25,10 +26,12 @@ type UDPRelay struct {
 
 // NewUDPRelay creates a new UDP relay for handling SOCKS5 ASSOCIATE requests.
 // It binds a local UDP port for sending/receiving datagrams and opens a control channel.
-func NewUDPRelay(ctx context.Context, sessCtl ClientControlSession) (*UDPRelay, error) {
-	connLocal, err := net.ListenPacket("udp", "0.0.0.0:")
+func NewUDPRelay(ctx context.Context, sessCtl ClientControlSession, deps *config.Dependencies) (*UDPRelay, error) {
+	// Get the packet listener function from dependencies or use default
+	listenerFn := config.GetPacketListenerFunc(deps)
+	connLocal, err := listenerFn("udp", "0.0.0.0:")
 	if err != nil {
-		return nil, fmt.Errorf("net.ListenPacket(udp, 0.0.0.0:): %s", err)
+		return nil, fmt.Errorf("ListenPacket(udp, 0.0.0.0:): %s", err)
 	}
 
 	connRemote, err := sessCtl.GetOneChannel()

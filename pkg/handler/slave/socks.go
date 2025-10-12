@@ -22,7 +22,7 @@ func (slv *Slave) handleSocksConnectAsync(ctx context.Context, m msg.SocksConnec
 // It creates a UDP relay to handle UDP datagrams for the SOCKS5 client.
 func (slv *Slave) handleSocksAsociateAsync(ctx context.Context, _ msg.SocksAssociate) {
 	go func() {
-		relay, err := socksslave.NewUDPRelay(ctx, slv.sess)
+		relay, err := socksslave.NewUDPRelay(ctx, slv.sess, slv.cfg.Deps)
 		if err != nil {
 			log.ErrorMsg("Running SocksAssociate job: %s\n", err)
 			return

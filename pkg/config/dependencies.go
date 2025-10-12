@@ -10,11 +10,13 @@ import (
 // Dependencies contains injectable dependencies for testing and customization.
 // All fields are optional and will use default implementations if nil.
 type Dependencies struct {
-	TCPDialer   TCPDialerFunc
-	TCPListener TCPListenerFunc
-	Stdin       StdinFunc
-	Stdout      StdoutFunc
-	ExecCommand ExecCommandFunc
+	TCPDialer      TCPDialerFunc
+	TCPListener    TCPListenerFunc
+	UDPListener    UDPListenerFunc
+	PacketListener PacketListenerFunc
+	Stdin          StdinFunc
+	Stdout         StdoutFunc
+	ExecCommand    ExecCommandFunc
 }
 
 // TCPDialerFunc is a function that dials a TCP connection.
@@ -24,6 +26,14 @@ type TCPDialerFunc func(network string, laddr, raddr *net.TCPAddr) (net.Conn, er
 // TCPListenerFunc is a function that creates a TCP listener.
 // It returns a net.Listener to allow for mock implementations.
 type TCPListenerFunc func(network string, laddr *net.TCPAddr) (net.Listener, error)
+
+// UDPListenerFunc is a function that creates a UDP listener.
+// It returns a net.PacketConn to allow for mock implementations.
+type UDPListenerFunc func(network string, laddr *net.UDPAddr) (net.PacketConn, error)
+
+// PacketListenerFunc is a function that creates a packet listener.
+// It returns a net.PacketConn to allow for mock implementations.
+type PacketListenerFunc func(network, address string) (net.PacketConn, error)
 
 // StdinFunc is a function that returns a reader for stdin.
 // It returns an io.Reader to allow for mock implementations.
@@ -144,4 +154,26 @@ type realProcess struct {
 
 func (r *realProcess) Kill() error {
 	return r.process.Kill()
+}
+
+// GetUDPListenerFunc returns the UDP listener function from dependencies, or a default implementation.
+// If deps is nil or deps.UDPListener is nil, returns a function that uses net.ListenUDP.
+func GetUDPListenerFunc(deps *Dependencies) UDPListenerFunc {
+	if deps != nil && deps.UDPListener != nil {
+		return deps.UDPListener
+	}
+	return func(network string, laddr *net.UDPAddr) (net.PacketConn, error) {
+		return net.ListenUDP(network, laddr)
+	}
+}
+
+// GetPacketListenerFunc returns the packet listener function from dependencies, or a default implementation.
+// If deps is nil or deps.PacketListener is nil, returns a function that uses net.ListenPacket.
+func GetPacketListenerFunc(deps *Dependencies) PacketListenerFunc {
+	if deps != nil && deps.PacketListener != nil {
+		return deps.PacketListener
+	}
+	return func(network, address string) (net.PacketConn, error) {
+		return net.ListenPacket(network, address)
+	}
 }

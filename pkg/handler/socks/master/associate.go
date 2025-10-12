@@ -25,7 +25,7 @@ func (srv *Server) handleAssociate(bufConnLocal *bufio.ReadWriter, sr *socks.Req
 	defer connRemote.Close() // kills relay on other end
 
 	// create a local UDP relay which binds a port
-	relay, err := NewUDPRelay(srv.ctx, srv.cfg.LocalHost, sr, connRemote)
+	relay, err := NewUDPRelay(srv.ctx, srv.cfg.LocalHost, sr, connRemote, srv.cfg.Deps)
 	if err != nil {
 		if err := socks.WriteReplyError(bufConnLocal, socks.ReplyGeneralFailure); err != nil {
 			return fmt.Errorf("writing Reply error response: %s", err)
