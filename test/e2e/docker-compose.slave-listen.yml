@@ -17,6 +17,24 @@ services:
       timeout: 3s
       retries: 3
       start_period: 3s
+    networks:
+      - common
+      - server_private
+
+  server-companion:
+    image: local/tests
+    build:
+      dockerfile: ./Dockerfile
+    hostname: server-companion
+    command: sh -c 'socat -v TCP-LISTEN:9000,fork,reuseaddr EXEC:"/bin/sh -c \"read line; echo \\\"server-companion says: \\\$line\\\"\""'
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -an | grep 9000 | grep LISTEN"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 3s
+    networks:
+      - server_private
 
   client:
     image: local/tests
@@ -27,8 +45,40 @@ services:
     depends_on:
       server:
         condition: service_healthy
+      server-companion:
+        condition: service_healthy
+      client-companion:
+        condition: service_healthy
     volumes:
       - ../../dist:/opt/dist:ro
       - .:/opt/tests:ro
     hostname: the_master
     command: sh -c '/opt/tests/test-runner.sh "$TRANSPORT" /opt/tests/$TEST_SET/test-*.sh'
+    networks:
+      - common
+      - client_private
+
+  client-companion:
+    image: local/tests
+    build:
+      dockerfile: ./Dockerfile
+    hostname: client-companion
+    command: sh -c 'socat -v TCP-LISTEN:9000,fork,reuseaddr EXEC:"/bin/sh -c \"read line; echo \\\"client-companion says: \\\$line\\\"\""'
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -an | grep 9000 | grep LISTEN"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 3s
+    networks:
+      - client_private
+
+networks:
+  common:
+    driver: bridge
+  server_private:
+    driver: bridge
+    internal: true
+  client_private:
+    driver: bridge
+    internal: true

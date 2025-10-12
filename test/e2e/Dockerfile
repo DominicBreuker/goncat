@@ -1,3 +1,3 @@
 FROM alpine:3
 
-RUN apk add expect
+RUN apk add expect socat
