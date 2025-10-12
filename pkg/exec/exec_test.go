@@ -5,7 +5,6 @@ import (
 	"context"
 	"dominicbreuker/goncat/mocks"
 	"dominicbreuker/goncat/pkg/config"
-	"fmt"
 	"io"
 	"net"
 	"strings"
@@ -24,26 +23,6 @@ func newFakeConn() *fakeConn {
 	return &fakeConn{
 		readBuf:  new(bytes.Buffer),
 		writeBuf: new(bytes.Buffer),
-	}
-}
-
-// waitForOutput waits for the expected string to appear in the write buffer by polling
-func (f *fakeConn) waitForOutput(expected string, timeout time.Duration) error {
-	deadline := time.Now().Add(timeout)
-	
-	for {
-		// Check if the expected string is in the buffer
-		if strings.Contains(f.writeBuf.String(), expected) {
-			return nil
-		}
-		
-		// Check if we've exceeded the timeout
-		if time.Now().After(deadline) {
-			return fmt.Errorf("timeout waiting for output %q, got: %q", expected, f.writeBuf.String())
-		}
-		
-		// Wait a bit before checking again
-		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -93,11 +72,6 @@ func TestRun_Echo(t *testing.T) {
 		done <- Run(ctx, conn, "/bin/sh", deps)
 	}()
 
-	// Wait for expected output to appear (Run() may return before pipeio.Pipe finishes copying)
-	if err := conn.waitForOutput("hello world", 2*time.Second); err != nil {
-		t.Errorf("Expected output did not appear: %v", err)
-	}
-
 	// Wait for command to complete
 	select {
 	case err := <-done:
@@ -106,6 +80,16 @@ func TestRun_Echo(t *testing.T) {
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatal("Run() did not complete in time")
+	}
+
+	// Give time for pipeio.Pipe to finish copying buffered data
+	// Run() returns when cmd.Wait() completes, but pipeio.Pipe may still be copying
+	time.Sleep(200 * time.Millisecond)
+
+	// Verify output
+	output := conn.writeBuf.String()
+	if !strings.Contains(output, "hello world") {
+		t.Errorf("Run() output = %q, want to contain 'hello world'", output)
 	}
 }
 
@@ -130,11 +114,6 @@ func TestRun_InvalidCommand(t *testing.T) {
 		done <- Run(ctx, conn, "/bin/sh", deps)
 	}()
 
-	// Wait for expected output to appear (Run() may return before pipeio.Pipe finishes copying)
-	if err := conn.waitForOutput("command not supported", 2*time.Second); err != nil {
-		t.Errorf("Expected output did not appear: %v", err)
-	}
-
 	// Wait for command to complete
 	select {
 	case err := <-done:
@@ -143,6 +122,16 @@ func TestRun_InvalidCommand(t *testing.T) {
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatal("Run() did not complete in time")
+	}
+
+	// Give time for pipeio.Pipe to finish copying buffered data
+	// Run() returns when cmd.Wait() completes, but pipeio.Pipe may still be copying
+	time.Sleep(200 * time.Millisecond)
+
+	// Verify that error message is in output
+	output := conn.writeBuf.String()
+	if !strings.Contains(output, "command not supported") {
+		t.Errorf("Run() output = %q, want to contain 'command not supported'", output)
 	}
 }
 
@@ -167,11 +156,6 @@ func TestRun_Whoami(t *testing.T) {
 		done <- Run(ctx, conn, "/bin/sh", deps)
 	}()
 
-	// Wait for expected output to appear (Run() may return before pipeio.Pipe finishes copying)
-	if err := conn.waitForOutput("mockcmd[/bin/sh]", 2*time.Second); err != nil {
-		t.Errorf("Expected output did not appear: %v", err)
-	}
-
 	// Wait for command to complete
 	select {
 	case err := <-done:
@@ -180,5 +164,15 @@ func TestRun_Whoami(t *testing.T) {
 		}
 	case <-time.After(1 * time.Second):
 		t.Fatal("Run() did not complete in time")
+	}
+
+	// Give time for pipeio.Pipe to finish copying buffered data
+	// Run() returns when cmd.Wait() completes, but pipeio.Pipe may still be copying
+	time.Sleep(200 * time.Millisecond)
+
+	// Verify output contains mock shell identifier
+	output := conn.writeBuf.String()
+	if !strings.Contains(output, "mockcmd[/bin/sh]") {
+		t.Errorf("Run() output = %q, want to contain 'mockcmd[/bin/sh]'", output)
 	}
 }
