@@ -28,8 +28,7 @@ services:
       context: .
       dockerfile: Dockerfile
     hostname: server-companion
-    command: >
-      sh -c 'while true; do nc -l -p 9000 -e sh -c "read line; echo server-companion says: \$line"; done'
+    command: /opt/server-companion-echo.sh
     healthcheck:
       test: ["CMD-SHELL", "netstat -an | grep 9000 | grep LISTEN"]
       interval: 5s
@@ -68,8 +67,7 @@ services:
       context: .
       dockerfile: Dockerfile
     hostname: client-companion
-    command: >
-      sh -c 'while true; do nc -l -p 9000 -e sh -c "read line; echo client-companion says: \$line"; done'
+    command: /opt/client-companion-echo.sh
     healthcheck:
       test: ["CMD-SHELL", "netstat -an | grep 9000 | grep LISTEN"]
       interval: 5s
