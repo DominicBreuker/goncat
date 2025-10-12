@@ -27,10 +27,8 @@ import (
 // 2. A SOCKS5 client connecting to the proxy at 127.0.0.1:1080 on the master side
 // 3. Verifies that UDP datagrams flow correctly through the SOCKS proxy tunnel
 //
-// TODO: This test currently hangs. The infrastructure (UDP mocking, dependency injection) is in place,
-// but there appears to be a synchronization issue where UDP packets aren't flowing through the relay chain.
-// The relay goroutines may not be starting properly, or there may be a deadlock in the UDP packet flow.
-// Further debugging needed to identify the root cause.
+// Note: More comprehensive SOCKS ASSOCIATE tests including multiple concurrent clients
+// can be found in test/integration/socks/associate/
 func TestSocksAssociate(t *testing.T) {
 	// Create mock networks for TCP and UDP connections
 	mockTCPNet := mocks.NewMockTCPNetwork()
@@ -363,109 +361,6 @@ func TestSocksAssociate(t *testing.T) {
 	}
 
 	t.Logf("✓ SOCKS UDP proxy test successful! Response: %q", clientResponse)
-
-	// TODO: Test multiple UDP datagrams to ensure SOCKS proxy is stable
-	// Currently disabled because each iteration creates a new SOCKS connection
-	// which creates a new UDP relay, and we need to properly handle multiple relays
-	// or reuse the same UDP relay for multiple datagrams
-	/*
-		for i := 0; i < 3; i++ {
-			clientWg.Add(1)
-			go func(iteration int) {
-				defer clientWg.Done()
-
-				// Connect to SOCKS proxy
-				socksConn, err := mockTCPNet.DialTCP("tcp", nil, socksProxyAddr)
-				if err != nil {
-					t.Errorf("Iteration %d: failed to connect: %v", iteration, err)
-					return
-				}
-				defer socksConn.Close()
-
-				bufSocksConn := bufio.NewReadWriter(bufio.NewReader(socksConn), bufio.NewWriter(socksConn))
-
-				// Method selection
-				methodRequest := []byte{socks.VersionSocks5, 0x01, byte(socks.MethodNoAuthenticationRequired)}
-				bufSocksConn.Write(methodRequest)
-				bufSocksConn.Flush()
-
-				methodResponse := make([]byte, 2)
-				io.ReadFull(bufSocksConn, methodResponse)
-
-				// ASSOCIATE request
-				associateRequest := []byte{
-					socks.VersionSocks5, byte(socks.CommandAssociate), socks.RSV,
-					byte(socks.AddressTypeIPv4), 0, 0, 0, 0, 0, 0,
-				}
-				bufSocksConn.Write(associateRequest)
-				bufSocksConn.Flush()
-
-				// Read ASSOCIATE response
-				associateResponse := make([]byte, 4)
-				io.ReadFull(bufSocksConn, associateResponse)
-				atyp := associateResponse[3]
-				var addrLen int
-				switch socks.Atyp(atyp) {
-				case socks.AddressTypeIPv4:
-					addrLen = 4
-				case socks.AddressTypeIPv6:
-					addrLen = 16
-				}
-				remaining := make([]byte, addrLen+2)
-				io.ReadFull(bufSocksConn, remaining)
-
-				// Extract UDP relay address
-				var udpRelayIP net.IP
-				if atyp == byte(socks.AddressTypeIPv4) {
-					udpRelayIP = net.IPv4(remaining[0], remaining[1], remaining[2], remaining[3])
-				}
-				udpRelayPort := int(remaining[addrLen])<<8 | int(remaining[addrLen+1])
-				udpRelayAddr := &net.UDPAddr{IP: udpRelayIP, Port: udpRelayPort}
-
-				// Create client UDP connection
-				clientUDPAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:0")
-				clientUDPConn, err := mockUDPNet.ListenUDP("udp", clientUDPAddr)
-				if err != nil {
-					t.Errorf("Iteration %d: failed to create UDP conn: %v", iteration, err)
-					return
-				}
-				defer clientUDPConn.Close()
-
-				// Send UDP datagram
-				testData := fmt.Sprintf("UDP Message %d", iteration)
-				udpDatagram := []byte{
-					socks.RSV, socks.RSV, socks.FRAG,
-					byte(socks.AddressTypeIPv4),
-					127, 0, 0, 1,
-					0x1F, 0x90,
-				}
-				udpDatagram = append(udpDatagram, []byte(testData)...)
-
-				clientUDPConn.WriteTo(udpDatagram, udpRelayAddr)
-
-				// Read response
-				responseBuf := make([]byte, 65507)
-				clientUDPConn.SetReadDeadline(time.Now().Add(2 * time.Second))
-				n, _, err := clientUDPConn.ReadFrom(responseBuf)
-				if err != nil {
-					t.Errorf("Iteration %d: failed to read: %v", iteration, err)
-					return
-				}
-
-				if n >= 10 {
-					responseData := string(responseBuf[10:n])
-					if !strings.Contains(responseData, testData) {
-						t.Errorf("Iteration %d: expected response to contain '%s', got: %q", iteration, testData, responseData)
-					} else {
-						t.Logf("✓ Iteration %d successful! Response: %q", iteration, responseData)
-					}
-				}
-			}(i)
-		}
-
-		// Wait for all iterations to complete
-		clientWg.Wait()
-	*/
 
 	// Cleanup
 	cancel()
