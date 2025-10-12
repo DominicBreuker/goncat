@@ -1,7 +1,6 @@
 package pipeio
 
 import (
-	"fmt"
 	"io"
 	"sync"
 )
@@ -25,13 +24,11 @@ func NewCmdio(stdout, stderr io.Reader, stdin io.WriteCloser) *Cmdio {
 
 // Read reads from the combined stdout/stderr stream.
 func (s *Cmdio) Read(p []byte) (n int, err error) {
-	fmt.Printf("Cmdio.Read returns: %q\n", p[:n])
 	return s.r.Read(p)
 }
 
 // Write writes to the command's stdin.
 func (s *Cmdio) Write(p []byte) (n int, err error) {
-	fmt.Printf("Cmdio.Write writes: %q\n", p)
 	return s.w.Write(p)
 }
 
