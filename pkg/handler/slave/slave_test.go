@@ -11,9 +11,6 @@ import (
 
 // TestNew creates a new slave handler and verifies initialization.
 func TestNew(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	client, server := net.Pipe()
@@ -93,9 +90,6 @@ func TestNew_ConfigValidation(t *testing.T) {
 
 // TestClose verifies that Close properly closes the slave session.
 func TestClose(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	client, server := net.Pipe()

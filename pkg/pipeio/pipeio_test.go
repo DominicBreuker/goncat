@@ -55,9 +55,6 @@ func (f *fakeRWC) Close() error {
 }
 
 func TestPipe_BasicBidirectionalCopy(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
@@ -125,9 +122,6 @@ func TestPipe_BasicBidirectionalCopy(t *testing.T) {
 }
 
 func TestPipe_ContextCancellation(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -165,9 +159,6 @@ func TestPipe_ContextCancellation(t *testing.T) {
 }
 
 func TestPipe_EOF(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
@@ -208,25 +199,22 @@ func TestPipe_EOF(t *testing.T) {
 }
 
 func TestPipe_ErrorLogging(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
-
 	ctx := context.Background()
-
-	// Create a reader that returns an error other than the ignored ones
 	errorReader := &errorReader{err: errors.New("custom read error")}
-
 	rwc1 := newFakeRWC(errorReader, io.Discard)
 	rwc2 := newFakeRWC(strings.NewReader(""), io.Discard)
 
 	var loggedErrors []error
 	var mu sync.Mutex
+	var wg sync.WaitGroup
+	wg.Add(1) // Expect one error logged
+
 	logFunc := func(err error) {
 		mu.Lock()
-		defer mu.Unlock()
 		loggedErrors = append(loggedErrors, err)
+		mu.Unlock()
+		wg.Done()
 	}
 
 	done := make(chan struct{})
@@ -242,7 +230,8 @@ func TestPipe_ErrorLogging(t *testing.T) {
 		t.Error("Pipe() did not return after error")
 	}
 
-	// Verify error was logged
+	wg.Wait() // Wait for logFunc to finish
+
 	mu.Lock()
 	defer mu.Unlock()
 	if len(loggedErrors) == 0 {
@@ -251,9 +240,6 @@ func TestPipe_ErrorLogging(t *testing.T) {
 }
 
 func TestPipe_IgnoresCancelReaderError(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
@@ -296,9 +282,6 @@ func TestPipe_IgnoresCancelReaderError(t *testing.T) {
 }
 
 func TestPipe_IgnoresConnectionResetError(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
@@ -341,9 +324,6 @@ func TestPipe_IgnoresConnectionResetError(t *testing.T) {
 }
 
 func TestPipe_ClosesBothConnections(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()

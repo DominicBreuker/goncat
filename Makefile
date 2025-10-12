@@ -47,7 +47,7 @@ test: test-unit test-integration
 
 .PHONY: test-unit
 test-unit: 
-	go test -cover ./...
+	go test -cover -race ./...
 
 .PHONY: test-integration
 test-integration: build-linux

@@ -2,6 +2,8 @@ package portfwd
 
 import (
 	"context"
+	"dominicbreuker/goncat/mocks"
+	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"errors"
 	"net"
@@ -128,9 +130,6 @@ func TestNewServer_AllFields(t *testing.T) {
 
 // TestServer_HandlePortForwardingConn verifies the connection handling logic.
 func TestServer_HandlePortForwardingConn_SendAndGetError(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
@@ -163,9 +162,6 @@ func TestServer_HandlePortForwardingConn_SendAndGetError(t *testing.T) {
 
 // TestServer_Handle_InvalidAddress verifies error handling for invalid addresses.
 func TestServer_Handle_InvalidAddress(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
@@ -187,30 +183,32 @@ func TestServer_Handle_InvalidAddress(t *testing.T) {
 
 // TestServer_Handle_PortInUse verifies error handling when the port is already in use.
 func TestServer_Handle_PortInUse(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
-	// Start a listener to occupy a port
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	// Use mock TCP network
+	mockNet := mocks.NewMockTCPNetwork()
+	deps := &config.Dependencies{
+		TCPListener: mockNet.ListenTCP,
+	}
+
+	// Start a listener to occupy a port on the mock network
+	tcpAddr, _ := net.ResolveTCPAddr("tcp", "127.0.0.1:12360")
+	listener, err := mockNet.ListenTCP("tcp", tcpAddr)
 	if err != nil {
 		t.Fatalf("failed to create test listener: %v", err)
 	}
 	defer listener.Close()
 
-	addr := listener.Addr().(*net.TCPAddr)
-
 	ctx := context.Background()
 	cfg := Config{
-		LocalHost:  addr.IP.String(),
-		LocalPort:  addr.Port,
+		LocalHost:  "127.0.0.1",
+		LocalPort:  12360,
 		RemoteHost: "example.com",
 		RemotePort: 80,
 	}
 
 	sessCtl := &fakeServerControlSession{}
-	srv := NewServer(ctx, cfg, sessCtl, nil)
+	srv := NewServer(ctx, cfg, sessCtl, deps)
 
 	err = srv.Handle()
 	if err == nil {
@@ -220,21 +218,24 @@ func TestServer_Handle_PortInUse(t *testing.T) {
 
 // TestServer_Handle_ContextCancellation verifies that Handle respects context cancellation.
 func TestServer_Handle_ContextCancellation(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
+
+	// Use mock TCP network
+	mockNet := mocks.NewMockTCPNetwork()
+	deps := &config.Dependencies{
+		TCPListener: mockNet.ListenTCP,
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	cfg := Config{
 		LocalHost:  "127.0.0.1",
-		LocalPort:  0, // Let OS choose port
+		LocalPort:  12361,
 		RemoteHost: "example.com",
 		RemotePort: 80,
 	}
 
 	sessCtl := &fakeServerControlSession{}
-	srv := NewServer(ctx, cfg, sessCtl, nil)
+	srv := NewServer(ctx, cfg, sessCtl, deps)
 
 	// Cancel context before calling Handle
 	cancel()
@@ -256,9 +257,6 @@ func TestServer_Handle_ContextCancellation(t *testing.T) {
 
 // TestServer_HandlePortForwardingConn_Success verifies successful connection forwarding.
 func TestServer_HandlePortForwardingConn_Success(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
@@ -302,10 +300,10 @@ func TestServer_HandlePortForwardingConn_Success(t *testing.T) {
 
 // TestServer_Handle_TableDriven tests various server scenarios.
 func TestServer_Handle_TableDriven(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
+
+	// Use mock TCP network
+	mockNet := mocks.NewMockTCPNetwork()
 
 	tests := []struct {
 		name    string
@@ -352,8 +350,12 @@ func TestServer_Handle_TableDriven(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
 
+			deps := &config.Dependencies{
+				TCPListener: mockNet.ListenTCP,
+			}
+
 			sessCtl := &fakeServerControlSession{}
-			srv := NewServer(ctx, tc.cfg, sessCtl, nil)
+			srv := NewServer(ctx, tc.cfg, sessCtl, deps)
 
 			// For successful cases, cancel immediately
 			if !tc.wantErr {
@@ -433,17 +435,20 @@ func TestConfig_Fields(t *testing.T) {
 
 // TestServer_Handle_AcceptConnection tests the successful accept and handle flow.
 func TestServer_Handle_AcceptConnection(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
+
+	// Use mock TCP network
+	mockNet := mocks.NewMockTCPNetwork()
+	deps := &config.Dependencies{
+		TCPListener: mockNet.ListenTCP,
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	cfg := Config{
 		LocalHost:  "127.0.0.1",
-		LocalPort:  0, // Let OS choose port
+		LocalPort:  12362,
 		RemoteHost: "example.com",
 		RemotePort: 80,
 	}
@@ -459,7 +464,7 @@ func TestServer_Handle_AcceptConnection(t *testing.T) {
 		},
 	}
 
-	srv := NewServer(ctx, cfg, sessCtl, nil)
+	srv := NewServer(ctx, cfg, sessCtl, deps)
 
 	// Start server in background
 	serverErr := make(chan error, 1)
@@ -480,17 +485,21 @@ func TestServer_Handle_AcceptConnection(t *testing.T) {
 
 // TestServer_Handle_AcceptAndForward tests accepting a connection and forwarding it.
 func TestServer_Handle_AcceptAndForward(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
+
+	// Use mock TCP network
+	mockNet := mocks.NewMockTCPNetwork()
+	deps := &config.Dependencies{
+		TCPDialer:   mockNet.DialTCP,
+		TCPListener: mockNet.ListenTCP,
+	}
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	cfg := Config{
 		LocalHost:  "127.0.0.1",
-		LocalPort:  0, // Let OS choose port
+		LocalPort:  12363,
 		RemoteHost: "example.com",
 		RemotePort: 80,
 	}
@@ -509,49 +518,27 @@ func TestServer_Handle_AcceptAndForward(t *testing.T) {
 		},
 	}
 
-	srv := NewServer(ctx, cfg, sessCtl, nil)
+	srv := NewServer(ctx, cfg, sessCtl, deps)
 
 	serverDone := make(chan error, 1)
-
-	// We need to get the listening address, but Handle blocks
-	// Let's use a different approach: start listening ourselves first
-	// to get a port, then use that port
-	testListener, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatalf("failed to create test listener: %v", err)
-	}
-	addr := testListener.Addr().(*net.TCPAddr)
-	testListener.Close()
-
-	// Update config with the port we know is free
-	cfg.LocalPort = addr.Port
-	srv = NewServer(ctx, cfg, sessCtl, nil)
 
 	// Start server
 	go func() {
 		serverDone <- srv.Handle()
 	}()
 
-	// Wait a bit for server to start listening
-	// Retry connection attempts with exponential backoff
-	var conn net.Conn
-	for i := 0; i < 20; i++ {
-		conn, err = net.Dial("tcp", addr.String())
-		if err == nil {
-			break
-		}
-		// Exponential backoff: 1ms, 2ms, 4ms, ... up to ~1 second total
-		if i < 10 {
-			select {
-			case <-ctx.Done():
-				t.Fatal("context cancelled before connection established")
-			default:
-			}
-		}
+	// Wait for server to be ready using mock network's WaitForListener
+	addr := "127.0.0.1:12363"
+	if err := mockNet.WaitForListener(addr, 1000); err != nil {
+		t.Fatalf("Listener not ready: %v", err)
 	}
+
+	// Connect to the server
+	tcpAddr, _ := net.ResolveTCPAddr("tcp", addr)
+	conn, err := mockNet.DialTCP("tcp", nil, tcpAddr)
 	if err != nil {
 		cancel()
-		t.Fatalf("failed to connect to server after retries: %v", err)
+		t.Fatalf("failed to connect to server: %v", err)
 	}
 	defer conn.Close()
 

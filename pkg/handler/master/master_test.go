@@ -12,9 +12,6 @@ import (
 
 // TestNew creates a new master handler and verifies initialization.
 func TestNew(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	client, server := net.Pipe()
@@ -112,9 +109,6 @@ func TestNew_ConfigValidation(t *testing.T) {
 
 // TestClose verifies that Close properly closes the master session.
 func TestClose(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	client, server := net.Pipe()
@@ -273,9 +267,6 @@ func TestMasterConfig_IsSocksEnabled(t *testing.T) {
 
 // TestStartLocalPortFwdJob tests the startLocalPortFwdJob method.
 func TestStartLocalPortFwdJob(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
@@ -327,9 +318,6 @@ func TestStartLocalPortFwdJob(t *testing.T) {
 
 // TestStartRemotePortFwdJob tests the startRemotePortFwdJob method.
 func TestStartRemotePortFwdJob(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
@@ -385,9 +373,6 @@ func TestStartRemotePortFwdJob(t *testing.T) {
 
 // TestHandleConnectAsync tests the handleConnectAsync method.
 func TestHandleConnectAsync(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
@@ -427,9 +412,6 @@ func TestHandleConnectAsync(t *testing.T) {
 
 // TestStartSocksProxyJob tests the startSocksProxyJob method.
 func TestStartSocksProxyJob(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
@@ -482,9 +464,6 @@ func TestStartSocksProxyJob(t *testing.T) {
 
 // TestStartSocksProxyJob_InvalidConfig tests error handling for invalid SOCKS config.
 func TestStartSocksProxyJob_InvalidConfig(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
@@ -530,9 +509,6 @@ func TestStartSocksProxyJob_InvalidConfig(t *testing.T) {
 
 // TestHandleForeground_Plain tests handleForeground without PTY.
 func TestHandleForeground_Plain(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -606,9 +582,6 @@ func TestHandleForeground_Plain(t *testing.T) {
 
 // TestHandleForeground_PTY tests handleForeground with PTY enabled.
 func TestHandleForeground_PTY(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -687,9 +660,6 @@ func TestHandleForeground_PTY(t *testing.T) {
 
 // TestStartForegroundJob tests the startForegroundJob method.
 func TestStartForegroundJob(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()
@@ -750,9 +720,6 @@ func TestStartForegroundJob(t *testing.T) {
 
 // TestHandle_BasicFlow tests the Handle method with a simple configuration.
 func TestHandle_BasicFlow(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -831,9 +798,6 @@ func TestHandle_BasicFlow(t *testing.T) {
 
 // TestHandle_WithLocalPortForwarding tests Handle with local port forwarding configured.
 func TestHandle_WithLocalPortForwarding(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -912,9 +876,6 @@ func TestHandle_WithLocalPortForwarding(t *testing.T) {
 
 // TestHandle_WithRemotePortForwarding tests Handle with remote port forwarding configured.
 func TestHandle_WithRemotePortForwarding(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1004,9 +965,6 @@ func TestHandle_WithRemotePortForwarding(t *testing.T) {
 
 // TestHandle_WithSOCKS tests Handle with SOCKS proxy configured.
 func TestHandle_WithSOCKS(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1081,9 +1039,6 @@ func TestHandle_WithSOCKS(t *testing.T) {
 
 // TestHandle_ReceiveConnectMessage tests Handle receiving a Connect message from slave.
 func TestHandle_ReceiveConnectMessage(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1179,9 +1134,6 @@ func TestHandle_ReceiveConnectMessage(t *testing.T) {
 
 // TestHandle_UnexpectedMessage tests Handle receiving an unexpected message type.
 func TestHandle_UnexpectedMessage(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1261,9 +1213,6 @@ func TestHandle_UnexpectedMessage(t *testing.T) {
 
 // TestHandle_UnauthorizedConnect tests Handle rejecting unauthorized Connect message.
 func TestHandle_UnauthorizedConnect(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1358,9 +1307,6 @@ func TestHandle_UnauthorizedConnect(t *testing.T) {
 
 // TestHandleForeground_WithLogFile tests foreground handling with log file configured.
 func TestHandleForeground_WithLogFile(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -1443,9 +1389,6 @@ func TestHandleForeground_WithLogFile(t *testing.T) {
 
 // TestHandleForeground_PTYWithLogFile tests PTY foreground handling with log file.
 func TestHandleForeground_PTYWithLogFile(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx, cancel := context.WithCancel(context.Background())

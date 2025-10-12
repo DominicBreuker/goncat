@@ -19,7 +19,7 @@ import (
 
 // RunWithPTY executes the specified program in a PTY (pseudo-terminal) on Unix systems.
 // It uses two connections: connCtl for terminal size synchronization and connData for I/O.
-// The function blocks until the program exits or the context is cancelled.
+// The function blocks until both the program exits AND all I/O copying is complete.
 func RunWithPTY(ctx context.Context, connCtl, connData net.Conn, program string, verbose bool) error {
 	cmd := exec.Command(program)
 
@@ -27,8 +27,6 @@ func RunWithPTY(ctx context.Context, connCtl, connData net.Conn, program string,
 	if err != nil {
 		return fmt.Errorf("starting pty: %s", err)
 	}
-	defer tty.Close()
-	defer pty.Close()
 
 	cmd.SysProcAttr = &syscall.SysProcAttr{
 		Setctty: true,
@@ -44,11 +42,14 @@ func RunWithPTY(ctx context.Context, connCtl, connData net.Conn, program string,
 		return fmt.Errorf("cmd.Run(): %s", err)
 	}
 
-	done := make(chan struct{})
+	// Wait for both the command to exit and I/O copying to complete
+	cmdDone := make(chan struct{})
+	pipeDone := make(chan struct{})
 
 	go func() {
 		cmd.Wait()
-		done <- struct{}{}
+		tty.Close()
+		close(cmdDone)
 	}()
 
 	go syncTerminalSize(pty, connCtl, verbose)
@@ -60,9 +61,13 @@ func RunWithPTY(ctx context.Context, connCtl, connData net.Conn, program string,
 			}
 		})
 		cmd.Process.Kill()
-		done <- struct{}{}
+		pty.Close()
+		close(pipeDone)
 	}()
-	<-done
+
+	// Wait for both goroutines to complete
+	<-cmdDone
+	<-pipeDone
 
 	return nil
 }

@@ -114,9 +114,6 @@ func TestNewTCPRelay_DifferentHosts(t *testing.T) {
 }
 
 func TestTCPRelay_Handle_GetChannelError(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration-style test in short mode")
-	}
 	t.Parallel()
 
 	ctx := context.Background()

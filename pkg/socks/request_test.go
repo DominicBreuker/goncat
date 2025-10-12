@@ -270,9 +270,6 @@ func TestReply_serialize(t *testing.T) {
 }
 
 func TestWriteReplySuccessConnect(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping network test in short mode")
-	}
 
 	t.Parallel()
 

@@ -156,6 +156,12 @@ func (l *mockTCPListener) Close() error {
 	}
 	l.closed = true
 	close(l.closeCh)
+	
+	// Remove the listener from the network's map
+	l.network.mu.Lock()
+	delete(l.network.listeners, l.addr.String())
+	l.network.mu.Unlock()
+	
 	return nil
 }
 

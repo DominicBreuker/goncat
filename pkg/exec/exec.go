@@ -14,7 +14,7 @@ import (
 
 // Run executes the specified program and pipes its stdin/stdout/stderr
 // to and from the provided network connection. The function blocks until
-// the program exits or the context is cancelled.
+// both the program exits AND all I/O copying is complete.
 func Run(ctx context.Context, conn net.Conn, program string, deps *config.Dependencies) error {
 	execCmd := config.GetExecCommandFunc(deps)
 	cmd := execCmd(program)
@@ -41,21 +41,39 @@ func Run(ctx context.Context, conn net.Conn, program string, deps *config.Depend
 		return fmt.Errorf("cmd.Run(): %s", err)
 	}
 
-	done := make(chan struct{})
+	// Wait for both the command to exit and I/O copying to complete
+	cmdDone := make(chan error, 1) // buffered, so goroutine won't block
+	pipeDone := make(chan error, 1)
 
 	go func() {
-		cmd.Wait()
-		done <- struct{}{}
+		cmdDone <- cmd.Wait()
 	}()
 
 	go func() {
-		pipeio.Pipe(ctx, cmdio, conn, func(err error) {
+		pipeDone <- pipeio.Pipe(ctx, cmdio, conn, func(err error) {
 			log.ErrorMsg("Run Pipe(pty, conn): %s\n", err)
 		})
-		cmd.Process().Kill()
-		done <- struct{}{}
 	}()
-	<-done
 
+	// Wait for both goroutines to complete and collect errors.
+	var cmdErr, pipeErr error
+	for i := 0; i < 2; i++ {
+		select {
+		case err := <-cmdDone:
+			cmdErr = err
+		case err := <-pipeDone:
+			pipeErr = err
+		}
+	}
+
+	// Ensure the process is killed after I/O is done, not before.
+	_ = cmd.Process().Kill() // Defensive: ensure cleanup
+
+	if pipeErr != nil {
+		return pipeErr
+	}
+	if cmdErr != nil {
+		return cmdErr
+	}
 	return nil
 }

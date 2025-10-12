@@ -16,7 +16,7 @@ import (
 
 // RunWithPTY executes the specified program in a ConPTY (Windows pseudo-console).
 // It uses two connections: connCtl for terminal size synchronization and connData for I/O.
-// The function blocks until the program exits or the context is cancelled.
+// The function blocks until both the program exits AND all I/O copying is complete.
 func RunWithPTY(ctx context.Context, connCtl, connData net.Conn, program string, verbose bool) error {
 	cpty, err := pty.Create()
 	if err != nil {
@@ -28,11 +28,13 @@ func RunWithPTY(ctx context.Context, connCtl, connData net.Conn, program string,
 		return fmt.Errorf("failed to run program: %s", err)
 	}
 
-	done := make(chan struct{})
+	// Wait for both the command to exit and I/O copying to complete
+	cmdDone := make(chan struct{})
+	pipeDone := make(chan struct{})
 
 	go func() {
 		cpty.Wait()
-		done <- struct{}{}
+		close(cmdDone)
 	}()
 
 	go syncTerminalSize(cpty, connCtl, verbose)
@@ -44,9 +46,12 @@ func RunWithPTY(ctx context.Context, connCtl, connData net.Conn, program string,
 			}
 		})
 		cpty.KillProcess()
-		done <- struct{}{}
+		close(pipeDone)
 	}()
-	<-done
+
+	// Wait for both goroutines to complete
+	<-cmdDone
+	<-pipeDone
 
 	return nil
 }

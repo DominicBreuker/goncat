@@ -1,5 +1,3 @@
-// Package pipeio provides utilities for bidirectional I/O piping between
-// ReadWriteClosers, with support for context cancellation and error handling.
 package pipeio
 
 import (
@@ -17,62 +15,52 @@ import (
 // It copies data in both directions concurrently until one side closes,
 // an error occurs, or the context is cancelled. The logfunc is called
 // for non-fatal errors during copying.
-//
-// Certain errors are considered non-fatal and are not logged:
-//   - cancelreader.ErrCanceled: when a cancelable reader is cancelled
-//   - syscall.ECONNRESET: when a connection is reset by peer
-//
-// Both connections are closed when the function returns, regardless of
-// whether an error occurred or the context was cancelled.
-func Pipe(ctx context.Context, rwc1 io.ReadWriteCloser, rwc2 io.ReadWriteCloser, logfunc func(error)) {
-	var wg sync.WaitGroup
-	var o sync.Once
+func Pipe(ctx context.Context, rwc1 io.ReadWriteCloser, rwc2 io.ReadWriteCloser, logfunc func(error)) error {
+	var once sync.Once
+	var firstErr error
+	var firstErrMu sync.Mutex
 
-	stopCh := make(chan struct{})
-	closed := false
-	close := func() {
-		closed = true
-
-		rwc1.Close()
-		rwc2.Close()
-
-		close(stopCh)
-
-		wg.Done()
+	shutdown := func() {
+		_ = rwc1.Close()
+		_ = rwc2.Close()
 	}
-	wg.Add(1)
+
+	setErr := func(err error) {
+		firstErrMu.Lock()
+		defer firstErrMu.Unlock()
+		if firstErr == nil {
+			firstErr = err
+		}
+	}
+
+	copyFunc := func(dst, src io.ReadWriteCloser) {
+		_, err := io.Copy(dst, src)
+		if err != nil && !errors.Is(err, cancelreader.ErrCanceled) && !errors.Is(err, syscall.ECONNRESET) {
+			logfunc(fmt.Errorf("io.Copy: %w", err))
+			setErr(err)
+		}
+		once.Do(shutdown)
+	}
+
+	var wg sync.WaitGroup
+	wg.Add(2)
 
 	go func() {
-		select {
-		case <-stopCh:
-		case <-ctx.Done():
-			o.Do(close)
-		}
+		defer wg.Done()
+		copyFunc(rwc1, rwc2)
+	}()
+	go func() {
+		defer wg.Done()
+		copyFunc(rwc2, rwc1)
 	}()
 
 	go func() {
-		var err error
-		_, err = io.Copy(rwc1, rwc2)
-		if err != nil {
-			if !closed && !errors.Is(err, cancelreader.ErrCanceled) && !errors.Is(err, syscall.ECONNRESET) {
-				logfunc(fmt.Errorf("io.Copy(rwc1, rwc2): %s", err))
-			}
-		}
-
-		o.Do(close)
-	}()
-
-	go func() {
-		var err error
-		_, err = io.Copy(rwc2, rwc1)
-		if err != nil {
-			if !closed && !errors.Is(err, cancelreader.ErrCanceled) && !errors.Is(err, syscall.ECONNRESET) {
-				logfunc(fmt.Errorf("io.Copy(rwc2, rwc1): %s", err))
-			}
-		}
-
-		o.Do(close)
+		<-ctx.Done()
+		once.Do(shutdown)
 	}()
 
 	wg.Wait()
+	firstErrMu.Lock()
+	defer firstErrMu.Unlock()
+	return firstErr
 }
