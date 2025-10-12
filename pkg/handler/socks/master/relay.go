@@ -156,7 +156,7 @@ func writeUDPRequest(conn net.PacketConn, ip netip.Addr, port uint16, data []byt
 	// Format: RSV RSV FRAG ATYP ADDR PORT DATA
 	var packet []byte
 	packet = append(packet, socks.RSV, socks.RSV, socks.FRAG) // RSV, RSV, FRAG=0
-	
+
 	if ip.Is4() {
 		packet = append(packet, byte(socks.AddressTypeIPv4))
 		ipBytes := ip.As4()
@@ -168,10 +168,10 @@ func writeUDPRequest(conn net.PacketConn, ip netip.Addr, port uint16, data []byt
 	} else {
 		return fmt.Errorf("IP %s was neither IPv4 nor IPv6", ip)
 	}
-	
+
 	// Add port (network byte order, big-endian)
 	packet = append(packet, byte(port>>8), byte(port))
-	
+
 	// Add data payload
 	packet = append(packet, data...)
 
@@ -198,7 +198,7 @@ func (r *UDPRelay) LocalToRemote() {
 			n, clientAddr, err := r.Conn.ReadFrom(buff)
 			// Read the manual before handling errors: https://pkg.go.dev/net#PacketConn
 			// ... Callers should always process the n > 0 bytes returned before considering the error err...
-			
+
 			// Extract IP and port from the client address
 			if udpAddr, ok := clientAddr.(*net.UDPAddr); ok {
 				if (r.ClientIP == netip.Addr{}) {

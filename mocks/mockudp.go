@@ -34,13 +34,29 @@ func (m *MockUDPNetwork) ListenUDP(network string, laddr *net.UDPAddr) (net.Pack
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	addr := laddr.String()
+	// Handle ephemeral port allocation (port 0)
+	actualAddr := laddr
+	if laddr.Port == 0 {
+		// Generate a unique ephemeral port
+		for port := 40000; port < 50000; port++ {
+			testAddr := &net.UDPAddr{
+				IP:   laddr.IP,
+				Port: port,
+			}
+			if _, exists := m.listeners[testAddr.String()]; !exists {
+				actualAddr = testAddr
+				break
+			}
+		}
+	}
+
+	addr := actualAddr.String()
 	if _, exists := m.listeners[addr]; exists {
 		return nil, fmt.Errorf("address already in use: %s", addr)
 	}
 
 	listener := &mockUDPListener{
-		addr:    laddr,
+		addr:    actualAddr,
 		packets: make(chan *mockUDPPacket, 100),
 		closeCh: make(chan struct{}),
 		network: m,
