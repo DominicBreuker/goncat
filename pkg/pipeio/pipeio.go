@@ -55,10 +55,8 @@ func Pipe(ctx context.Context, rwc1 io.ReadWriteCloser, rwc2 io.ReadWriteCloser,
 	}()
 
 	go func() {
-		select {
-		case <-ctx.Done():
-			once.Do(shutdown)
-		}
+		<-ctx.Done()
+		once.Do(shutdown)
 	}()
 
 	wg.Wait()
