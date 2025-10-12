@@ -130,7 +130,6 @@ func (m *mockCmd) Start() error {
 
 // processCommand simulates shell command execution for /bin/sh.
 func (m *mockCmd) processCommand(cmd string) {
-	fmt.Printf("processCommand: %q\n", cmd)
 	cmd = strings.TrimSpace(cmd)
 	if cmd == "" {
 		return
