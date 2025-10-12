@@ -1,7 +1,7 @@
 version: "3.9"
 
 services:
-  server:
+  master:
     image: local/tests
     build:
       context: .
@@ -21,15 +21,15 @@ services:
       start_period: 3s
     networks:
       - common
-      - server_private
+      - master_private
 
-  server-companion:
+  master-companion:
     image: local/tests
     build:
       context: .
       dockerfile: Dockerfile
-    hostname: server-companion
-    command: /opt/server-companion-echo.sh
+    hostname: master-companion
+    command: /opt/master-companion-echo.sh
     healthcheck:
       test: ["CMD-SHELL", "netstat -an | grep 9000 | grep LISTEN"]
       interval: 5s
@@ -37,9 +37,9 @@ services:
       retries: 3
       start_period: 3s
     networks:
-      - server_private
+      - master_private
 
-  client:
+  slave:
     image: local/tests
     build:
       context: .
@@ -47,27 +47,27 @@ services:
     stdin_open: true # docker run -i
     tty: true        # docker run -t
     depends_on:
-      server:
+      master:
         condition: service_healthy
-      server-companion:
+      master-companion:
         condition: service_healthy
-      client-companion:
+      slave-companion:
         condition: service_healthy
     volumes:
       - ../../dist:/opt/dist:ro
     hostname: the_slave
-    command: sh -c 'while true; do sleep 1; /opt/dist/goncat.elf slave connect $TRANSPORT://server:8080; done'
+    command: sh -c 'while true; do sleep 1; /opt/dist/goncat.elf slave connect $TRANSPORT://master:8080; done'
     networks:
       - common
-      - client_private
+      - slave_private
 
-  client-companion:
+  slave-companion:
     image: local/tests
     build:
       context: .
       dockerfile: Dockerfile
-    hostname: client-companion
-    command: /opt/client-companion-echo.sh
+    hostname: slave-companion
+    command: /opt/slave-companion-echo.sh
     healthcheck:
       test: ["CMD-SHELL", "netstat -an | grep 9000 | grep LISTEN"]
       interval: 5s
@@ -75,14 +75,14 @@ services:
       retries: 3
       start_period: 3s
     networks:
-      - client_private
+      - slave_private
 
 networks:
   common:
     driver: bridge
-  server_private:
+  master_private:
     driver: bridge
     internal: true
-  client_private:
+  slave_private:
     driver: bridge
     internal: true

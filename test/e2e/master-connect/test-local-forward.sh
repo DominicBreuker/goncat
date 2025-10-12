@@ -7,11 +7,11 @@ set transport [lindex $argv 0];
 set timeout 10
 
 # Start goncat master with local port forwarding
-# -L 7000:server-companion:9000 means:
+# -L 7000:slave-companion:9000 means:
 # - Listen on local port 7000 (on master side)
-# - Forward connections to server-companion:9000 (via slave side)
-# Note: in master-connect mode, the slave is "server" and can reach server-companion
-spawn /opt/dist/goncat.elf master connect $transport://server:8080 -L 7000:server-companion:9000
+# - Forward connections to slave-companion:9000 (via slave side)
+# Note: in master-connect mode, the slave can reach slave-companion
+spawn /opt/dist/goncat.elf master connect $transport://slave:8080 -L 7000:slave-companion:9000
 
 Expect::server_connected
 
@@ -19,22 +19,22 @@ Expect::server_connected
 sleep 1
 
 # Now test the port forwarding by connecting to localhost:7000
-# This should forward through the slave to server-companion:9000
+# This should forward through the slave to slave-companion:9000
 set spawn_id_master $spawn_id
 
-spawn nc localhost 7000
+spawn socat - TCP:localhost:7000
 set spawn_id_client $spawn_id
 
 # Send a test message through the forwarded port
 send "test message\r"
 
-# Wait for the response from server-companion
+# Wait for the response from slave-companion
 expect {
-    "*server-companion says: test message*" {
+    "*slave-companion says: test message*" {
         puts "\n✓ Local port forwarding test successful!"
     }
     timeout {
-        puts stderr "\n✗ Timeout waiting for response from server-companion"
+        puts stderr "\n✗ Timeout waiting for response from slave-companion"
         exit 1
     }
     eof {

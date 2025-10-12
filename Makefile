@@ -60,18 +60,18 @@ test-integration: build-linux
 	@echo "### Testing bind shell features ###"
 	@echo "### ########################### ###"
 	@echo ""
-	TRANSPORT='tcp' TEST_SET='master-connect' docker compose -f test/e2e/docker-compose.slave-listen.yml up --exit-code-from client
+	TRANSPORT='tcp' TEST_SET='master-connect' docker compose -f test/e2e/docker-compose.slave-listen.yml up --exit-code-from master
 	@echo ""
-	TRANSPORT='ws' TEST_SET='master-connect' docker compose -f test/e2e/docker-compose.slave-listen.yml up --exit-code-from client
+	TRANSPORT='ws' TEST_SET='master-connect' docker compose -f test/e2e/docker-compose.slave-listen.yml up --exit-code-from master
 	@echo ""
-	TRANSPORT='wss' TEST_SET='master-connect' docker compose -f test/e2e/docker-compose.slave-listen.yml up --exit-code-from client
+	TRANSPORT='wss' TEST_SET='master-connect' docker compose -f test/e2e/docker-compose.slave-listen.yml up --exit-code-from master
 	@echo ""
 	@echo "### ############################## ###"
 	@echo "### Testing reverse shell features ###"
 	@echo "### ############################## ###"
 	@echo ""
-	TRANSPORT='tcp' TEST_SET='master-listen' docker compose -f test/e2e/docker-compose.slave-connect.yml up --exit-code-from server
+	TRANSPORT='tcp' TEST_SET='master-listen' docker compose -f test/e2e/docker-compose.slave-connect.yml up --exit-code-from master
 	@echo ""
-	TRANSPORT='ws' TEST_SET='master-listen' docker compose -f test/e2e/docker-compose.slave-connect.yml up --exit-code-from server
+	TRANSPORT='ws' TEST_SET='master-listen' docker compose -f test/e2e/docker-compose.slave-connect.yml up --exit-code-from master
 	@echo ""
-	TRANSPORT='wss' TEST_SET='master-listen' docker compose -f test/e2e/docker-compose.slave-connect.yml up --exit-code-from server
+	TRANSPORT='wss' TEST_SET='master-listen' docker compose -f test/e2e/docker-compose.slave-connect.yml up --exit-code-from master
