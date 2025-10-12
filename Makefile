@@ -47,6 +47,10 @@ test: test-unit test-integration
 
 .PHONY: test-unit
 test-unit: 
+	go test -cover ./...
+
+.PHONY: test-unit
+test-unit-with-race: 
 	go test -cover -race ./...
 
 .PHONY: test-integration
