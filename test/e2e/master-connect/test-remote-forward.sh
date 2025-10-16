@@ -16,32 +16,10 @@ spawn /opt/dist/goncat.elf master connect $transport://slave:8080 -R 7000:master
 Expect::server_connected
 
 # Give the remote port forwarding a moment to be ready
-sleep 3
-
-# Now execute a command on the slave that connects to the forwarded port
-# Use sh -c with echo to pipe data into socat, keeping the connection open longer
-send "sh -c 'echo test message | socat - TCP:localhost:7000,shut-none'\r"
-
-# Wait for the response from master-companion
-expect {
-    "*master-companion says: test message*" {
-        puts "\n✓ Remote port forwarding test successful!"
-    }
-    timeout {
-        puts stderr "\n✗ Timeout waiting for response from master-companion"
-        exit 1
-    }
-    eof {
-        puts stderr "\n✗ Unexpected EOF while waiting for response"
-        exit 1
-    }
-}
-
-# Wait a moment for any remaining output
 sleep 1
 
-# Exit the shell
-send "exit\r"
+# Use shared helper to perform the remote-forward check
+Expect::check_remote_forward 7000 master-companion "test message" 5
 
 # Clean up
 Expect::close_and_wait

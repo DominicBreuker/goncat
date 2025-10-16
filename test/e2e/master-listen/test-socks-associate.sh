@@ -13,43 +13,10 @@ spawn /opt/dist/goncat.elf master listen $transport://:8080 -D 127.0.0.1:1080
 Expect::client_connected
 
 # Give the SOCKS proxy a moment to be ready
-sleep 2
+sleep 1
 
-# Save the spawn_id for the master connection
-set spawn_id_master $spawn_id
-
-# Now test UDP ASSOCIATE by using the Python SOCKS5 UDP test client
-# This will send a UDP datagram through the SOCKS proxy to slave-companion:9001 (UDP echo server)
-spawn python3 /opt/tests/helpers/socks5-udp-test.py localhost 1080 slave-companion 9001
-set spawn_id_test $spawn_id
-
-# Enable logging to see all output
-log_user 1
-
-# Wait for the test result
-expect {
-    -i $spawn_id_test
-    "*✓ UDP ASSOCIATE test successful!*" {
-        puts "\n✓ SOCKS UDP ASSOCIATE test successful!"
-    }
-    "*✗ Error:*" {
-        puts stderr "\n✗ SOCKS UDP ASSOCIATE test failed"
-        exit 1
-    }
-    timeout {
-        puts stderr "\n✗ Timeout waiting for UDP ASSOCIATE test result"
-        exit 1
-    }
-    eof {
-        puts stderr "\n✗ Unexpected EOF from test client"
-        exit 1
-    }
-}
-
-# Clean up the test client
-close -i $spawn_id_test
-wait -i $spawn_id_test
+# Use shared helper to run the UDP ASSOCIATE check
+Expect::check_socks_udp_associate localhost 1080 slave-companion 9001 10
 
 # Clean up the master connection
-set spawn_id $spawn_id_master
 Expect::close_and_wait

@@ -18,35 +18,8 @@ Expect::server_connected
 # Give the port forwarding a moment to be ready
 sleep 1
 
-# Now test the port forwarding by connecting to localhost:7000
-# This should forward through the slave to slave-companion:9000
-set spawn_id_master $spawn_id
-
-spawn socat - TCP:localhost:7000
-set spawn_id_client $spawn_id
-
-# Send a test message through the forwarded port
-send "test message\r"
-
-# Wait for the response from slave-companion
-expect {
-    "*slave-companion says: test message*" {
-        puts "\n✓ Local port forwarding test successful!"
-    }
-    timeout {
-        puts stderr "\n✗ Timeout waiting for response from slave-companion"
-        exit 1
-    }
-    eof {
-        puts stderr "\n✗ Unexpected EOF while waiting for response"
-        exit 1
-    }
-}
-
-# Clean up the socat connection
-close -i $spawn_id_client
-wait -i $spawn_id_client
+# Verify local forwarding using the shared helper
+Expect::check_local_forward 7000 slave-companion "test message" 5
 
 # Clean up the master connection
-set spawn_id $spawn_id_master
 Expect::close_and_wait
