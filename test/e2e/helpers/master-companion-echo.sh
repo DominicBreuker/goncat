@@ -6,11 +6,11 @@
 # Start TCP echo server in background
 (
     while true; do
-        nc -lk -p 9000 -e sh /opt/echo-handler.sh || sleep 1
+        socat TCP4-LISTEN:9000,reuseaddr,fork EXEC:"/opt/tests/helpers/echo-handler.sh" || sleep 1
     done
 ) &
 
 # Start UDP echo server in foreground
 while true; do
-    socat UDP4-RECVFROM:9001,fork,reuseaddr EXEC:"/opt/udp-echo-handler.sh" || sleep 1
+    socat UDP4-RECVFROM:9001,fork,reuseaddr EXEC:"/opt/tests/helpers/echo-handler.sh" || sleep 1
 done

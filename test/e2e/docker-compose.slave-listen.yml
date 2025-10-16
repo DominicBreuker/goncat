@@ -1,5 +1,3 @@
-version: "3.9"
-
 services:
   slave:
     image: local/tests
@@ -28,7 +26,9 @@ services:
       context: .
       dockerfile: Dockerfile
     hostname: slave-companion
-    command: /opt/slave-companion-echo.sh
+    volumes:
+      - .:/opt/tests:ro
+    command: /opt/tests/helpers/slave-companion-echo.sh
     healthcheck:
       test: ["CMD-SHELL", "netstat -an | grep 9000 | grep LISTEN"]
       interval: 5s
@@ -67,7 +67,9 @@ services:
       context: .
       dockerfile: Dockerfile
     hostname: master-companion
-    command: /opt/master-companion-echo.sh
+    volumes:
+      - .:/opt/tests:ro
+    command: /opt/tests/helpers/master-companion-echo.sh
     healthcheck:
       test: ["CMD-SHELL", "netstat -an | grep 9000 | grep LISTEN"]
       interval: 5s

@@ -20,7 +20,7 @@ set spawn_id_master $spawn_id
 
 # Now test UDP ASSOCIATE by using the Python SOCKS5 UDP test client
 # This will send a UDP datagram through the SOCKS proxy to slave-companion:9001 (UDP echo server)
-spawn python3 /opt/socks5-udp-test.py localhost 1080 slave-companion 9001
+spawn python3 /opt/tests/helpers/socks5-udp-test.py localhost 1080 slave-companion 9001
 set spawn_id_test $spawn_id
 
 # Enable logging to see all output
