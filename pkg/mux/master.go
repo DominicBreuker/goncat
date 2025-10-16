@@ -12,9 +12,8 @@ import (
 	"github.com/hashicorp/yamux"
 )
 
-// MasterSession represents the master side of a multiplexed connection.
-// The master initiates the connection and sends commands to the slave.
-// It uses gob encoding for message passing over dedicated control channels.
+// MasterSession is the master-side mux wrapper. It encodes to ctlClientToServer
+// and decodes from ctlServerToClient using gob.
 type MasterSession struct {
 	sess *Session
 
@@ -24,16 +23,13 @@ type MasterSession struct {
 	mu sync.Mutex
 }
 
-// Close closes the master session and its underlying multiplexed connection.
+// Close closes the session.
 func (s *MasterSession) Close() error {
 	return s.sess.Close()
 }
 
-// OpenSessionContext creates a new master session over the given connection
-// while honoring the provided context for opening the control channels.
-// This mirrors OpenSession but allows callers to cancel the initial Open
-// operations if needed. The legacy OpenSession delegates to this with a
-// background context to preserve compatibility.
+// OpenSessionContext creates a master session and opens the two control streams.
+// ctx cancels control stream opens.
 func OpenSessionContext(ctx context.Context, conn net.Conn) (*MasterSession, error) {
 	out := MasterSession{
 		sess: &Session{},
@@ -60,8 +56,8 @@ func OpenSessionContext(ctx context.Context, conn net.Conn) (*MasterSession, err
 	return &out, nil
 }
 
-// SendAndGetOneChannelContext sends a message to the slave and opens a new channel
-// for data transfer, honoring the provided context for the Open operation.
+// SendAndGetOneChannelContext sends m and opens one yamux stream. The send
+// and stream-open are ordered by holding s.mu.
 func (s *MasterSession) SendAndGetOneChannelContext(ctx context.Context, m msg.Message) (net.Conn, error) {
 	// Lock across send + opening the new channel to keep ordering atomic.
 	s.mu.Lock()
@@ -79,8 +75,7 @@ func (s *MasterSession) SendAndGetOneChannelContext(ctx context.Context, m msg.M
 	return conn, nil
 }
 
-// SendAndGetTwoChannelsContext is the context-aware variant of SendAndGetTwoChannels.
-// It sends a message and opens two channels, honoring ctx for the channel opens.
+// SendAndGetTwoChannelsContext sends m and opens two yamux streams atomically.
 func (s *MasterSession) SendAndGetTwoChannelsContext(ctx context.Context, m msg.Message) (net.Conn, net.Conn, error) {
 	// Lock across send + opening two channels to keep ordering atomic.
 	s.mu.Lock()
@@ -104,9 +99,8 @@ func (s *MasterSession) SendAndGetTwoChannelsContext(ctx context.Context, m msg.
 	return conn1, conn2, nil
 }
 
-// GetOneChannelContext opens a new yamux stream using the provided context.
-// It will use a context-aware Open if the underlying yamux session supports it,
-// otherwise it falls back to running Open() in a goroutine and respects ctx.
+// GetOneChannelContext opens a yamux stream; if yamux lacks a context-aware
+// API we run Open() in a goroutine and return on ctx.Done().
 func (s *MasterSession) GetOneChannelContext(ctx context.Context) (net.Conn, error) {
 	if s.sess == nil || s.sess.mux == nil {
 		return nil, fmt.Errorf("no mux session")
@@ -138,7 +132,7 @@ func (s *MasterSession) GetOneChannelContext(ctx context.Context) (net.Conn, err
 	}
 }
 
-// openNewChannel opens a new yamux stream over the multiplexed connection.
+// openNewChannel opens a yamux stream (non-context variant).
 func (s *MasterSession) openNewChannel() (net.Conn, error) {
 	out, err := s.sess.mux.Open()
 	if err != nil {
@@ -148,8 +142,7 @@ func (s *MasterSession) openNewChannel() (net.Conn, error) {
 	return out, nil
 }
 
-// Send sends a message to the slave over the control channel using gob encoding.
-// SendContext sends a message with a context for cancellation.
+// SendContext encodes m on the control channel. ctx cancels or shortens the op.
 func (s *MasterSession) SendContext(ctx context.Context, m msg.Message) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -169,8 +162,7 @@ func (s *MasterSession) SendContext(ctx context.Context, m msg.Message) error {
 	return s.sendLocked(m, dl)
 }
 
-// sendLocked sends a message assuming the caller already holds s.mu.
-// It sets a write deadline on the control channel to bound blocking.
+// sendLocked encodes m while s.mu is held and sets a write deadline.
 func (s *MasterSession) sendLocked(m msg.Message, deadline time.Time) error {
 	if s.sess != nil && s.sess.ctlClientToServer != nil {
 		// if caller passed zero time, fall back to ControlOpDeadline
@@ -188,11 +180,9 @@ func (s *MasterSession) sendLocked(m msg.Message, deadline time.Time) error {
 	return nil
 }
 
-// ReceiveContext receives a message honoring the provided context's
-// cancellation and deadline. The effective read deadline is the earlier of
-// the caller's context deadline (if set) and now+ControlOpDeadline. If the
-// caller provides a cancellable context without a deadline, we watch
-// ctx.Done() and set the read deadline to now to interrupt blocking reads.
+// ReceiveContext decodes a message from the control stream, honoring ctx.
+// If ctx has no deadline we watch ctx.Done() and set an immediate read
+// deadline to interrupt Decode.
 func (s *MasterSession) ReceiveContext(ctx context.Context) (msg.Message, error) {
 	var m msg.Message
 	if s.sess != nil && s.sess.ctlServerToClient != nil {

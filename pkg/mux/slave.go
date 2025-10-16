@@ -29,14 +29,8 @@ func (s *SlaveSession) Close() error {
 	return s.sess.Close()
 }
 
-// AcceptSession creates a new slave session over the given connection.
-// It establishes a yamux server session and accepts two control channels:
-// one for client-to-server messages (with decoder) and one for server-to-client
-// messages (with encoder).
 // AcceptSessionContext creates a new slave session over the given connection
-// while honoring the provided context for control-channel accepts. Tests and
-// older call sites can continue to use AcceptSession which delegates to this
-// function with context.Background().
+// while honoring the provided context for control-channel accepts.
 func AcceptSessionContext(ctx context.Context, conn net.Conn) (*SlaveSession, error) {
 	out := SlaveSession{
 		sess: &Session{},
@@ -66,51 +60,18 @@ func AcceptSessionContext(ctx context.Context, conn net.Conn) (*SlaveSession, er
 // AcceptNewChannelContext accepts a new yamux stream using the provided context.
 // It uses yamux's AcceptStreamWithContext when available to allow cancellation.
 func (s *SlaveSession) AcceptNewChannelContext(ctx context.Context) (net.Conn, error) {
-	// If the underlying yamux session supports AcceptStreamWithContext, use it.
-	// The yamux Session's Accept() returns net.Conn; AcceptStreamWithContext
-	// returns *yamux.Stream which implements net.Conn, but to avoid depending
-	// on the exact type we rely on the exposed API from the yamux package.
 	if s.sess == nil || s.sess.mux == nil {
 		return nil, fmt.Errorf("no mux session")
 	}
 
-	// Try type assertion for the newer API. If it doesn't exist, fall back to Accept().
-	type acceptWithCtx interface {
-		AcceptStreamWithContext(context.Context) (*yamux.Stream, error)
+	stream, err := s.sess.mux.AcceptStreamWithContext(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("AcceptStreamWithContext(): %s", err)
 	}
-
-	if awc, ok := interface{}(s.sess.mux).(acceptWithCtx); ok {
-		stream, err := awc.AcceptStreamWithContext(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("AcceptStreamWithContext(): %s", err)
-		}
-		if stream == nil {
-			return nil, fmt.Errorf("AcceptStreamWithContext returned nil stream")
-		}
-		return stream, nil
+	if stream == nil {
+		return nil, fmt.Errorf("AcceptStreamWithContext returned nil stream")
 	}
-
-	// No context-aware accept available; use blocking Accept but respect ctx by
-	// running accept in a goroutine and returning if ctx is done.
-	type result struct {
-		c   net.Conn
-		err error
-	}
-	resCh := make(chan result, 1)
-	go func() {
-		out, err := s.sess.mux.Accept()
-		resCh <- result{out, err}
-	}()
-
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case r := <-resCh:
-		if r.err != nil {
-			return nil, fmt.Errorf("session.Accept(), ctl: %s", r.err)
-		}
-		return r.c, nil
-	}
+	return stream, nil
 }
 
 // GetOneChannelContext accepts a new channel using the provided context.
