@@ -21,6 +21,10 @@ func (f *fakeClientControlSession) GetOneChannel() (net.Conn, error) {
 	return nil, nil
 }
 
+func (f *fakeClientControlSession) GetOneChannelContext(ctx context.Context) (net.Conn, error) {
+	return f.GetOneChannel()
+}
+
 func TestNewClient(t *testing.T) {
 	t.Parallel()
 

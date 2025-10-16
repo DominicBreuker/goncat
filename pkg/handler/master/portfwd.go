@@ -45,7 +45,7 @@ func (mst *Master) startRemotePortFwdJob(ctx context.Context, wg *sync.WaitGroup
 			RemotePort: rpf.RemotePort,
 		}
 
-		if err := mst.sess.Send(m); err != nil {
+		if err := mst.sess.SendContext(ctx, m); err != nil {
 			log.ErrorMsg("Setting up remote port forwarding: %s: %s\n", rpf, err)
 		}
 	}()

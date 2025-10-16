@@ -101,6 +101,10 @@ func (f *fakeServerControlSession) SendAndGetOneChannel(m msg.Message) (net.Conn
 	return nil, nil
 }
 
+func (f *fakeServerControlSession) SendAndGetOneChannelContext(ctx context.Context, m msg.Message) (net.Conn, error) {
+	return f.SendAndGetOneChannel(m)
+}
+
 func TestNewServer_AllFields(t *testing.T) {
 	t.Parallel()
 

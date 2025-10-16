@@ -34,7 +34,7 @@ func NewTCPRelay(ctx context.Context, m msg.SocksConnect, sessCtl ClientControlS
 // Handle establishes a TCP connection to the target destination and relays
 // data between the SOCKS5 client (via control session) and the destination.
 func (tr *TCPRelay) Handle() error {
-	connRemote, err := tr.sessCtl.GetOneChannel()
+	connRemote, err := tr.sessCtl.GetOneChannelContext(tr.ctx)
 	if err != nil {
 		return fmt.Errorf("AcceptNewChannel(): %s", err)
 	}

@@ -41,7 +41,7 @@ func (mst *Master) handleForgroundPlain(ctx context.Context) error {
 		Pty:  mst.mCfg.Pty,
 	}
 
-	conn, err := mst.sess.SendAndGetOneChannel(m)
+	conn, err := mst.sess.SendAndGetOneChannelContext(ctx, m)
 	if err != nil {
 		return fmt.Errorf("SendAndGetOneChannel(m): %s", err)
 	}
@@ -68,7 +68,7 @@ func (mst *Master) handleForgroundPty(ctx context.Context) error {
 		Pty:  mst.mCfg.Pty,
 	}
 
-	connData, connPtyCtl, err := mst.sess.SendAndGetTwoChannels(m)
+	connData, connPtyCtl, err := mst.sess.SendAndGetTwoChannelsContext(ctx, m)
 	if err != nil {
 		return fmt.Errorf("SendAndGetTwoChannels(m): %s", err)
 	}

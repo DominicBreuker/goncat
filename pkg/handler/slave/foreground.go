@@ -22,7 +22,7 @@ func (slv *Slave) handleForegroundAsync(ctx context.Context, m msg.Foreground) {
 // handleForeground processes a foreground task request, either starting an interactive
 // shell or executing a command with or without PTY support.
 func (slv *Slave) handleForeground(ctx context.Context, m msg.Foreground) error {
-	conn, err := slv.sess.AcceptNewChannel()
+	conn, err := slv.sess.AcceptNewChannelContext(ctx)
 	if err != nil {
 		return fmt.Errorf("AcceptNewChannel(): %s", err)
 	}
@@ -32,7 +32,7 @@ func (slv *Slave) handleForeground(ctx context.Context, m msg.Foreground) error 
 		terminal.Pipe(ctx, conn, slv.cfg.Verbose, slv.cfg.Deps)
 	} else {
 		if m.Pty {
-			connPtyCtl, err := slv.sess.AcceptNewChannel()
+			connPtyCtl, err := slv.sess.AcceptNewChannelContext(ctx)
 			if err != nil {
 				return fmt.Errorf("AcceptNewChannel() for connPtyCtl: %s", err)
 			}

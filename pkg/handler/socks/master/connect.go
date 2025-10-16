@@ -17,7 +17,7 @@ func (srv *Server) handleConnect(connLocal net.Conn, sr *socks.Request) error {
 		RemotePort: int(sr.DstPort),
 	}
 
-	connRemote, err := srv.sessCtl.SendAndGetOneChannel(m)
+	connRemote, err := srv.sessCtl.SendAndGetOneChannelContext(srv.ctx, m)
 	if err != nil {
 		return fmt.Errorf("SendAndGetOneChannel() for conn: %s", err)
 	}

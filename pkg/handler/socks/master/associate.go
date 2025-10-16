@@ -14,7 +14,7 @@ func (srv *Server) handleAssociate(bufConnLocal *bufio.ReadWriter, sr *socks.Req
 	defer bufConnLocal.Flush()
 
 	// establish connection to remote end
-	connRemote, err := srv.sessCtl.SendAndGetOneChannel(msg.SocksAssociate{})
+	connRemote, err := srv.sessCtl.SendAndGetOneChannelContext(srv.ctx, msg.SocksAssociate{})
 	if err != nil {
 		if err := socks.WriteReplyError(bufConnLocal, socks.ReplyGeneralFailure); err != nil {
 			return fmt.Errorf("writing Reply error response: %s", err)

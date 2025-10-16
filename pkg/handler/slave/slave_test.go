@@ -27,7 +27,7 @@ func TestNew(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := mux.OpenSession(client)
+		_, err := mux.OpenSessionContext(context.Background(), client)
 		if err != nil {
 			t.Errorf("OpenSession() failed: %v", err)
 		}
@@ -102,7 +102,7 @@ func TestClose(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := mux.OpenSession(client)
+		_, err := mux.OpenSessionContext(context.Background(), client)
 		if err != nil {
 			// Expected error when slave closes
 			return

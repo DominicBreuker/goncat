@@ -37,7 +37,7 @@ func NewUDPRelay(ctx context.Context, sessCtl ClientControlSession, deps *config
 		return nil, fmt.Errorf("ListenPacket(udp, 0.0.0.0:): %s", err)
 	}
 
-	connRemote, err := sessCtl.GetOneChannel()
+	connRemote, err := sessCtl.GetOneChannelContext(ctx)
 	if err != nil {
 		defer connLocal.Close()
 		return nil, fmt.Errorf("AcceptNewChannel(): %s", err)

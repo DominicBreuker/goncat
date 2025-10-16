@@ -1,7 +1,9 @@
 package mux
 
 import (
+	"context"
 	"dominicbreuker/goncat/pkg/mux/msg"
+	"fmt"
 	"net"
 	"sync"
 	"testing"
@@ -21,14 +23,14 @@ func TestOpenSession(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := AcceptSession(server)
+		_, err := AcceptSessionContext(context.Background(), server)
 		if err != nil {
 			t.Errorf("AcceptSession() failed: %v", err)
 		}
 	}()
 
 	// Open master session
-	master, err := OpenSession(client)
+	master, err := OpenSessionContext(context.Background(), client)
 	if err != nil {
 		t.Fatalf("OpenSession() failed: %v", err)
 	}
@@ -48,6 +50,7 @@ func TestOpenSession(t *testing.T) {
 	}
 
 	wg.Wait()
+
 }
 
 // TestMasterSession_Close verifies master session close.
@@ -63,7 +66,7 @@ func TestMasterSession_Close(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		slave, err := AcceptSession(server)
+		slave, err := AcceptSessionContext(context.Background(), server)
 		if err != nil {
 			t.Errorf("AcceptSession() failed: %v", err)
 			return
@@ -73,7 +76,7 @@ func TestMasterSession_Close(t *testing.T) {
 		slave.Close()
 	}()
 
-	master, err := OpenSession(client)
+	master, err := OpenSessionContext(context.Background(), client)
 	if err != nil {
 		t.Fatalf("OpenSession() failed: %v", err)
 	}
@@ -101,7 +104,7 @@ func TestMasterSession_SendAndReceive(t *testing.T) {
 	var slaveReceivedMsg msg.Message
 	go func() {
 		defer wg.Done()
-		slave, err := AcceptSession(server)
+		slave, err := AcceptSessionContext(context.Background(), server)
 		if err != nil {
 			t.Errorf("AcceptSession() failed: %v", err)
 			return
@@ -109,19 +112,19 @@ func TestMasterSession_SendAndReceive(t *testing.T) {
 		defer slave.Close()
 
 		// Receive message from master
-		slaveReceivedMsg, err = slave.Receive()
+		slaveReceivedMsg, err = slave.ReceiveContext(context.Background())
 		if err != nil {
 			t.Errorf("slave.Receive() failed: %v", err)
 			return
 		}
 
 		// Send response back to master
-		if err := slave.Send(msg.SocksAssociate{}); err != nil {
+		if err := slave.SendContext(context.Background(), msg.SocksAssociate{}); err != nil {
 			t.Errorf("slave.Send() failed: %v", err)
 		}
 	}()
 
-	master, err := OpenSession(client)
+	master, err := OpenSessionContext(context.Background(), client)
 	if err != nil {
 		t.Fatalf("OpenSession() failed: %v", err)
 	}
@@ -129,12 +132,12 @@ func TestMasterSession_SendAndReceive(t *testing.T) {
 
 	// Send message to slave
 	testMsg := msg.Connect{RemoteHost: "example.com", RemotePort: 80}
-	if err := master.Send(testMsg); err != nil {
+	if err := master.SendContext(context.Background(), testMsg); err != nil {
 		t.Fatalf("master.Send() failed: %v", err)
 	}
 
 	// Receive response from slave
-	receivedMsg, err := master.Receive()
+	receivedMsg, err := master.ReceiveContext(context.Background())
 	if err != nil {
 		t.Fatalf("master.Receive() failed: %v", err)
 	}
@@ -165,7 +168,7 @@ func TestMasterSession_SendAndGetOneChannel(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		slave, err := AcceptSession(server)
+		slave, err := AcceptSessionContext(context.Background(), server)
 		if err != nil {
 			t.Errorf("AcceptSession() failed: %v", err)
 			return
@@ -173,14 +176,14 @@ func TestMasterSession_SendAndGetOneChannel(t *testing.T) {
 		defer slave.Close()
 
 		// Receive message
-		_, err = slave.Receive()
+		_, err = slave.ReceiveContext(context.Background())
 		if err != nil {
 			t.Errorf("slave.Receive() failed: %v", err)
 			return
 		}
 
 		// Accept the channel from master
-		conn, err := slave.AcceptNewChannel()
+		conn, err := slave.AcceptNewChannelContext(context.Background())
 		if err != nil {
 			t.Errorf("slave.AcceptNewChannel() failed: %v", err)
 			return
@@ -193,14 +196,14 @@ func TestMasterSession_SendAndGetOneChannel(t *testing.T) {
 		}
 	}()
 
-	master, err := OpenSession(client)
+	master, err := OpenSessionContext(context.Background(), client)
 	if err != nil {
 		t.Fatalf("OpenSession() failed: %v", err)
 	}
 	defer master.Close()
 
 	testMsg := msg.Connect{RemoteHost: "example.com", RemotePort: 80}
-	conn, err := master.SendAndGetOneChannel(testMsg)
+	conn, err := master.SendAndGetOneChannelContext(context.Background(), testMsg)
 	if err != nil {
 		t.Fatalf("SendAndGetOneChannel() failed: %v", err)
 	}
@@ -231,7 +234,7 @@ func TestMasterSession_SendAndGetTwoChannels(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		slave, err := AcceptSession(server)
+		slave, err := AcceptSessionContext(context.Background(), server)
 		if err != nil {
 			t.Errorf("AcceptSession() failed: %v", err)
 			return
@@ -239,21 +242,21 @@ func TestMasterSession_SendAndGetTwoChannels(t *testing.T) {
 		defer slave.Close()
 
 		// Receive message
-		_, err = slave.Receive()
+		_, err = slave.ReceiveContext(context.Background())
 		if err != nil {
 			t.Errorf("slave.Receive() failed: %v", err)
 			return
 		}
 
 		// Accept two channels from master
-		conn1, err := slave.AcceptNewChannel()
+		conn1, err := slave.AcceptNewChannelContext(context.Background())
 		if err != nil {
 			t.Errorf("slave.AcceptNewChannel() conn1 failed: %v", err)
 			return
 		}
 		defer conn1.Close()
 
-		conn2, err := slave.AcceptNewChannel()
+		conn2, err := slave.AcceptNewChannelContext(context.Background())
 		if err != nil {
 			t.Errorf("slave.AcceptNewChannel() conn2 failed: %v", err)
 			return
@@ -269,14 +272,14 @@ func TestMasterSession_SendAndGetTwoChannels(t *testing.T) {
 		}
 	}()
 
-	master, err := OpenSession(client)
+	master, err := OpenSessionContext(context.Background(), client)
 	if err != nil {
 		t.Fatalf("OpenSession() failed: %v", err)
 	}
 	defer master.Close()
 
 	testMsg := msg.Foreground{Exec: "/bin/sh", Pty: true}
-	conn1, conn2, err := master.SendAndGetTwoChannels(testMsg)
+	conn1, conn2, err := master.SendAndGetTwoChannelsContext(context.Background(), testMsg)
 	if err != nil {
 		t.Fatalf("SendAndGetTwoChannels() failed: %v", err)
 	}
@@ -317,7 +320,7 @@ func TestMasterSession_GetOneChannel(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		slave, err := AcceptSession(server)
+		slave, err := AcceptSessionContext(context.Background(), server)
 		if err != nil {
 			t.Errorf("AcceptSession() failed: %v", err)
 			return
@@ -325,7 +328,7 @@ func TestMasterSession_GetOneChannel(t *testing.T) {
 		defer slave.Close()
 
 		// Accept the channel from master
-		conn, err := slave.AcceptNewChannel()
+		conn, err := slave.AcceptNewChannelContext(context.Background())
 		if err != nil {
 			t.Errorf("slave.AcceptNewChannel() failed: %v", err)
 			return
@@ -344,13 +347,13 @@ func TestMasterSession_GetOneChannel(t *testing.T) {
 		}
 	}()
 
-	master, err := OpenSession(client)
+	master, err := OpenSessionContext(context.Background(), client)
 	if err != nil {
 		t.Fatalf("OpenSession() failed: %v", err)
 	}
 	defer master.Close()
 
-	conn, err := master.GetOneChannel()
+	conn, err := master.GetOneChannelContext(context.Background())
 	if err != nil {
 		t.Fatalf("GetOneChannel() failed: %v", err)
 	}
@@ -386,7 +389,7 @@ func TestMasterSession_ConcurrentSends(t *testing.T) {
 	receivedCount := 0
 	go func() {
 		defer wg.Done()
-		slave, err := AcceptSession(server)
+		slave, err := AcceptSessionContext(context.Background(), server)
 		if err != nil {
 			t.Errorf("AcceptSession() failed: %v", err)
 			return
@@ -395,7 +398,7 @@ func TestMasterSession_ConcurrentSends(t *testing.T) {
 
 		// Receive multiple messages
 		for i := 0; i < 10; i++ {
-			_, err := slave.Receive()
+			_, err := slave.ReceiveContext(context.Background())
 			if err != nil {
 				t.Errorf("slave.Receive() %d failed: %v", i, err)
 				return
@@ -404,7 +407,7 @@ func TestMasterSession_ConcurrentSends(t *testing.T) {
 		}
 	}()
 
-	master, err := OpenSession(client)
+	master, err := OpenSessionContext(context.Background(), client)
 	if err != nil {
 		t.Fatalf("OpenSession() failed: %v", err)
 	}
@@ -417,7 +420,7 @@ func TestMasterSession_ConcurrentSends(t *testing.T) {
 		go func(n int) {
 			defer sendWg.Done()
 			testMsg := msg.Connect{RemoteHost: "example.com", RemotePort: 80 + n}
-			if err := master.Send(testMsg); err != nil {
+			if err := master.SendContext(context.Background(), testMsg); err != nil {
 				t.Errorf("master.Send() %d failed: %v", n, err)
 			}
 		}(i)
@@ -444,28 +447,28 @@ func TestMasterSession_SendAndGetTwoChannels_ClosesProperly(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		slave, err := AcceptSession(server)
+		slave, err := AcceptSessionContext(context.Background(), server)
 		if err != nil {
 			t.Errorf("AcceptSession() failed: %v", err)
 			return
 		}
 		defer slave.Close()
 
-		_, err = slave.Receive()
+		_, err = slave.ReceiveContext(context.Background())
 		if err != nil {
 			t.Errorf("slave.Receive() failed: %v", err)
 			return
 		}
 
 		// Accept both channels
-		conn1, err := slave.AcceptNewChannel()
+		conn1, err := slave.AcceptNewChannelContext(context.Background())
 		if err != nil {
 			t.Errorf("slave.AcceptNewChannel() conn1 failed: %v", err)
 			return
 		}
 		conn1.Close()
 
-		conn2, err := slave.AcceptNewChannel()
+		conn2, err := slave.AcceptNewChannelContext(context.Background())
 		if err != nil {
 			t.Errorf("slave.AcceptNewChannel() conn2 failed: %v", err)
 			return
@@ -473,14 +476,14 @@ func TestMasterSession_SendAndGetTwoChannels_ClosesProperly(t *testing.T) {
 		conn2.Close()
 	}()
 
-	master, err := OpenSession(client)
+	master, err := OpenSessionContext(context.Background(), client)
 	if err != nil {
 		t.Fatalf("OpenSession() failed: %v", err)
 	}
 	defer master.Close()
 
 	testMsg := msg.Foreground{Exec: "/bin/sh", Pty: true}
-	conn1, conn2, err := master.SendAndGetTwoChannels(testMsg)
+	conn1, conn2, err := master.SendAndGetTwoChannelsContext(context.Background(), testMsg)
 	if err != nil {
 		t.Fatalf("SendAndGetTwoChannels() failed: %v", err)
 	}
@@ -514,8 +517,101 @@ func TestOpenSession_ServerClosesEarly(t *testing.T) {
 	server.Close()
 
 	// Should fail to open session
-	_, err := OpenSession(client)
+	_, err := OpenSessionContext(context.Background(), client)
 	if err == nil {
 		t.Error("OpenSession() succeeded with closed server; want error")
+	}
+}
+
+// TestMasterSession_ConcurrentSendAndGetOneChannel verifies that two concurrent
+// SendAndGetOneChannel calls from the master each get their own channel and do
+// not mix data. This ensures the send+open-channel atomicity is preserved.
+func TestMasterSession_ConcurrentSendAndGetOneChannel(t *testing.T) {
+	t.Parallel()
+
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		slave, err := AcceptSessionContext(context.Background(), server)
+		if err != nil {
+			t.Errorf("AcceptSession() failed: %v", err)
+			return
+		}
+		defer slave.Close()
+
+		// For two expected messages: receive then accept channel and write
+		// a distinct payload for each.
+		for i := 0; i < 2; i++ {
+			_, err := slave.ReceiveContext(context.Background())
+			if err != nil {
+				t.Errorf("slave.Receive() failed: %v", err)
+				return
+			}
+
+			conn, err := slave.AcceptNewChannelContext(context.Background())
+			if err != nil {
+				t.Errorf("slave.AcceptNewChannel() failed: %v", err)
+				return
+			}
+
+			payload := fmt.Sprintf("resp%d", i)
+			if _, err := conn.Write([]byte(payload)); err != nil {
+				t.Errorf("conn.Write() failed: %v", err)
+			}
+			conn.Close()
+		}
+	}()
+
+	master, err := OpenSessionContext(context.Background(), client)
+	if err != nil {
+		t.Fatalf("OpenSession() failed: %v", err)
+	}
+	defer master.Close()
+
+	// Start two concurrent SendAndGetOneChannel calls.
+	results := make([]string, 2)
+	var sendWg sync.WaitGroup
+	sendWg.Add(2)
+	for i := 0; i < 2; i++ {
+		go func(idx int) {
+			defer sendWg.Done()
+			testMsg := msg.Connect{RemoteHost: "example.com", RemotePort: 80 + idx}
+			conn, err := master.SendAndGetOneChannelContext(context.Background(), testMsg)
+			if err != nil {
+				t.Errorf("SendAndGetOneChannel() failed: %v", err)
+				return
+			}
+			defer conn.Close()
+
+			buf := make([]byte, 16)
+			n, err := conn.Read(buf)
+			if err != nil {
+				t.Errorf("conn.Read() failed: %v", err)
+				return
+			}
+			results[idx] = string(buf[:n])
+		}(i)
+	}
+
+	sendWg.Wait()
+	wg.Wait()
+
+	// Ensure both expected responses are present.
+	found0, found1 := false, false
+	for _, r := range results {
+		if r == "resp0" {
+			found0 = true
+		}
+		if r == "resp1" {
+			found1 = true
+		}
+	}
+	if !found0 || !found1 {
+		t.Fatalf("unexpected responses: %v; want resp0 and resp1", results)
 	}
 }

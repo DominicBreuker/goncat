@@ -35,7 +35,7 @@ type Config struct {
 // ServerControlSession represents the interface for communicating over
 // a multiplexed control session to establish new forwarding channels.
 type ServerControlSession interface {
-	SendAndGetOneChannel(m msg.Message) (net.Conn, error)
+	SendAndGetOneChannelContext(ctx context.Context, m msg.Message) (net.Conn, error)
 }
 
 // String returns a human-readable string representation of the port forwarding configuration.
@@ -102,7 +102,7 @@ func (srv *Server) handlePortForwardingConn(connLocal net.Conn) error {
 		RemotePort: srv.cfg.RemotePort,
 	}
 
-	connRemote, err := srv.sessCtl.SendAndGetOneChannel(m)
+	connRemote, err := srv.sessCtl.SendAndGetOneChannelContext(srv.ctx, m)
 	if err != nil {
 		return fmt.Errorf("SendAndGetOneChannel() for conn: %s", err)
 	}

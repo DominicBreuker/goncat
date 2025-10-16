@@ -23,7 +23,7 @@ type Client struct {
 // ClientControlSession represents the interface for obtaining a channel
 // from the control session for forwarding data.
 type ClientControlSession interface {
-	GetOneChannel() (net.Conn, error)
+	GetOneChannelContext(ctx context.Context) (net.Conn, error)
 }
 
 // NewClient creates a new port forwarding client that will connect to
@@ -41,7 +41,7 @@ func NewClient(ctx context.Context, m msg.Connect, sessCtl ClientControlSession,
 // Handle establishes a connection to the remote destination and pipes
 // data between it and the channel obtained from the control session.
 func (h *Client) Handle() error {
-	connRemote, err := h.sessCtl.GetOneChannel()
+	connRemote, err := h.sessCtl.GetOneChannelContext(h.ctx)
 	if err != nil {
 		return fmt.Errorf("AcceptNewChannel(): %s", err)
 	}

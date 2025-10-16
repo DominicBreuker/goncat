@@ -20,7 +20,21 @@ func (f *fakeClientControlSession) GetOneChannel() (net.Conn, error) {
 	return nil, errors.New("not implemented")
 }
 
+func (f *fakeClientControlSession) GetOneChannelContext(ctx context.Context) (net.Conn, error) {
+	return f.GetOneChannel()
+}
+
 func (f *fakeClientControlSession) Send(m msg.Message) error {
+	if f.sendFn != nil {
+		return f.sendFn(m)
+	}
+	return nil
+}
+
+// SendContext implements the newer context-aware send. It delegates to the
+// existing sendFn to preserve test behavior.
+func (f *fakeClientControlSession) SendContext(ctx context.Context, m msg.Message) error {
+	// If sendFn is set, call it; context is ignored for the test fake.
 	if f.sendFn != nil {
 		return f.sendFn(m)
 	}
