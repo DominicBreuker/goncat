@@ -4,9 +4,12 @@ import (
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/transport"
+	"errors"
 	"fmt"
 	"net"
+	"strings"
 	"sync"
+	"time"
 )
 
 // Listener implements the transport.Listener interface for TCP connections.
@@ -45,6 +48,20 @@ func (l *Listener) Serve(handle transport.Handler) error {
 	for {
 		conn, err := l.nl.Accept()
 		if err != nil {
+			// Treat listener closed as clean shutdown.
+			// Prefer net.ErrClosed detection where possible, but also tolerate
+			// implementations that return the textual "use of closed network connection".
+			if errors.Is(err, net.ErrClosed) || strings.Contains(err.Error(), "use of closed network connection") {
+				return nil
+			}
+
+			// Retry on timeouts with a short backoff. net.Error.Temporary is deprecated,
+			// prefer checking Timeout() to detect deadline/timeout conditions.
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				time.Sleep(100 * time.Millisecond)
+				continue
+			}
+
 			return fmt.Errorf("Accept(): %s", err)
 		}
 
@@ -59,7 +76,7 @@ func (l *Listener) Serve(handle transport.Handler) error {
 		l.rdy = false
 		l.mu.Unlock()
 
-		go func() {
+		go func(c net.Conn) {
 			// get ready again eventually
 			defer func() {
 				l.mu.Lock()
@@ -67,13 +84,12 @@ func (l *Listener) Serve(handle transport.Handler) error {
 				l.mu.Unlock()
 			}()
 
-			log.InfoMsg("New TCP connection from %s\n", conn.RemoteAddr())
+			log.InfoMsg("New TCP connection from %s\n", c.RemoteAddr())
 
-			err = handle(conn)
-			if err != nil {
+			if err := handle(c); err != nil {
 				log.ErrorMsg("Handling connection: %s\n", err)
 			}
-		}()
+		}(conn)
 	}
 }
 

@@ -76,7 +76,7 @@ func SetupTest(t *testing.T) *TestSetup {
 
 	// Setup master dependencies (network + stdio)
 	masterDeps := &config.Dependencies{
-		TCPDialer:      mockTCPNet.DialTCP,
+		TCPDialer:      mockTCPNet.DialTCPContext,
 		TCPListener:    mockTCPNet.ListenTCP,
 		UDPListener:    mockUDPNet.ListenUDP,
 		PacketListener: mockUDPNet.ListenPacket,
@@ -86,7 +86,7 @@ func SetupTest(t *testing.T) *TestSetup {
 
 	// Setup slave dependencies (network + stdio)
 	slaveDeps := &config.Dependencies{
-		TCPDialer:      mockTCPNet.DialTCP,
+		TCPDialer:      mockTCPNet.DialTCPContext,
 		TCPListener:    mockTCPNet.ListenTCP,
 		UDPListener:    mockUDPNet.ListenUDP,
 		PacketListener: mockUDPNet.ListenPacket,

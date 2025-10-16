@@ -15,6 +15,7 @@ import (
 	"dominicbreuker/goncat/pkg/transport/ws"
 	"fmt"
 	"net"
+	"time"
 )
 
 // Client manages a network connection with support for multiple transport protocols
@@ -36,7 +37,17 @@ func New(ctx context.Context, cfg *config.Shared) *Client {
 
 // Close closes the client's network connection and logs the closure.
 func (c *Client) Close() error {
-	log.InfoMsg("Connection to %s closed\n", c.conn.RemoteAddr())
+	if c.conn == nil {
+		log.InfoMsg("Connection closed (no active connection)\n")
+		return nil
+	}
+
+	// RemoteAddr can panic if conn is closed concurrently; guard it.
+	var remote string
+	if addr := c.conn.RemoteAddr(); addr != nil {
+		remote = addr.String()
+	}
+	log.InfoMsg("Connection to %s closed\n", remote)
 
 	return c.conn.Close()
 }
@@ -66,7 +77,7 @@ func (c *Client) Connect() error {
 		return fmt.Errorf("NewDialer: %s", err)
 	}
 
-	c.conn, err = d.Dial()
+	c.conn, err = d.Dial(c.ctx)
 	if err != nil {
 		return fmt.Errorf("Dial(): %s", err)
 	}
@@ -85,22 +96,16 @@ func (c *Client) Connect() error {
 // If a key is provided, it enables mutual authentication using generated certificates.
 // The function configures TLS 1.3 as the minimum version and sets up TCP keep-alive.
 func upgradeToTLS(conn net.Conn, key string) (net.Conn, error) {
-	setTCPKeepAlive := func(clientHello *tls.ClientHelloInfo) (*tls.Config, error) {
-		if tcpConn, ok := clientHello.Conn.(*net.TCPConn); ok {
-			if err := tcpConn.SetKeepAlive(true); err != nil {
-				return nil, fmt.Errorf("conn.SetKeepAlive(true): %s", err)
-			}
-		} else {
-			return nil, fmt.Errorf("conn.SetKeepAlive(true): no TCP connection")
+	// enable TCP keep-alive directly on the underlying connection if possible
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		if err := tcpConn.SetKeepAlive(true); err != nil {
+			return nil, fmt.Errorf("conn.SetKeepAlive(true): %s", err)
 		}
-
-		return nil, nil
 	}
 
 	cfg := &tls.Config{
 		MinVersion: tls.VersionTLS13,
 	}
-	cfg.GetConfigForClient = setTCPKeepAlive
 	cfg.InsecureSkipVerify = true // we implement ourselves to skip hostname validation
 
 	if key != "" {
@@ -116,7 +121,15 @@ func upgradeToTLS(conn net.Conn, key string) (net.Conn, error) {
 	}
 
 	tlsConn := tls.Client(conn, cfg)
-	tlsConn.Handshake()
+
+	// set a handshake deadline to avoid blocking indefinitely
+	_ = tlsConn.SetDeadline(time.Now().Add(10 * time.Second))
+	if err := tlsConn.Handshake(); err != nil {
+		_ = tlsConn.Close()
+		return nil, fmt.Errorf("tls handshake: %s", err)
+	}
+	// clear deadline after handshake
+	_ = tlsConn.SetDeadline(time.Time{})
 
 	return tlsConn, nil
 }

@@ -21,10 +21,23 @@ func MasterListen(ctx context.Context, cfg *config.Shared, mCfg *config.Master) 
 		return fmt.Errorf("server.New(): %s", err)
 	}
 
+	// Always close the server when this function returns.
+	defer func() {
+		_ = s.Close()
+	}()
+
+	// Ensure the server is closed when the context is cancelled so Serve() can return.
+	go func() {
+		<-ctx.Done()
+		// best-effort close to unblock Accept/Serve; log any error for diagnostics
+		if err := s.Close(); err != nil {
+			log.InfoMsg("master entrypoint: error closing server on context done: %s", err)
+		}
+	}()
+
 	if err := s.Serve(); err != nil {
 		return fmt.Errorf("serving: %s", err)
 	}
-	defer s.Close()
 
 	return nil
 }
@@ -33,6 +46,13 @@ func makeMasterHandler(ctx context.Context, cfg *config.Shared, mCfg *config.Mas
 	return func(conn net.Conn) error {
 		defer log.InfoMsg("Connection to %s closed\n", conn.RemoteAddr())
 		defer conn.Close()
+
+		// Close the active connection when the parent context is cancelled so
+		// per-connection handlers (which may block on reads) can exit promptly.
+		go func() {
+			<-ctx.Done()
+			conn.Close()
+		}()
 
 		mst, err := master.New(ctx, cfg, mCfg, conn)
 		if err != nil {

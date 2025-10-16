@@ -1,10 +1,12 @@
 package config
 
 import (
+	"context"
 	"io"
 	"net"
 	"os"
 	"os/exec"
+	"time"
 )
 
 // Dependencies contains injectable dependencies for testing and customization.
@@ -19,9 +21,9 @@ type Dependencies struct {
 	ExecCommand    ExecCommandFunc
 }
 
-// TCPDialerFunc is a function that dials a TCP connection.
+// TCPDialerFunc is a function that dials a TCP connection using the provided context.
 // It returns a net.Conn to allow for mock implementations.
-type TCPDialerFunc func(network string, laddr, raddr *net.TCPAddr) (net.Conn, error)
+type TCPDialerFunc func(ctx context.Context, network string, laddr, raddr *net.TCPAddr) (net.Conn, error)
 
 // TCPListenerFunc is a function that creates a TCP listener.
 // It returns a net.Listener to allow for mock implementations.
@@ -69,8 +71,10 @@ func GetTCPDialerFunc(deps *Dependencies) TCPDialerFunc {
 	if deps != nil && deps.TCPDialer != nil {
 		return deps.TCPDialer
 	}
-	return func(network string, laddr, raddr *net.TCPAddr) (net.Conn, error) {
-		return net.DialTCP(network, laddr, raddr)
+	return func(ctx context.Context, network string, laddr, raddr *net.TCPAddr) (net.Conn, error) {
+		// Use net.Dialer with a reasonable default timeout so dials are cancelable.
+		d := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+		return d.DialContext(ctx, network, raddr.String())
 	}
 }
 

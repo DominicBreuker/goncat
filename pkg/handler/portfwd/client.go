@@ -54,7 +54,7 @@ func (h *Client) Handle() error {
 		return fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %s", addr, err)
 	}
 
-	connLocal, err := h.dialerFn("tcp", nil, tcpAddr)
+	connLocal, err := h.dialerFn(h.ctx, "tcp", nil, tcpAddr)
 	if err != nil {
 		return fmt.Errorf("net.Dial(tcp, %s): %s", addr, err)
 	}

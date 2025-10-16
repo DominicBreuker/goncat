@@ -12,6 +12,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"time"
 )
 
 // UDPRelay manages UDP datagram forwarding for SOCKS5 ASSOCIATE requests.
@@ -198,6 +199,11 @@ func (r *UDPRelay) LocalToRemote() {
 
 		buff := make([]byte, 65507)
 		for {
+			// Set a short read deadline so we can check r.ctx for cancellation periodically.
+			if udpConn, ok := r.Conn.(interface{ SetReadDeadline(time.Time) error }); ok {
+				udpConn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+			}
+
 			n, clientAddr, err := r.Conn.ReadFrom(buff)
 			// Read the manual before handling errors: https://pkg.go.dev/net#PacketConn
 			// ... Callers should always process the n > 0 bytes returned before considering the error err...
@@ -224,8 +230,16 @@ func (r *UDPRelay) LocalToRemote() {
 
 			// now we check if there was an error during read
 			if err != nil {
+				// if deadline exceeded, continue the loop so we can re-check context
+				if ne, ok := err.(net.Error); ok && ne.Timeout() {
+					if r.ctx.Err() != nil {
+						return
+					}
+					continue
+				}
+
 				if r.ctx.Err() == context.Canceled {
-					return // errros expected since we closed connection
+					return // errors expected since we closed connection
 				}
 
 				log.ErrorMsg("SOCKS UDP Relay: reading from local conn: %s\n", err)

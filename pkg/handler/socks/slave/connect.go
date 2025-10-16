@@ -61,7 +61,7 @@ func (tr *TCPRelay) Handle() error {
 
 	// Get the TCP dialer function from dependencies or use default
 	dialerFn := config.GetTCPDialerFunc(tr.deps)
-	conn, err := dialerFn("tcp", nil, tcpAddr)
+	conn, err := dialerFn(tr.ctx, "tcp", nil, tcpAddr)
 	if err != nil {
 		if isErrorConnectionRefused(err) {
 			if err := socks.WriteReplyError(connRemote, socks.ReplyConnectionRefused); err != nil {

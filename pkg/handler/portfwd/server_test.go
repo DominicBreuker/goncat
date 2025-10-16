@@ -490,7 +490,7 @@ func TestServer_Handle_AcceptAndForward(t *testing.T) {
 	// Use mock TCP network
 	mockNet := mocks.NewMockTCPNetwork()
 	deps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCP,
+		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
 	}
 

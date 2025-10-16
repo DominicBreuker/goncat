@@ -14,7 +14,7 @@ func SetupMockDependencies() (*mocks.MockTCPNetwork, *mocks.MockStdio, *config.D
 	mockStdio := mocks.NewMockStdio()
 
 	deps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCP,
+		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
 		Stdin:       func() io.Reader { return mockStdio.GetStdin() },
 		Stdout:      func() io.Writer { return mockStdio.GetStdout() },
@@ -31,7 +31,7 @@ func SetupMockDependenciesWithExec() (*mocks.MockTCPNetwork, *mocks.MockStdio, *
 	mockExec := mocks.NewMockExec()
 
 	deps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCP,
+		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
 		Stdin:       func() io.Reader { return mockStdio.GetStdin() },
 		Stdout:      func() io.Writer { return mockStdio.GetStdout() },

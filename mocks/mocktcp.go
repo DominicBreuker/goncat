@@ -2,6 +2,7 @@
 package mocks
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"sync"
@@ -102,6 +103,19 @@ func (m *MockTCPNetwork) DialTCP(network string, laddr, raddr *net.TCPAddr) (net
 	}
 
 	return mockClient, nil
+}
+
+// DialTCPContext is a context-aware wrapper compatible with the new TCPDialerFunc signature.
+// It simply ignores the context (mock network is in-memory) but preserves the behavior and timeout semantics.
+func (m *MockTCPNetwork) DialTCPContext(ctx context.Context, network string, laddr, raddr *net.TCPAddr) (net.Conn, error) {
+	// If context is already done, return quickly
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	default:
+	}
+
+	return m.DialTCP(network, laddr, raddr)
 }
 
 // WaitForListener waits for a listener to be created on the specified address within the given timeout.

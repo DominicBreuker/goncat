@@ -16,6 +16,15 @@ func MasterConnect(ctx context.Context, cfg *config.Shared, mCfg *config.Master)
 	}
 	defer c.Close()
 
+	// Ensure client connection is closed when the parent context is cancelled.
+	go func() {
+		<-ctx.Done()
+		_ = c.Close()
+		if conn := c.GetConnection(); conn != nil {
+			conn.Close()
+		}
+	}()
+
 	h, err := master.New(ctx, cfg, mCfg, c.GetConnection())
 	if err != nil {
 		return fmt.Errorf("master.New(): %s", err)

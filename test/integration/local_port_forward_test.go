@@ -79,7 +79,7 @@ func TestLocalPortForwarding(t *testing.T) {
 	// Setup master dependencies (network + stdio)
 	// TCPDialer and TCPListener are used for all TCP operations including port forwarding
 	masterDeps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCP,
+		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
 		Stdin:       func() io.Reader { return masterStdio.GetStdin() },
 		Stdout:      func() io.Writer { return masterStdio.GetStdout() },
@@ -87,7 +87,7 @@ func TestLocalPortForwarding(t *testing.T) {
 
 	// Setup slave dependencies (network + stdio)
 	slaveDeps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCP,
+		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
 		Stdin:       func() io.Reader { return slaveStdio.GetStdin() },
 		Stdout:      func() io.Writer { return slaveStdio.GetStdout() },

@@ -173,7 +173,7 @@ func TestClient_Handle_DialError(t *testing.T) {
 	// Use mock network with no listener to simulate connection refused
 	mockNet := mocks.NewMockTCPNetwork()
 	deps := &config.Dependencies{
-		TCPDialer: mockNet.DialTCP,
+		TCPDialer: mockNet.DialTCPContext,
 	}
 
 	m := msg.Connect{
@@ -254,7 +254,7 @@ func TestClient_Handle_TableDriven(t *testing.T) {
 				return server, nil
 			},
 			deps: &config.Dependencies{
-				TCPDialer: mockNet.DialTCP,
+				TCPDialer: mockNet.DialTCPContext,
 			},
 			wantErr: true,
 		},
@@ -320,7 +320,7 @@ func TestClient_Handle_SuccessfulConnection(t *testing.T) {
 	// Use mock TCP network
 	mockNet := mocks.NewMockTCPNetwork()
 	deps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCP,
+		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
 	}
 

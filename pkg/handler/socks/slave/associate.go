@@ -10,6 +10,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 )
 
 // UDPRelay manages UDP datagram forwarding for SOCKS5 ASSOCIATE requests on the slave side.
@@ -72,7 +73,7 @@ func (r *UDPRelay) closed() bool {
 	return r.isClosed
 }
 
-// LogError logs an error message with a prefix to indicate where it comes from
+// LogError logs an error message with a prefix to indicate where it comes from.
 func (r *UDPRelay) LogError(format string, a ...interface{}) {
 	log.ErrorMsg("UDP Relay: "+format, a...)
 }
@@ -104,8 +105,20 @@ func (r *UDPRelay) localToRemote() {
 				return
 			}
 
+			// Short read deadline to periodically unblock and check context cancellation.
+			if udpConn, ok := r.ConnLocal.(interface{ SetReadDeadline(time.Time) error }); ok {
+				udpConn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
+			}
+
 			n, remoteAddr, err := r.ConnLocal.ReadFrom(buff)
 			if err != nil {
+				if ne, ok := err.(net.Error); ok && ne.Timeout() {
+					if r.ctx.Err() != nil {
+						return
+					}
+					continue
+				}
+
 				if r.closed() {
 					return // ignore errors if closed
 				}
