@@ -7,9 +7,11 @@ on:
   push:
     paths:
       - .github/workflows/copilot-setup-steps.yml
+      - test/e2e/Dockerfile
   pull_request:
     paths:
       - .github/workflows/copilot-setup-steps.yml
+      - test/e2e/Dockerfile
 
 jobs:
   # The job MUST be called `copilot-setup-steps` or it will not be picked up by Copilot.
@@ -33,5 +35,15 @@ jobs:
         with:
           go-version: '1.24'
 
+      - name: Download Go module dependencies
+        run: |
+          go mod download
+
       - name: Install staticcheck
         run: go install honnef.co/go/tools/cmd/staticcheck@latest
+
+      - name: Build e2e test Docker image
+        run: |
+          # Build the test image used by the e2e compose fixtures.
+          # Copilots firewall not let it do that once it runs.
+          docker build -t local/tests ./test/e2e

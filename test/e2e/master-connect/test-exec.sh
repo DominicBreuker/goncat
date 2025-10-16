@@ -6,7 +6,7 @@ set transport [lindex $argv 0];
 
 set timeout 5
 
-spawn /opt/dist/goncat.elf master connect $transport://server:8080 --exec sh
+spawn /opt/dist/goncat.elf master connect $transport://slave:8080 --exec sh
 
 Expect::server_connected
 Expect::shell_access_works
