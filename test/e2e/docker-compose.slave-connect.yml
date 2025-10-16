@@ -1,10 +1,9 @@
-version: "3.9"
-
 services:
-  server:
+  master:
     image: local/tests
     build:
-      dockerfile: ./Dockerfile
+      context: .
+      dockerfile: Dockerfile
     stdin_open: true # docker run -i
     tty: true        # docker run -t
     hostname: the_master
@@ -18,17 +17,74 @@ services:
       timeout: 3s
       retries: 3
       start_period: 3s
+    networks:
+      - common
+      - master_private
 
-  client:
+  master-companion:
     image: local/tests
     build:
-      dockerfile: ./Dockerfile
+      context: .
+      dockerfile: Dockerfile
+    hostname: master-companion
+    volumes:
+      - .:/opt/tests:ro
+    command: /opt/tests/helpers/master-companion-echo.sh
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -an | grep 9000 | grep LISTEN"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 3s
+    networks:
+      - master_private
+
+  slave:
+    image: local/tests
+    build:
+      context: .
+      dockerfile: Dockerfile
     stdin_open: true # docker run -i
     tty: true        # docker run -t
     depends_on:
-      server:
+      master:
+        condition: service_healthy
+      master-companion:
+        condition: service_healthy
+      slave-companion:
         condition: service_healthy
     volumes:
       - ../../dist:/opt/dist:ro
     hostname: the_slave
-    command: sh -c 'while true; do sleep 1; /opt/dist/goncat.elf slave connect $TRANSPORT://server:8080; done'
+    command: sh -c 'while true; do sleep 1; /opt/dist/goncat.elf slave connect $TRANSPORT://master:8080; done'
+    networks:
+      - common
+      - slave_private
+
+  slave-companion:
+    image: local/tests
+    build:
+      context: .
+      dockerfile: Dockerfile
+    hostname: slave-companion
+    volumes:
+      - .:/opt/tests:ro
+    command: /opt/tests/helpers/slave-companion-echo.sh
+    healthcheck:
+      test: ["CMD-SHELL", "netstat -an | grep 9000 | grep LISTEN"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+      start_period: 3s
+    networks:
+      - slave_private
+
+networks:
+  common:
+    driver: bridge
+  master_private:
+    driver: bridge
+    internal: true
+  slave_private:
+    driver: bridge
+    internal: true
