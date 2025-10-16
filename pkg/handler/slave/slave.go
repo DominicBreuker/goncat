@@ -9,6 +9,7 @@ import (
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux"
 	"dominicbreuker/goncat/pkg/mux/msg"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -54,6 +55,13 @@ func (slv *Slave) Handle() error {
 		if err != nil {
 			if err == io.EOF {
 				return nil
+			}
+			// Ignore deadline/timeout errors caused by context/deadline checks.
+			if err == context.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
+				continue
+			}
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				continue
 			}
 
 			log.ErrorMsg("Receiving next command: %s\n", err)

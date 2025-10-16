@@ -9,6 +9,7 @@ import (
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux"
 	"dominicbreuker/goncat/pkg/mux/msg"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -77,6 +78,14 @@ func (mst *Master) Handle() error {
 				}
 				if ctx.Err() != nil {
 					return // cancelled
+				}
+
+				// Ignore expected timeouts/deadlines (frequent when polling).
+				if err == context.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
+					continue
+				}
+				if ne, ok := err.(net.Error); ok && ne.Timeout() {
+					continue
 				}
 
 				log.ErrorMsg("Receiving next command: %s\n", err)

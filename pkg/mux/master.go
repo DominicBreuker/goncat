@@ -132,16 +132,6 @@ func (s *MasterSession) GetOneChannelContext(ctx context.Context) (net.Conn, err
 	}
 }
 
-// openNewChannel opens a yamux stream (non-context variant).
-func (s *MasterSession) openNewChannel() (net.Conn, error) {
-	out, err := s.sess.mux.Open()
-	if err != nil {
-		return nil, fmt.Errorf("session.Open(), ctl: %s", err)
-	}
-
-	return out, nil
-}
-
 // SendContext encodes m on the control channel. ctx cancels or shortens the op.
 func (s *MasterSession) SendContext(ctx context.Context, m msg.Message) error {
 	s.mu.Lock()

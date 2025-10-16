@@ -123,7 +123,23 @@ func (r *UDPRelay) RemoteToLocal() {
 func (r *UDPRelay) readFromRemote() (*msg.SocksDatagram, error) {
 	p := msg.SocksDatagram{}
 
+	// Allow ctx cancellation to interrupt blocking Decode by setting a read
+	// deadline on the remote connection when r.ctx is done. Use a done
+	// channel to avoid leaking a goroutine.
+	done := make(chan struct{})
+	go func() {
+		select {
+		case <-r.ctx.Done():
+			if c, ok := r.ConnRemote.(interface{ SetReadDeadline(time.Time) error }); ok {
+				_ = c.SetReadDeadline(time.Now())
+			}
+		case <-done:
+		}
+	}()
+
 	err := r.readRemote.Decode(&p)
+	close(done)
+
 	if err != nil {
 		if err == io.EOF {
 			return nil, io.EOF

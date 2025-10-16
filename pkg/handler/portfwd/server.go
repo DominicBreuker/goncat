@@ -76,7 +76,7 @@ func (srv *Server) Handle() error {
 	}()
 
 	for {
-		conn, err := l.Accept()
+		conn, err := srv.acceptWithContext(l)
 		if err != nil {
 			if srv.ctx.Err() != nil {
 				return nil // cancelled
@@ -93,6 +93,29 @@ func (srv *Server) Handle() error {
 				log.ErrorMsg("Port forwarding %s: handling connection: %s", srv.cfg, err)
 			}
 		}()
+	}
+}
+
+// acceptWithContext accepts from the provided listener but returns early when
+// srv.ctx is cancelled. It runs Accept() in a goroutine and selects on the
+// server context to avoid leaking goroutines when the caller cancels.
+func (srv *Server) acceptWithContext(l net.Listener) (net.Conn, error) {
+	type res struct {
+		c   net.Conn
+		err error
+	}
+
+	ch := make(chan res, 1)
+	go func() {
+		c, e := l.Accept()
+		ch <- res{c: c, err: e}
+	}()
+
+	select {
+	case <-srv.ctx.Done():
+		return nil, srv.ctx.Err()
+	case r := <-ch:
+		return r.c, r.err
 	}
 }
 

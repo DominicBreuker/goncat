@@ -164,6 +164,12 @@ func TestSlaveSession_SendAndGetOneChannel(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(1)
+
+	// ready is signaled by master after it has opened the data stream and is
+	// prepared to read. This avoids a timing race where the slave writes while
+	// the session is being shut down or not yet fully ready.
+	ready := make(chan struct{})
+
 	go func() {
 		defer wg.Done()
 		master, err := OpenSessionContext(context.Background(), client)
@@ -181,12 +187,15 @@ func TestSlaveSession_SendAndGetOneChannel(t *testing.T) {
 		}
 
 		// Open a channel for slave to accept
-		conn, err := master.openNewChannel()
+		conn, err := master.GetOneChannelContext(context.Background())
 		if err != nil {
 			t.Errorf("master.openNewChannel() failed: %v", err)
 			return
 		}
 		defer conn.Close()
+
+		// Signal the slave goroutine that master is ready to read.
+		close(ready)
 
 		// Read data from slave
 		buf := make([]byte, 4)
@@ -213,7 +222,8 @@ func TestSlaveSession_SendAndGetOneChannel(t *testing.T) {
 	}
 	defer conn.Close()
 
-	// Write data to master
+	// Wait for master to be ready, then write data to master
+	<-ready
 	if _, err := conn.Write([]byte("data")); err != nil {
 		t.Fatalf("conn.Write() failed: %v", err)
 	}
@@ -246,7 +256,7 @@ func TestSlaveSession_GetOneChannel(t *testing.T) {
 		<-ready
 
 		// Open a channel for slave
-		conn, err := master.openNewChannel()
+		conn, err := master.GetOneChannelContext(context.Background())
 		if err != nil {
 			t.Errorf("master.openNewChannel() failed: %v", err)
 			return
@@ -310,7 +320,7 @@ func TestSlaveSession_AcceptNewChannel(t *testing.T) {
 		// Open multiple channels and keep them open until slave accepts them
 		var conns []net.Conn
 		for i := 0; i < 3; i++ {
-			conn, err := master.openNewChannel()
+			conn, err := master.GetOneChannelContext(context.Background())
 			if err != nil {
 				t.Errorf("master.openNewChannel() %d failed: %v", i, err)
 				return
@@ -451,7 +461,7 @@ func TestSlaveSession_MultipleChannelOperations(t *testing.T) {
 			return
 		}
 
-		conn, err := master.openNewChannel()
+		conn, err := master.GetOneChannelContext(context.Background())
 		if err != nil {
 			t.Errorf("master.openNewChannel() failed: %v", err)
 			return
@@ -535,7 +545,7 @@ func TestSlaveSession_ConcurrentSendAndGetOneChannel(t *testing.T) {
 				return
 			}
 
-			conn, err := master.openNewChannel()
+			conn, err := master.GetOneChannelContext(context.Background())
 			if err != nil {
 				t.Errorf("master.openNewChannel() failed: %v", err)
 				return
