@@ -2,7 +2,6 @@ package mux
 
 import (
 	"context"
-	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"encoding/gob"
 	"fmt"
@@ -129,10 +128,8 @@ func (s *SlaveSession) ReceiveContext(ctx context.Context) (msg.Message, error) 
 		}
 	}
 
-	log.InfoMsg("DEBUG: Before Decode\n")
 	var m msg.Message
 	err := s.dec.Decode(&m)
-	log.InfoMsg("DEBUG: After Decode\n")
 	return m, err
 }
 

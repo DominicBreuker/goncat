@@ -97,7 +97,7 @@ func (tr *TCPRelay) Handle() error {
 	}
 
 	pipeio.Pipe(tr.ctx, connRemote, conn, func(err error) {
-		log.ErrorMsg("Handling connect to %s: %s", addr, err)
+		log.ErrorMsg("Handling connect to %s: %s\n", addr, err)
 	})
 
 	return nil

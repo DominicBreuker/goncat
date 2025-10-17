@@ -66,7 +66,7 @@ func (h *Client) Handle() error {
 	}
 
 	pipeio.Pipe(h.ctx, connRemote, connLocal, func(err error) {
-		log.ErrorMsg("Handling connect to %s: %s", addr, err)
+		log.ErrorMsg("Handling connect to %s: %s\n", addr, err)
 	})
 
 	return nil
