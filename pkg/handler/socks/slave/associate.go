@@ -123,7 +123,7 @@ func (r *UDPRelay) localToRemote() {
 					return // ignore errors if closed
 				}
 
-				r.LogError("receiving packet from %s: %s", remoteAddr, err)
+				r.LogError("receiving packet from %s: %s\n", remoteAddr, err)
 				return
 			}
 

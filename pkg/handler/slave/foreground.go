@@ -10,12 +10,13 @@ import (
 )
 
 // handleForegroundAsync handles a foreground task request from the master asynchronously.
-// It spawns a goroutine to execute the foreground task without blocking message processing.
+// When the foreground handler completes, it closes the slave connection to terminate the session.
 func (slv *Slave) handleForegroundAsync(ctx context.Context, m msg.Foreground) {
 	go func() {
 		if err := slv.handleForeground(ctx, m); err != nil {
 			log.ErrorMsg("Running foreground job: %s", err)
 		}
+		slv.Close()
 	}()
 }
 

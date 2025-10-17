@@ -64,6 +64,7 @@ func (m *MockUDPNetwork) ListenUDP(network string, laddr *net.UDPAddr) (net.Pack
 	m.listeners[addr] = listener
 	m.listenerCond.Broadcast() // Signal that a new listener is available
 
+	fmt.Printf("DEBUG: MockUDPNetwork ListenUDP created listener on %s\n", addr)
 	return listener, nil
 }
 
@@ -97,6 +98,8 @@ func (m *MockUDPNetwork) WriteTo(data []byte, srcAddr *net.UDPAddr, dstAddr *net
 		addr: srcAddr,
 	}
 	copy(packet.data, data)
+
+	fmt.Printf("DEBUG: MockUDPNetwork WriteTo delivering packet from %s to %s - data: %s\n", srcAddr.String(), dstAddr.String(), packet.data)
 
 	select {
 	case listener.packets <- packet:
@@ -152,16 +155,43 @@ type mockUDPListener struct {
 	closed  bool
 	mu      sync.Mutex
 	network *MockUDPNetwork
+	// Deadline support
+	readDeadline  time.Time
+	writeDeadline time.Time
 }
 
 // ReadFrom reads a packet from the connection.
 func (l *mockUDPListener) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
+	// Fast path: no read deadline set
+	l.mu.Lock()
+	rd := l.readDeadline
+	l.mu.Unlock()
+
+	if rd.IsZero() {
+		select {
+		case packet := <-l.packets:
+			n = copy(p, packet.data)
+			return n, packet.addr, nil
+		case <-l.closeCh:
+			return 0, nil, fmt.Errorf("connection closed")
+		}
+	}
+
+	// Deadline set: compute remaining time
+	now := time.Now()
+	if now.After(rd) {
+		return 0, nil, &net.OpError{Op: "read", Net: "udp", Err: fmt.Errorf("i/o timeout")}
+	}
+	timeout := rd.Sub(now)
+
 	select {
 	case packet := <-l.packets:
 		n = copy(p, packet.data)
 		return n, packet.addr, nil
 	case <-l.closeCh:
 		return 0, nil, fmt.Errorf("connection closed")
+	case <-time.After(timeout):
+		return 0, nil, &net.OpError{Op: "read", Net: "udp", Err: fmt.Errorf("i/o timeout")}
 	}
 }
 
@@ -169,6 +199,7 @@ func (l *mockUDPListener) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 func (l *mockUDPListener) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	l.mu.Lock()
 	if l.closed {
+		fmt.Printf("DEBUG: MockUDPListener WriteTo from %s to %s failed: connection closed\n", l.addr.String(), addr.String())
 		l.mu.Unlock()
 		return 0, fmt.Errorf("connection closed")
 	}
@@ -196,13 +227,42 @@ func (l *mockUDPListener) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	}
 	copy(packet.data, p)
 
+	// If destination has a write deadline set, honor it
+	destListener.mu.Lock()
+	wd := destListener.writeDeadline
+	destListener.mu.Unlock()
+
+	// Default small fallback timeout to mimic network buffering behavior
+	defaultTimeout := 100 * time.Millisecond
+
+	fmt.Printf("DEBUG: MockUDPListener WriteTo delivering packet from %s to %s - data: %s\n", l.addr.String(), udpAddr.String(), packet.data)
+	if wd.IsZero() {
+		select {
+		case destListener.packets <- packet:
+			return len(p), nil
+		case <-destListener.closeCh:
+			return len(p), nil // Destination closed, but we sent it
+		case <-time.After(defaultTimeout):
+			fmt.Printf("DEBUG: MockUDPListener (wd.IsZero()) WriteTo timeout sending packet to %s\n", udpAddr.String())
+			return len(p), nil // Timeout, but pretend we sent it
+		}
+	}
+
+	// Deadline set: compute remaining time
+	now := time.Now()
+	if now.After(wd) {
+		return 0, &net.OpError{Op: "write", Net: "udp", Err: fmt.Errorf("i/o timeout")}
+	}
+	timeout := wd.Sub(now)
+
 	select {
 	case destListener.packets <- packet:
 		return len(p), nil
 	case <-destListener.closeCh:
-		return len(p), nil // Destination closed, but we sent it
-	case <-time.After(100 * time.Millisecond):
-		return len(p), nil // Timeout, but pretend we sent it
+		return len(p), nil
+	case <-time.After(timeout):
+		fmt.Printf("DEBUG: MockUDPListener WriteTo timeout sending packet to %s\n", udpAddr.String())
+		return 0, &net.OpError{Op: "write", Net: "udp", Err: fmt.Errorf("i/o timeout")}
 	}
 }
 
@@ -222,6 +282,7 @@ func (l *mockUDPListener) Close() error {
 	delete(l.network.listeners, l.addr.String())
 	l.network.mu.Unlock()
 
+	fmt.Printf("DEBUG: MockUDPListener on %s closed\n", l.addr.String())
 	return nil
 }
 
@@ -232,19 +293,26 @@ func (l *mockUDPListener) LocalAddr() net.Addr {
 
 // SetDeadline sets the read and write deadlines.
 func (l *mockUDPListener) SetDeadline(t time.Time) error {
-	// Mock implementation - not used in tests
+	l.mu.Lock()
+	l.readDeadline = t
+	l.writeDeadline = t
+	l.mu.Unlock()
 	return nil
 }
 
 // SetReadDeadline sets the read deadline.
 func (l *mockUDPListener) SetReadDeadline(t time.Time) error {
-	// Mock implementation - not used in tests
+	l.mu.Lock()
+	l.readDeadline = t
+	l.mu.Unlock()
 	return nil
 }
 
 // SetWriteDeadline sets the write deadline.
 func (l *mockUDPListener) SetWriteDeadline(t time.Time) error {
-	// Mock implementation - not used in tests
+	l.mu.Lock()
+	l.writeDeadline = t
+	l.mu.Unlock()
 	return nil
 }
 

@@ -2,6 +2,7 @@ package mux
 
 import (
 	"context"
+	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"encoding/gob"
 	"fmt"
@@ -105,7 +106,6 @@ func (s *SlaveSession) SendAndGetOneChannelContext(ctx context.Context, m msg.Me
 // caller provides a cancellable context without a deadline, we watch
 // ctx.Done() and set the read deadline to now to interrupt blocking reads.
 func (s *SlaveSession) ReceiveContext(ctx context.Context) (msg.Message, error) {
-	var m msg.Message
 	if s.sess != nil && s.sess.ctlClientToServer != nil {
 		// compute absolute deadline
 		dl := time.Now().Add(ControlOpDeadline)
@@ -129,7 +129,10 @@ func (s *SlaveSession) ReceiveContext(ctx context.Context) (msg.Message, error) 
 		}
 	}
 
+	log.InfoMsg("DEBUG: Before Decode\n")
+	var m msg.Message
 	err := s.dec.Decode(&m)
+	log.InfoMsg("DEBUG: After Decode\n")
 	return m, err
 }
 
