@@ -2,12 +2,10 @@ package integration
 
 import (
 	"context"
-	"dominicbreuker/goncat/mocks"
 	mocks_tcp "dominicbreuker/goncat/mocks/tcp"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/entrypoint"
 	"dominicbreuker/goncat/test/helpers"
-	"io"
 	"strings"
 	"testing"
 	"time"
@@ -22,37 +20,13 @@ import (
 // With an additional mock server on the slave side at 127.0.0.1:9000 that responds with unique data,
 // and a mock client on the master side connecting to the forwarded port 8000.
 func TestLocalPortForwarding(t *testing.T) {
-	// Create mock network for TCP connections (use the tcp package mock)
-	mockNet := mocks_tcp.NewMockTCPNetwork()
+	// Setup mock dependencies and default configs
+	setup := helpers.SetupMockDependenciesAndConfigs()
+	defer setup.Close()
 
-	// Create mock stdio for master and slave (not used in this test but required for setup)
-	masterStdio := mocks.NewMockStdio()
-	slaveStdio := mocks.NewMockStdio()
-	defer masterStdio.Close()
-	defer slaveStdio.Close()
-
-	// Setup master dependencies (network + stdio)
-	// TCPDialer and TCPListener are used for all TCP operations including port forwarding
-	masterDeps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCPContext,
-		TCPListener: mockNet.ListenTCP,
-		Stdin:       func() io.Reader { return masterStdio.GetStdin() },
-		Stdout:      func() io.Writer { return masterStdio.GetStdout() },
-	}
-
-	// Setup slave dependencies (network + stdio)
-	slaveDeps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCPContext,
-		TCPListener: mockNet.ListenTCP,
-		Stdin:       func() io.Reader { return slaveStdio.GetStdin() },
-		Stdout:      func() io.Writer { return slaveStdio.GetStdout() },
-	}
-
-	// Master configuration with local port forwarding
+	// Configure master with local port forwarding
 	// Simulates "master listen 'tcp://*:12345' -L 8000:127.0.0.1:9000"
-	masterSharedCfg := helpers.DefaultSharedConfig(masterDeps)
-	masterCfg := helpers.DefaultMasterConfig()
-	masterCfg.LocalPortForwarding = []*config.LocalPortForwardingCfg{
+	setup.MasterCfg.LocalPortForwarding = []*config.LocalPortForwardingCfg{
 		{
 			LocalHost:  "127.0.0.1",
 			LocalPort:  8000,
@@ -61,13 +35,10 @@ func TestLocalPortForwarding(t *testing.T) {
 		},
 	}
 
-	// Slave configuration - simulates "slave connect tcp://127.0.0.1:12345"
-	slaveSharedCfg := helpers.DefaultSharedConfig(slaveDeps)
-
 	// Setup mock "remote server" on slave side (this would be the server at 127.0.0.1:9000)
 	// This server will respond with unique data when contacted
 	// Start the reusable mock echo server using the mock network's ListenTCP
-	srv, err := mocks_tcp.New(mockNet.ListenTCP, "tcp", "127.0.0.1:9000", "REMOTE_SERVER_RESPONSE: ")
+	srv, err := mocks_tcp.New(setup.TCPNetwork.ListenTCP, "tcp", "127.0.0.1:9000", "REMOTE_SERVER_RESPONSE: ")
 	if err != nil {
 		t.Fatalf("Failed to start remote server: %v", err)
 	}
@@ -82,7 +53,7 @@ func TestLocalPortForwarding(t *testing.T) {
 
 	// Start master server using entrypoint (listens for connections and sets up port forwarding)
 	go func() {
-		if err := entrypoint.MasterListen(ctx, masterSharedCfg, masterCfg); err != nil {
+		if err := entrypoint.MasterListen(ctx, setup.MasterSharedCfg, setup.MasterCfg); err != nil {
 			masterErr <- err
 			return
 		}
@@ -91,14 +62,14 @@ func TestLocalPortForwarding(t *testing.T) {
 
 	// Wait for master listener
 	var lMaster *mocks_tcp.MockTCPListener
-	if lMaster, err = mockNet.WaitForListener("127.0.0.1:12345", 2000); err != nil {
+	if lMaster, err = setup.TCPNetwork.WaitForListener("127.0.0.1:12345", 2000); err != nil {
 		t.Fatalf("Master failed to start listening: %v", err)
 	}
 	t.Logf("Master has started listening on %s", lMaster.Addr().String())
 
 	// Start slave using entrypoint (connects to master)
 	go func() {
-		if err := entrypoint.SlaveConnect(ctx, slaveSharedCfg); err != nil {
+		if err := entrypoint.SlaveConnect(ctx, setup.SlaveSharedCfg); err != nil {
 			slaveErr <- err
 			return
 		}
@@ -113,18 +84,18 @@ func TestLocalPortForwarding(t *testing.T) {
 
 	// Wait for forwarding listener and its target echo server
 	var lLocal *mocks_tcp.MockTCPListener
-	if lLocal, err = mockNet.WaitForListener("127.0.0.1:8000", 2000); err != nil {
+	if lLocal, err = setup.TCPNetwork.WaitForListener("127.0.0.1:8000", 2000); err != nil {
 		t.Fatalf("Forwarded port failed to start listening: %v", err)
 	}
 	t.Logf("Master has started listening on %s for port forwarding", lLocal.Addr().String())
 
 	var lRemote *mocks_tcp.MockTCPListener
-	if lRemote, err = mockNet.WaitForListener("127.0.0.1:9000", 2000); err != nil {
+	if lRemote, err = setup.TCPNetwork.WaitForListener("127.0.0.1:9000", 2000); err != nil {
 		t.Fatalf("Echo server failed to start listening: %v", err)
 	}
 	t.Logf("Remote server has started listening on %v", lRemote.Addr().String())
 
-	client, err := mocks_tcp.NewClient(mockNet.DialTCP, "tcp", "127.0.0.1:8000")
+	client, err := mocks_tcp.NewClient(setup.TCPNetwork.DialTCP, "tcp", "127.0.0.1:8000")
 	if err != nil {
 		t.Fatalf("failed to connect to forwarded port: %v", err)
 	}

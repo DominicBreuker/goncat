@@ -2,7 +2,7 @@ package portfwd
 
 import (
 	"context"
-	"dominicbreuker/goncat/mocks"
+	mocks_tcp "dominicbreuker/goncat/mocks/tcp"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"errors"
@@ -190,7 +190,7 @@ func TestServer_Handle_PortInUse(t *testing.T) {
 	t.Parallel()
 
 	// Use mock TCP network
-	mockNet := mocks.NewMockTCPNetwork()
+	mockNet := mocks_tcp.NewMockTCPNetwork()
 	deps := &config.Dependencies{
 		TCPListener: mockNet.ListenTCP,
 	}
@@ -225,7 +225,7 @@ func TestServer_Handle_ContextCancellation(t *testing.T) {
 	t.Parallel()
 
 	// Use mock TCP network
-	mockNet := mocks.NewMockTCPNetwork()
+	mockNet := mocks_tcp.NewMockTCPNetwork()
 	deps := &config.Dependencies{
 		TCPListener: mockNet.ListenTCP,
 	}
@@ -307,7 +307,7 @@ func TestServer_Handle_TableDriven(t *testing.T) {
 	t.Parallel()
 
 	// Use mock TCP network
-	mockNet := mocks.NewMockTCPNetwork()
+	mockNet := mocks_tcp.NewMockTCPNetwork()
 
 	tests := []struct {
 		name    string
@@ -442,7 +442,7 @@ func TestServer_Handle_AcceptConnection(t *testing.T) {
 	t.Parallel()
 
 	// Use mock TCP network
-	mockNet := mocks.NewMockTCPNetwork()
+	mockNet := mocks_tcp.NewMockTCPNetwork()
 	deps := &config.Dependencies{
 		TCPListener: mockNet.ListenTCP,
 	}
@@ -492,7 +492,7 @@ func TestServer_Handle_AcceptAndForward(t *testing.T) {
 	t.Parallel()
 
 	// Use mock TCP network
-	mockNet := mocks.NewMockTCPNetwork()
+	mockNet := mocks_tcp.NewMockTCPNetwork()
 	deps := &config.Dependencies{
 		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
@@ -533,7 +533,7 @@ func TestServer_Handle_AcceptAndForward(t *testing.T) {
 
 	// Wait for server to be ready using mock network's WaitForListener
 	addr := "127.0.0.1:12363"
-	if err := mockNet.WaitForListener(addr, 1000); err != nil {
+	if _, err := mockNet.WaitForListener(addr, 1000); err != nil {
 		t.Fatalf("Listener not ready: %v", err)
 	}
 

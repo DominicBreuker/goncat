@@ -3,7 +3,6 @@ package integration
 import (
 	"bufio"
 	"context"
-	"dominicbreuker/goncat/mocks"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/entrypoint"
 	"dominicbreuker/goncat/pkg/socks"
@@ -27,14 +26,9 @@ import (
 // 2. A SOCKS5 client connecting to the proxy at 127.0.0.1:1080 on the master side
 // 3. Verifies that data flows correctly through the SOCKS proxy tunnel
 func TestSocksConnect(t *testing.T) {
-	// Create mock network for TCP connections
-	mockNet := mocks.NewMockTCPNetwork()
-
-	// Create mock stdio for master and slave (not used in this test but required for setup)
-	masterStdio := mocks.NewMockStdio()
-	slaveStdio := mocks.NewMockStdio()
-	defer masterStdio.Close()
-	defer slaveStdio.Close()
+	// Setup mock dependencies and default configs
+	setup := helpers.SetupMockDependenciesAndConfigs()
+	defer setup.Close()
 
 	// Setup mock destination server on slave side (this would be at 127.0.0.1:8080)
 	// This server will respond with unique data when contacted via SOCKS proxy
@@ -43,7 +37,7 @@ func TestSocksConnect(t *testing.T) {
 		t.Fatalf("Failed to resolve destination server address: %v", err)
 	}
 
-	destServerListener, err := mockNet.ListenTCP("tcp", destServerAddr)
+	destServerListener, err := setup.TCPNetwork.ListenTCP("tcp", destServerAddr)
 	if err != nil {
 		t.Fatalf("Failed to create destination server listener: %v", err)
 	}
@@ -78,30 +72,9 @@ func TestSocksConnect(t *testing.T) {
 	// Wait for destination server to start
 	<-destServerStarted
 
-	// Setup master dependencies (network + stdio)
-	masterDeps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCPContext,
-		TCPListener: mockNet.ListenTCP,
-		Stdin:       func() io.Reader { return masterStdio.GetStdin() },
-		Stdout:      func() io.Writer { return masterStdio.GetStdout() },
-	}
-
-	// Setup slave dependencies (network + stdio)
-	slaveDeps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCPContext,
-		TCPListener: mockNet.ListenTCP,
-		Stdin:       func() io.Reader { return slaveStdio.GetStdin() },
-		Stdout:      func() io.Writer { return slaveStdio.GetStdout() },
-	}
-
-	// Master configuration with SOCKS proxy
+	// Configure master with SOCKS proxy
 	// Simulates "master listen 'tcp://*:12345' -D 127.0.0.1:1080"
-	masterSharedCfg := helpers.DefaultSharedConfig(masterDeps)
-	masterCfg := helpers.DefaultMasterConfig()
-	masterCfg.Socks = config.NewSocksCfg("127.0.0.1:1080")
-
-	// Slave configuration - simulates "slave connect tcp://127.0.0.1:12345"
-	slaveSharedCfg := helpers.DefaultSharedConfig(slaveDeps)
+	setup.MasterCfg.Socks = config.NewSocksCfg("127.0.0.1:1080")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -112,7 +85,7 @@ func TestSocksConnect(t *testing.T) {
 
 	// Start master server using entrypoint (listens for connections and sets up SOCKS proxy)
 	go func() {
-		if err := entrypoint.MasterListen(ctx, masterSharedCfg, masterCfg); err != nil {
+		if err := entrypoint.MasterListen(ctx, setup.MasterSharedCfg, setup.MasterCfg); err != nil {
 			// Context cancellation is expected
 			select {
 			case <-ctx.Done():
@@ -126,13 +99,13 @@ func TestSocksConnect(t *testing.T) {
 	}()
 
 	// Wait for master to start listening
-	if err := mockNet.WaitForListener("127.0.0.1:12345", 2000); err != nil {
+	if _, err := setup.TCPNetwork.WaitForListener("127.0.0.1:12345", 2000); err != nil {
 		t.Fatalf("Master failed to start listening: %v", err)
 	}
 
 	// Start slave using entrypoint (connects to master)
 	go func() {
-		if err := entrypoint.SlaveConnect(ctx, slaveSharedCfg); err != nil {
+		if err := entrypoint.SlaveConnect(ctx, setup.SlaveSharedCfg); err != nil {
 			slaveErr <- err
 			return
 		}
@@ -140,7 +113,7 @@ func TestSocksConnect(t *testing.T) {
 	}()
 
 	// Wait for the SOCKS proxy to be available
-	if err := mockNet.WaitForListener("127.0.0.1:1080", 2000); err != nil {
+	if _, err := setup.TCPNetwork.WaitForListener("127.0.0.1:1080", 2000); err != nil {
 		t.Fatalf("SOCKS proxy failed to start listening: %v", err)
 	}
 
@@ -164,7 +137,7 @@ func TestSocksConnect(t *testing.T) {
 		defer clientWg.Done()
 
 		// Connect to the SOCKS proxy
-		socksConn, err := mockNet.DialTCP("tcp", nil, socksProxyAddr)
+		socksConn, err := setup.TCPNetwork.DialTCP("tcp", nil, socksProxyAddr)
 		if err != nil {
 			clientErr = fmt.Errorf("failed to connect to SOCKS proxy: %v", err)
 			return
@@ -316,7 +289,7 @@ func TestSocksConnect(t *testing.T) {
 		go func(iteration int) {
 			defer clientWg.Done()
 
-			socksConn, err := mockNet.DialTCP("tcp", nil, socksProxyAddr)
+			socksConn, err := setup.TCPNetwork.DialTCP("tcp", nil, socksProxyAddr)
 			if err != nil {
 				t.Errorf("Iteration %d: failed to connect: %v", iteration, err)
 				return

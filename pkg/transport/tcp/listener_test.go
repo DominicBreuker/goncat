@@ -1,7 +1,7 @@
 package tcp
 
 import (
-	"dominicbreuker/goncat/mocks"
+	mocks_tcp "dominicbreuker/goncat/mocks/tcp"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/transport"
 	"fmt"
@@ -40,7 +40,7 @@ func TestNewListener(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			// Use mock TCP network
-			mockNet := mocks.NewMockTCPNetwork()
+			mockNet := mocks_tcp.NewMockTCPNetwork()
 			deps := &config.Dependencies{
 				TCPListener: mockNet.ListenTCP,
 			}
@@ -62,7 +62,7 @@ func TestNewListener(t *testing.T) {
 
 func TestListener_Serve(t *testing.T) {
 	// Use mock TCP network
-	mockNet := mocks.NewMockTCPNetwork()
+	mockNet := mocks_tcp.NewMockTCPNetwork()
 	deps := &config.Dependencies{
 		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
@@ -89,7 +89,7 @@ func TestListener_Serve(t *testing.T) {
 	}()
 
 	// Wait for listener to be ready
-	if err := mockNet.WaitForListener(addr, 1000); err != nil {
+	if _, err := mockNet.WaitForListener(addr, 1000); err != nil {
 		t.Fatalf("Listener not ready: %v", err)
 	}
 
@@ -112,7 +112,7 @@ func TestListener_Serve(t *testing.T) {
 
 func TestListener_SingleConnection(t *testing.T) {
 	// Use mock TCP network
-	mockNet := mocks.NewMockTCPNetwork()
+	mockNet := mocks_tcp.NewMockTCPNetwork()
 	deps := &config.Dependencies{
 		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
@@ -143,7 +143,7 @@ func TestListener_SingleConnection(t *testing.T) {
 	}()
 
 	// Wait for listener to be ready
-	if err := mockNet.WaitForListener(addr, 1000); err != nil {
+	if _, err := mockNet.WaitForListener(addr, 1000); err != nil {
 		t.Fatalf("Listener not ready: %v", err)
 	}
 
@@ -184,7 +184,7 @@ func TestListener_SingleConnection(t *testing.T) {
 
 func TestListener_HandlerError(t *testing.T) {
 	// Use mock TCP network
-	mockNet := mocks.NewMockTCPNetwork()
+	mockNet := mocks_tcp.NewMockTCPNetwork()
 	deps := &config.Dependencies{
 		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
@@ -210,7 +210,7 @@ func TestListener_HandlerError(t *testing.T) {
 	}()
 
 	// Wait for listener to be ready
-	if err := mockNet.WaitForListener(addr, 1000); err != nil {
+	if _, err := mockNet.WaitForListener(addr, 1000); err != nil {
 		t.Fatalf("Listener not ready: %v", err)
 	}
 
@@ -237,7 +237,7 @@ func TestListener_HandlerError(t *testing.T) {
 
 func TestListener_Close(t *testing.T) {
 	// Use mock TCP network
-	mockNet := mocks.NewMockTCPNetwork()
+	mockNet := mocks_tcp.NewMockTCPNetwork()
 	deps := &config.Dependencies{
 		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
@@ -261,7 +261,7 @@ func TestListener_Close(t *testing.T) {
 	}()
 
 	// Wait for listener to be ready
-	if err := mockNet.WaitForListener(addr, 1000); err != nil {
+	if _, err := mockNet.WaitForListener(addr, 1000); err != nil {
 		t.Fatalf("Listener not ready: %v", err)
 	}
 

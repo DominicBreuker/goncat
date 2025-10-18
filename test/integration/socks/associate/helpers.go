@@ -3,7 +3,6 @@ package associate
 import (
 	"bufio"
 	"context"
-	"dominicbreuker/goncat/mocks"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/entrypoint"
 	"dominicbreuker/goncat/pkg/socks"
@@ -18,10 +17,7 @@ import (
 
 // TestSetup contains all the test infrastructure for SOCKS ASSOCIATE tests
 type TestSetup struct {
-	MockTCPNet     *mocks.MockTCPNetwork
-	MockUDPNet     *mocks.MockUDPNetwork
-	MasterStdio    *mocks.MockStdio
-	SlaveStdio     *mocks.MockStdio
+	Setup          *helpers.MockDependenciesAndConfigs
 	DestServerAddr *net.UDPAddr
 	DestListener   net.PacketConn
 	SocksProxyAddr *net.TCPAddr
@@ -35,13 +31,8 @@ type TestSetup struct {
 func SetupTest(t *testing.T) *TestSetup {
 	t.Helper()
 
-	// Create mock networks for TCP and UDP connections
-	mockTCPNet := mocks.NewMockTCPNetwork()
-	mockUDPNet := mocks.NewMockUDPNetwork()
-
-	// Create mock stdio for master and slave
-	masterStdio := mocks.NewMockStdio()
-	slaveStdio := mocks.NewMockStdio()
+	// Setup mock dependencies and default configs
+	setup := helpers.SetupMockDependenciesAndConfigs()
 
 	// Setup mock UDP destination server on slave side (this would be at 127.0.0.1:8080)
 	destServerAddr, err := net.ResolveUDPAddr("udp", "127.0.0.1:8080")
@@ -49,7 +40,7 @@ func SetupTest(t *testing.T) *TestSetup {
 		t.Fatalf("Failed to resolve destination server address: %v", err)
 	}
 
-	destServerListener, err := mockUDPNet.ListenUDP("udp", destServerAddr)
+	destServerListener, err := setup.UDPNetwork.ListenUDP("udp", destServerAddr)
 	if err != nil {
 		t.Fatalf("Failed to create destination server listener: %v", err)
 	}
@@ -74,33 +65,9 @@ func SetupTest(t *testing.T) *TestSetup {
 	// Wait for destination server to start
 	<-destServerStarted
 
-	// Setup master dependencies (network + stdio)
-	masterDeps := &config.Dependencies{
-		TCPDialer:      mockTCPNet.DialTCPContext,
-		TCPListener:    mockTCPNet.ListenTCP,
-		UDPListener:    mockUDPNet.ListenUDP,
-		PacketListener: mockUDPNet.ListenPacket,
-		Stdin:          func() io.Reader { return masterStdio.GetStdin() },
-		Stdout:         func() io.Writer { return masterStdio.GetStdout() },
-	}
-
-	// Setup slave dependencies (network + stdio)
-	slaveDeps := &config.Dependencies{
-		TCPDialer:      mockTCPNet.DialTCPContext,
-		TCPListener:    mockTCPNet.ListenTCP,
-		UDPListener:    mockUDPNet.ListenUDP,
-		PacketListener: mockUDPNet.ListenPacket,
-		Stdin:          func() io.Reader { return slaveStdio.GetStdin() },
-		Stdout:         func() io.Writer { return slaveStdio.GetStdout() },
-	}
-
-	// Master configuration with SOCKS proxy
-	masterSharedCfg := helpers.DefaultSharedConfig(masterDeps)
-	masterCfg := helpers.DefaultMasterConfig()
-	masterCfg.Socks = config.NewSocksCfg("127.0.0.1:1080")
-
-	// Slave configuration
-	slaveSharedCfg := helpers.DefaultSharedConfig(slaveDeps)
+	// Configure master with SOCKS proxy
+	// Simulates "master listen 'tcp://*:12345' -D 127.0.0.1:1080"
+	setup.MasterCfg.Socks = config.NewSocksCfg("127.0.0.1:1080")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 
@@ -110,7 +77,7 @@ func SetupTest(t *testing.T) *TestSetup {
 
 	// Start master server using entrypoint
 	go func() {
-		if err := entrypoint.MasterListen(ctx, masterSharedCfg, masterCfg); err != nil {
+		if err := entrypoint.MasterListen(ctx, setup.MasterSharedCfg, setup.MasterCfg); err != nil {
 			select {
 			case <-ctx.Done():
 				masterErr <- nil
@@ -123,13 +90,13 @@ func SetupTest(t *testing.T) *TestSetup {
 	}()
 
 	// Wait for master to start listening
-	if err := mockTCPNet.WaitForListener("127.0.0.1:12345", 2000); err != nil {
+	if _, err := setup.TCPNetwork.WaitForListener("127.0.0.1:12345", 2000); err != nil {
 		t.Fatalf("Master failed to start listening: %v", err)
 	}
 
 	// Start slave using entrypoint
 	go func() {
-		if err := entrypoint.SlaveConnect(ctx, slaveSharedCfg); err != nil {
+		if err := entrypoint.SlaveConnect(ctx, setup.SlaveSharedCfg); err != nil {
 			slaveErr <- err
 			return
 		}
@@ -137,17 +104,14 @@ func SetupTest(t *testing.T) *TestSetup {
 	}()
 
 	// Wait for the SOCKS proxy to be available
-	if err := mockTCPNet.WaitForListener("127.0.0.1:1080", 2000); err != nil {
+	if _, err := setup.TCPNetwork.WaitForListener("127.0.0.1:1080", 2000); err != nil {
 		t.Fatalf("SOCKS proxy failed to start listening: %v", err)
 	}
 
 	socksProxyAddr, _ := net.ResolveTCPAddr("tcp", "127.0.0.1:1080")
 
 	return &TestSetup{
-		MockTCPNet:     mockTCPNet,
-		MockUDPNet:     mockUDPNet,
-		MasterStdio:    masterStdio,
-		SlaveStdio:     slaveStdio,
+		Setup:          setup,
 		DestServerAddr: destServerAddr,
 		DestListener:   destServerListener,
 		SocksProxyAddr: socksProxyAddr,
@@ -160,8 +124,7 @@ func SetupTest(t *testing.T) *TestSetup {
 
 // Cleanup closes all resources
 func (s *TestSetup) Cleanup() {
-	s.MasterStdio.Close()
-	s.SlaveStdio.Close()
+	s.Setup.Close()
 	s.DestListener.Close()
 	s.Cancel()
 }
@@ -178,7 +141,7 @@ func CreateSOCKSClient(t *testing.T, setup *TestSetup) *SOCKSClient {
 	t.Helper()
 
 	// Connect to SOCKS proxy
-	socksConn, err := setup.MockTCPNet.DialTCP("tcp", nil, setup.SocksProxyAddr)
+	socksConn, err := setup.Setup.TCPNetwork.DialTCP("tcp", nil, setup.SocksProxyAddr)
 	if err != nil {
 		t.Fatalf("Failed to connect to SOCKS proxy: %v", err)
 		return nil
@@ -263,14 +226,14 @@ func CreateSOCKSClient(t *testing.T, setup *TestSetup) *SOCKSClient {
 	udpRelayAddr := &net.UDPAddr{IP: udpRelayIP, Port: udpRelayPort}
 
 	// Wait for the UDP relay to be ready
-	if err := setup.MockUDPNet.WaitForListener(udpRelayAddr.String(), 2000); err != nil {
+	if err := setup.Setup.UDPNetwork.WaitForListener(udpRelayAddr.String(), 2000); err != nil {
 		t.Fatalf("UDP relay failed to start: %v", err)
 		return nil
 	}
 
 	// Create UDP connection for the client
 	clientUDPAddr, _ := net.ResolveUDPAddr("udp", "127.0.0.1:0")
-	clientUDPConn, err := setup.MockUDPNet.ListenUDP("udp", clientUDPAddr)
+	clientUDPConn, err := setup.Setup.UDPNetwork.ListenUDP("udp", clientUDPAddr)
 	if err != nil {
 		t.Fatalf("Failed to create client UDP connection: %v", err)
 		return nil

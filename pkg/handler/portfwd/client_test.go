@@ -2,7 +2,7 @@ package portfwd
 
 import (
 	"context"
-	"dominicbreuker/goncat/mocks"
+	mocks_tcp "dominicbreuker/goncat/mocks/tcp"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"errors"
@@ -175,7 +175,7 @@ func TestClient_Handle_DialError(t *testing.T) {
 	t.Parallel()
 
 	// Use mock network with no listener to simulate connection refused
-	mockNet := mocks.NewMockTCPNetwork()
+	mockNet := mocks_tcp.NewMockTCPNetwork()
 	deps := &config.Dependencies{
 		TCPDialer: mockNet.DialTCPContext,
 	}
@@ -210,7 +210,7 @@ func TestClient_Handle_TableDriven(t *testing.T) {
 	t.Parallel()
 
 	// Create mock network for connection refused test
-	mockNet := mocks.NewMockTCPNetwork()
+	mockNet := mocks_tcp.NewMockTCPNetwork()
 
 	tests := []struct {
 		name      string
@@ -322,7 +322,7 @@ func TestClient_Handle_SuccessfulConnection(t *testing.T) {
 	ctx := context.Background()
 
 	// Use mock TCP network
-	mockNet := mocks.NewMockTCPNetwork()
+	mockNet := mocks_tcp.NewMockTCPNetwork()
 	deps := &config.Dependencies{
 		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
