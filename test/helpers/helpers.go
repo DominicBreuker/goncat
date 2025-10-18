@@ -39,10 +39,11 @@ type MockDependenciesAndConfigs struct {
 // setup that reduces boilerplate in tests.
 //
 // Usage:
-//   setup := helpers.SetupMockDependenciesAndConfigs()
-//   defer setup.Close()
-//   // Modify configs as needed for the specific test
-//   setup.MasterCfg.Exec = "/bin/sh"
+//
+//	setup := helpers.SetupMockDependenciesAndConfigs()
+//	defer setup.Close()
+//	// Modify configs as needed for the specific test
+//	setup.MasterCfg.Exec = "/bin/sh"
 func SetupMockDependenciesAndConfigs() *MockDependenciesAndConfigs {
 	// Create mock networks
 	mockTCPNet := mocks_tcp.NewMockTCPNetwork()
