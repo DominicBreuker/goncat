@@ -1,29 +1,41 @@
 package config
 
 import (
+	"context"
 	"io"
 	"net"
 	"os"
 	"os/exec"
+	"time"
 )
 
 // Dependencies contains injectable dependencies for testing and customization.
 // All fields are optional and will use default implementations if nil.
 type Dependencies struct {
-	TCPDialer   TCPDialerFunc
-	TCPListener TCPListenerFunc
-	Stdin       StdinFunc
-	Stdout      StdoutFunc
-	ExecCommand ExecCommandFunc
+	TCPDialer      TCPDialerFunc
+	TCPListener    TCPListenerFunc
+	UDPListener    UDPListenerFunc
+	PacketListener PacketListenerFunc
+	Stdin          StdinFunc
+	Stdout         StdoutFunc
+	ExecCommand    ExecCommandFunc
 }
 
-// TCPDialerFunc is a function that dials a TCP connection.
+// TCPDialerFunc is a function that dials a TCP connection using the provided context.
 // It returns a net.Conn to allow for mock implementations.
-type TCPDialerFunc func(network string, laddr, raddr *net.TCPAddr) (net.Conn, error)
+type TCPDialerFunc func(ctx context.Context, network string, laddr, raddr *net.TCPAddr) (net.Conn, error)
 
 // TCPListenerFunc is a function that creates a TCP listener.
 // It returns a net.Listener to allow for mock implementations.
 type TCPListenerFunc func(network string, laddr *net.TCPAddr) (net.Listener, error)
+
+// UDPListenerFunc is a function that creates a UDP listener.
+// It returns a net.PacketConn to allow for mock implementations.
+type UDPListenerFunc func(network string, laddr *net.UDPAddr) (net.PacketConn, error)
+
+// PacketListenerFunc is a function that creates a packet listener.
+// It returns a net.PacketConn to allow for mock implementations.
+type PacketListenerFunc func(network, address string) (net.PacketConn, error)
 
 // StdinFunc is a function that returns a reader for stdin.
 // It returns an io.Reader to allow for mock implementations.
@@ -59,8 +71,10 @@ func GetTCPDialerFunc(deps *Dependencies) TCPDialerFunc {
 	if deps != nil && deps.TCPDialer != nil {
 		return deps.TCPDialer
 	}
-	return func(network string, laddr, raddr *net.TCPAddr) (net.Conn, error) {
-		return net.DialTCP(network, laddr, raddr)
+	return func(ctx context.Context, network string, laddr, raddr *net.TCPAddr) (net.Conn, error) {
+		// Use net.Dialer with a reasonable default timeout so dials are cancelable.
+		d := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
+		return d.DialContext(ctx, network, raddr.String())
 	}
 }
 
@@ -144,4 +158,26 @@ type realProcess struct {
 
 func (r *realProcess) Kill() error {
 	return r.process.Kill()
+}
+
+// GetUDPListenerFunc returns the UDP listener function from dependencies, or a default implementation.
+// If deps is nil or deps.UDPListener is nil, returns a function that uses net.ListenUDP.
+func GetUDPListenerFunc(deps *Dependencies) UDPListenerFunc {
+	if deps != nil && deps.UDPListener != nil {
+		return deps.UDPListener
+	}
+	return func(network string, laddr *net.UDPAddr) (net.PacketConn, error) {
+		return net.ListenUDP(network, laddr)
+	}
+}
+
+// GetPacketListenerFunc returns the packet listener function from dependencies, or a default implementation.
+// If deps is nil or deps.PacketListener is nil, returns a function that uses net.ListenPacket.
+func GetPacketListenerFunc(deps *Dependencies) PacketListenerFunc {
+	if deps != nil && deps.PacketListener != nil {
+		return deps.PacketListener
+	}
+	return func(network, address string) (net.PacketConn, error) {
+		return net.ListenPacket(network, address)
+	}
 }

@@ -9,6 +9,7 @@ import (
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux"
 	"dominicbreuker/goncat/pkg/mux/msg"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -28,7 +29,7 @@ type Master struct {
 // New creates a new Master handler over the given connection.
 // It opens a multiplexed session for managing multiple concurrent operations.
 func New(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (*Master, error) {
-	sess, err := mux.OpenSession(conn)
+	sess, err := mux.OpenSessionContext(context.Background(), conn, cfg.Timeout)
 	if err != nil {
 		return nil, fmt.Errorf("mux.OpenSession(conn): %s", err)
 	}
@@ -70,13 +71,21 @@ func (mst *Master) Handle() error {
 
 	go func() {
 		for {
-			m, err := mst.sess.Receive()
+			m, err := mst.sess.ReceiveContext(ctx)
 			if err != nil {
 				if err == io.EOF {
 					return
 				}
 				if ctx.Err() != nil {
 					return // cancelled
+				}
+
+				// Ignore expected timeouts/deadlines (frequent when polling).
+				if err == context.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
+					continue
+				}
+				if ne, ok := err.(net.Error); ok && ne.Timeout() {
+					continue
 				}
 
 				log.ErrorMsg("Receiving next command: %s\n", err)

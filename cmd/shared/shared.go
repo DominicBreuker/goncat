@@ -19,6 +19,9 @@ const KeyFlag = "key"
 // VerboseFlag is the name of the flag to enable verbose error logging.
 const VerboseFlag = "verbose"
 
+// TimeoutFlag is the name of the flag to specify operation timeout in milliseconds.
+const TimeoutFlag = "timeout"
+
 // GetBaseDescription returns the base description text for transport
 // specifications used in CLI commands.
 func GetBaseDescription() string {
@@ -60,6 +63,14 @@ func GetCommonFlags() []cli.Flag {
 			Usage:    "Verbose error logging",
 			Category: categoryCommon,
 			Value:    false,
+			Required: false,
+		},
+		&cli.IntFlag{
+			Name:     TimeoutFlag,
+			Aliases:  []string{"t"},
+			Usage:    "Operation timeout in milliseconds (TLS handshake, mux control operations)",
+			Category: categoryCommon,
+			Value:    10000, // 10 seconds default
 			Required: false,
 		},
 	}

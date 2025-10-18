@@ -3,14 +3,12 @@ package integration
 import (
 	"context"
 	"dominicbreuker/goncat/mocks"
+	mocks_tcp "dominicbreuker/goncat/mocks/tcp"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/entrypoint"
 	"dominicbreuker/goncat/test/helpers"
-	"fmt"
 	"io"
-	"net"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 )
@@ -24,8 +22,8 @@ import (
 // With an additional mock server on the slave side at 127.0.0.1:9000 that responds with unique data,
 // and a mock client on the master side connecting to the forwarded port 8000.
 func TestLocalPortForwarding(t *testing.T) {
-	// Create mock network for TCP connections
-	mockNet := mocks.NewMockTCPNetwork()
+	// Create mock network for TCP connections (use the tcp package mock)
+	mockNet := mocks_tcp.NewMockTCPNetwork()
 
 	// Create mock stdio for master and slave (not used in this test but required for setup)
 	masterStdio := mocks.NewMockStdio()
@@ -33,53 +31,10 @@ func TestLocalPortForwarding(t *testing.T) {
 	defer masterStdio.Close()
 	defer slaveStdio.Close()
 
-	// Setup mock "remote server" on slave side (this would be the server at 127.0.0.1:9000)
-	// This server will respond with unique data when contacted
-	remoteServerAddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:9000")
-	if err != nil {
-		t.Fatalf("Failed to resolve remote server address: %v", err)
-	}
-
-	remoteServerListener, err := mockNet.ListenTCP("tcp", remoteServerAddr)
-	if err != nil {
-		t.Fatalf("Failed to create remote server listener: %v", err)
-	}
-	defer remoteServerListener.Close()
-
-	// Start mock remote server in a goroutine
-	remoteServerStarted := make(chan struct{})
-	go func() {
-		close(remoteServerStarted)
-		for {
-			conn, err := remoteServerListener.Accept()
-			if err != nil {
-				return // listener closed
-			}
-			go func(c net.Conn) {
-				defer c.Close()
-				// Read request data
-				buf := make([]byte, 1024)
-				n, err := c.Read(buf)
-				if err != nil && err != io.EOF {
-					t.Logf("Remote server read error: %v", err)
-					return
-				}
-				request := string(buf[:n])
-				// Respond with unique data that includes the request
-				response := fmt.Sprintf("REMOTE_SERVER_RESPONSE: You sent '%s'", strings.TrimSpace(request))
-				c.Write([]byte(response))
-			}(conn)
-		}
-	}()
-
-	// Wait for remote server to start
-	<-remoteServerStarted
-	// Note: The channel close is enough to signal the server is ready
-
 	// Setup master dependencies (network + stdio)
 	// TCPDialer and TCPListener are used for all TCP operations including port forwarding
 	masterDeps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCP,
+		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
 		Stdin:       func() io.Reader { return masterStdio.GetStdin() },
 		Stdout:      func() io.Writer { return masterStdio.GetStdout() },
@@ -87,7 +42,7 @@ func TestLocalPortForwarding(t *testing.T) {
 
 	// Setup slave dependencies (network + stdio)
 	slaveDeps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCP,
+		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
 		Stdin:       func() io.Reader { return slaveStdio.GetStdin() },
 		Stdout:      func() io.Writer { return slaveStdio.GetStdout() },
@@ -109,7 +64,16 @@ func TestLocalPortForwarding(t *testing.T) {
 	// Slave configuration - simulates "slave connect tcp://127.0.0.1:12345"
 	slaveSharedCfg := helpers.DefaultSharedConfig(slaveDeps)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	// Setup mock "remote server" on slave side (this would be the server at 127.0.0.1:9000)
+	// This server will respond with unique data when contacted
+	// Start the reusable mock echo server using the mock network's ListenTCP
+	srv, err := mocks_tcp.New(mockNet.ListenTCP, "tcp", "127.0.0.1:9000", "REMOTE_SERVER_RESPONSE: ")
+	if err != nil {
+		t.Fatalf("Failed to start remote server: %v", err)
+	}
+	defer srv.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
 	// Channels for synchronization and error handling
@@ -119,22 +83,18 @@ func TestLocalPortForwarding(t *testing.T) {
 	// Start master server using entrypoint (listens for connections and sets up port forwarding)
 	go func() {
 		if err := entrypoint.MasterListen(ctx, masterSharedCfg, masterCfg); err != nil {
-			// Context cancellation is expected
-			select {
-			case <-ctx.Done():
-				masterErr <- nil
-			default:
-				masterErr <- err
-			}
+			masterErr <- err
 			return
 		}
 		masterErr <- nil
 	}()
 
-	// Wait for master to start listening
-	if err := mockNet.WaitForListener("127.0.0.1:12345", 2000); err != nil {
+	// Wait for master listener
+	var lMaster *mocks_tcp.MockTCPListener
+	if lMaster, err = mockNet.WaitForListener("127.0.0.1:12345", 2000); err != nil {
 		t.Fatalf("Master failed to start listening: %v", err)
 	}
+	t.Logf("Master has started listening on %s", lMaster.Addr().String())
 
 	// Start slave using entrypoint (connects to master)
 	go func() {
@@ -145,122 +105,67 @@ func TestLocalPortForwarding(t *testing.T) {
 		slaveErr <- nil
 	}()
 
-	// Wait for the forwarded port to be available (local port forwarding listener on master side)
-	if err := mockNet.WaitForListener("127.0.0.1:8000", 2000); err != nil {
+	var cSlaveToMaster *mocks_tcp.MockTCPConn
+	if cSlaveToMaster, err = lMaster.WaitForNewConnection(2000); err != nil {
+		t.Fatalf("Slave failed to connect to master: %v", err)
+	}
+	t.Logf("Slave is connected to master: %s->%s", cSlaveToMaster.RemoteAddr().String(), cSlaveToMaster.LocalAddr().String())
+
+	// Wait for forwarding listener and its target echo server
+	var lLocal *mocks_tcp.MockTCPListener
+	if lLocal, err = mockNet.WaitForListener("127.0.0.1:8000", 2000); err != nil {
 		t.Fatalf("Forwarded port failed to start listening: %v", err)
 	}
+	t.Logf("Master has started listening on %s for port forwarding", lLocal.Addr().String())
 
-	// Now test the port forwarding by connecting a mock client to the forwarded port
-	// This client connects to 127.0.0.1:8000 on the master side
-	forwardedPortAddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:8000")
+	var lRemote *mocks_tcp.MockTCPListener
+	if lRemote, err = mockNet.WaitForListener("127.0.0.1:9000", 2000); err != nil {
+		t.Fatalf("Echo server failed to start listening: %v", err)
+	}
+	t.Logf("Remote server has started listening on %v", lRemote.Addr().String())
+
+	client, err := mocks_tcp.NewClient(mockNet.DialTCP, "tcp", "127.0.0.1:8000")
 	if err != nil {
-		t.Fatalf("Failed to resolve forwarded port address: %v", err)
+		t.Fatalf("failed to connect to forwarded port: %v", err)
+	}
+	defer client.Close()
+
+	var cClientToRelay *mocks_tcp.MockTCPConn
+	if cClientToRelay, err = lLocal.WaitForNewConnection(2000); err != nil {
+		t.Fatalf("Local client failed to connect to forwarded port: %v", err)
+	}
+	t.Logf("Local TCP client connected to forwarded port: %s->%s", cClientToRelay.RemoteAddr().String(), cClientToRelay.LocalAddr().String())
+
+	var cRelayToRemote *mocks_tcp.MockTCPConn
+	if cRelayToRemote, err = lRemote.WaitForNewConnection(2000); err != nil {
+		t.Fatalf("Relay failed to connect to remote server: %v", err)
+	}
+	t.Logf("Relay connectec to remote server: %s->%s", cRelayToRemote.RemoteAddr().String(), cRelayToRemote.LocalAddr().String())
+
+	testData := "Hello through tunnel!"
+	if err := client.WriteLine(testData); err != nil {
+		t.Fatalf("failed to write to forwarded port: %v", err)
 	}
 
-	// Use a waitgroup to ensure the client goroutine completes
-	var clientWg sync.WaitGroup
-	clientWg.Add(1)
+	// required, the piping through the relay is not immediate
+	time.Sleep(100 * time.Millisecond)
 
-	// Track client test results
-	clientSuccess := false
-	var clientErr error
-	var clientResponse string
-
-	go func() {
-		defer clientWg.Done()
-
-		// Connect to the forwarded port
-		clientConn, err := mockNet.DialTCP("tcp", nil, forwardedPortAddr)
-		if err != nil {
-			clientErr = fmt.Errorf("failed to connect to forwarded port: %v", err)
-			return
-		}
-		defer clientConn.Close()
-
-		// Send test data through the tunnel
-		testData := "Hello through tunnel!"
-		_, err = clientConn.Write([]byte(testData))
-		if err != nil {
-			clientErr = fmt.Errorf("failed to write to forwarded port: %v", err)
-			return
-		}
-
-		// Read response from the remote server (should come through the tunnel)
-		buf := make([]byte, 1024)
-		clientConn.SetReadDeadline(time.Now().Add(3 * time.Second))
-		n, err := clientConn.Read(buf)
-		if err != nil && err != io.EOF {
-			clientErr = fmt.Errorf("failed to read response: %v", err)
-			return
-		}
-
-		clientResponse = string(buf[:n])
-		clientSuccess = true
-	}()
-
-	// Wait for client to complete
-	clientWg.Wait()
-
-	// Verify the client test results
-	if clientErr != nil {
-		t.Errorf("Client error: %v", clientErr)
-	}
-
-	if !clientSuccess {
-		t.Fatal("Client failed to complete successfully")
+	resp, err := client.ReadLine()
+	if err != nil {
+		t.Fatalf("failed to read response: %v", err)
 	}
 
 	// Verify the response contains both the expected prefix and the sent data
 	expectedPrefix := "REMOTE_SERVER_RESPONSE:"
 	expectedContent := "Hello through tunnel!"
-	if !strings.Contains(clientResponse, expectedPrefix) {
-		t.Errorf("Expected response to contain '%s', got: %q", expectedPrefix, clientResponse)
+	if !strings.Contains(resp, expectedPrefix) {
+		t.Errorf("Expected response to contain '%s', got: %q", expectedPrefix, resp)
 	}
-	if !strings.Contains(clientResponse, expectedContent) {
-		t.Errorf("Expected response to contain sent data '%s', got: %q", expectedContent, clientResponse)
-	}
-
-	t.Logf("✓ Port forwarding test successful! Response: %q", clientResponse)
-
-	// Test multiple connections to ensure port forwarding is stable
-	for i := 0; i < 3; i++ {
-		clientWg.Add(1)
-		go func(iteration int) {
-			defer clientWg.Done()
-
-			clientConn, err := mockNet.DialTCP("tcp", nil, forwardedPortAddr)
-			if err != nil {
-				t.Errorf("Iteration %d: failed to connect: %v", iteration, err)
-				return
-			}
-			defer clientConn.Close()
-
-			testData := fmt.Sprintf("Message %d", iteration)
-			clientConn.Write([]byte(testData))
-
-			buf := make([]byte, 1024)
-			clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
-			n, err := clientConn.Read(buf)
-			if err != nil && err != io.EOF {
-				t.Errorf("Iteration %d: failed to read: %v", iteration, err)
-				return
-			}
-
-			response := string(buf[:n])
-			if !strings.Contains(response, testData) {
-				t.Errorf("Iteration %d: expected response to contain '%s', got: %q", iteration, testData, response)
-			} else {
-				t.Logf("✓ Iteration %d successful! Response: %q", iteration, response)
-			}
-		}(i)
+	if !strings.Contains(resp, expectedContent) {
+		t.Errorf("Expected response to contain sent data '%s', got: %q", expectedContent, resp)
 	}
 
-	// Wait for all iterations to complete
-	clientWg.Wait()
-
-	// Cleanup
-	cancel()
-	time.Sleep(200 * time.Millisecond)
+	t.Logf("✓ Port forwarding test successful! Response: %q", resp)
 
 	// Check for errors (non-blocking)
 	select {

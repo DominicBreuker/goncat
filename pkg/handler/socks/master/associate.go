@@ -2,10 +2,12 @@ package master
 
 import (
 	"bufio"
+	"context"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"dominicbreuker/goncat/pkg/socks"
 	"fmt"
 	"io"
+	"time"
 )
 
 // handleAssociate processes a SOCKS5 ASSOCIATE request by setting up a UDP relay
@@ -14,7 +16,12 @@ func (srv *Server) handleAssociate(bufConnLocal *bufio.ReadWriter, sr *socks.Req
 	defer bufConnLocal.Flush()
 
 	// establish connection to remote end
-	connRemote, err := srv.sessCtl.SendAndGetOneChannel(msg.SocksAssociate{})
+	// Bound the control operation with a short timeout so a stalled control
+	// session doesn't block the associate handler indefinitely.
+	opCtx, cancel := context.WithTimeout(srv.ctx, 10*time.Second)
+	defer cancel()
+
+	connRemote, err := srv.sessCtl.SendAndGetOneChannelContext(opCtx, msg.SocksAssociate{})
 	if err != nil {
 		if err := socks.WriteReplyError(bufConnLocal, socks.ReplyGeneralFailure); err != nil {
 			return fmt.Errorf("writing Reply error response: %s", err)
@@ -25,7 +32,7 @@ func (srv *Server) handleAssociate(bufConnLocal *bufio.ReadWriter, sr *socks.Req
 	defer connRemote.Close() // kills relay on other end
 
 	// create a local UDP relay which binds a port
-	relay, err := NewUDPRelay(srv.ctx, srv.cfg.LocalHost, sr, connRemote)
+	relay, err := NewUDPRelay(srv.ctx, srv.cfg.LocalHost, sr, connRemote, srv.cfg.Deps)
 	if err != nil {
 		if err := socks.WriteReplyError(bufConnLocal, socks.ReplyGeneralFailure); err != nil {
 			return fmt.Errorf("writing Reply error response: %s", err)

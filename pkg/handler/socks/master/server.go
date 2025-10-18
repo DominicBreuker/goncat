@@ -3,6 +3,8 @@ package master
 import (
 	"bufio"
 	"context"
+	"time"
+
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/format"
 	"dominicbreuker/goncat/pkg/log"
@@ -61,10 +63,11 @@ func (srv *Server) LogError(format string, a ...interface{}) {
 // It blocks until the context is cancelled or an unrecoverable error occurs.
 func (srv *Server) Serve() error {
 	for {
-		conn, err := srv.listener.Accept()
+		conn, err := srv.acceptWithContext()
 		if err != nil {
+			// If the server context was cancelled, exit cleanly.
 			if srv.ctx.Err() != nil {
-				return nil // cancelled
+				return nil
 			}
 
 			srv.LogError("Accept(): %s\n", err)
@@ -81,17 +84,54 @@ func (srv *Server) Serve() error {
 	}
 }
 
+// acceptWithContext accepts a connection from the server listener but returns
+// early if the server context is cancelled. It uses a goroutine and a
+// buffered result channel to avoid leaking the goroutine when ctx is done.
+func (srv *Server) acceptWithContext() (net.Conn, error) {
+	type res struct {
+		c   net.Conn
+		err error
+	}
+
+	ch := make(chan res, 1)
+	go func() {
+		c, e := srv.listener.Accept()
+		ch <- res{c: c, err: e}
+	}()
+
+	select {
+	case <-srv.ctx.Done():
+		return nil, srv.ctx.Err()
+	case r := <-ch:
+		return r.c, r.err
+	}
+}
+
 // handle processes a single SOCKS5 client connection through the complete
 // SOCKS5 handshake and request handling flow.
 func (srv *Server) handle(connLocal net.Conn) error {
 	bufConnLocal := bufio.NewReadWriter(bufio.NewReader(connLocal), bufio.NewWriter(connLocal))
 	defer bufConnLocal.Flush()
+	// Bound the method selection phase so a misbehaving client cannot block
+	// the handler indefinitely.
+	if c, ok := connLocal.(interface{ SetReadDeadline(time.Time) error }); ok {
+		_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+		defer c.SetReadDeadline(time.Time{})
+	}
 
 	if err := handleMethodSelection(bufConnLocal); err != nil {
 		return fmt.Errorf("handling method selection: %s", err)
 	}
 	if err := bufConnLocal.Flush(); err != nil {
 		return fmt.Errorf("flushing method selection: %s", err)
+	}
+
+	// Clear any previous deadline and set a new deadline for the request
+	// parsing phase.
+	if c, ok := connLocal.(interface{ SetReadDeadline(time.Time) error }); ok {
+		_ = c.SetReadDeadline(time.Time{})
+		_ = c.SetReadDeadline(time.Now().Add(5 * time.Second))
+		defer c.SetReadDeadline(time.Time{})
 	}
 
 	req, err := handleRequest(bufConnLocal)

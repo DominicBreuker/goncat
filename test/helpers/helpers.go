@@ -5,6 +5,7 @@ import (
 	"dominicbreuker/goncat/mocks"
 	"dominicbreuker/goncat/pkg/config"
 	"io"
+	"time"
 )
 
 // SetupMockDependencies creates a complete set of mock dependencies
@@ -14,7 +15,7 @@ func SetupMockDependencies() (*mocks.MockTCPNetwork, *mocks.MockStdio, *config.D
 	mockStdio := mocks.NewMockStdio()
 
 	deps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCP,
+		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
 		Stdin:       func() io.Reader { return mockStdio.GetStdin() },
 		Stdout:      func() io.Writer { return mockStdio.GetStdout() },
@@ -31,7 +32,7 @@ func SetupMockDependenciesWithExec() (*mocks.MockTCPNetwork, *mocks.MockStdio, *
 	mockExec := mocks.NewMockExec()
 
 	deps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCP,
+		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
 		Stdin:       func() io.Reader { return mockStdio.GetStdin() },
 		Stdout:      func() io.Writer { return mockStdio.GetStdout() },
@@ -50,6 +51,7 @@ func DefaultSharedConfig(deps *config.Dependencies) *config.Shared {
 		SSL:      false,
 		Key:      "",
 		Verbose:  false,
+		Timeout:  10 * time.Second,
 		Deps:     deps,
 	}
 }

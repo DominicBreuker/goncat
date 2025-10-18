@@ -4,6 +4,7 @@
 package slave
 
 import (
+	"context"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"net"
 	"strings"
@@ -12,8 +13,10 @@ import (
 // ClientControlSession represents the interface for communicating over
 // a multiplexed control session to handle SOCKS5 proxy requests from the master.
 type ClientControlSession interface {
-	GetOneChannel() (net.Conn, error)
-	Send(m msg.Message) error
+	GetOneChannelContext(ctx context.Context) (net.Conn, error)
+	// SendContext sends a control message and respects the provided context for
+	// cancellation. Implementations should return promptly when ctx is done.
+	SendContext(ctx context.Context, m msg.Message) error
 }
 
 // isErrorHostUnreachable checks if the error indicates a "host unreachable" condition

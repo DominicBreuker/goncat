@@ -31,7 +31,7 @@ func TestExecCommandExecution(t *testing.T) {
 
 	// Setup master dependencies (network + stdio)
 	masterDeps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCP,
+		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
 		Stdin:       func() io.Reader { return masterStdio.GetStdin() },
 		Stdout:      func() io.Writer { return masterStdio.GetStdout() },
@@ -39,7 +39,7 @@ func TestExecCommandExecution(t *testing.T) {
 
 	// Setup slave dependencies (network + stdio + exec)
 	slaveDeps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCP,
+		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
 		Stdin:       func() io.Reader { return slaveStdio.GetStdin() },
 		Stdout:      func() io.Writer { return slaveStdio.GetStdout() },

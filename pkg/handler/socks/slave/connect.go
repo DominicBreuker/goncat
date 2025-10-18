@@ -34,7 +34,7 @@ func NewTCPRelay(ctx context.Context, m msg.SocksConnect, sessCtl ClientControlS
 // Handle establishes a TCP connection to the target destination and relays
 // data between the SOCKS5 client (via control session) and the destination.
 func (tr *TCPRelay) Handle() error {
-	connRemote, err := tr.sessCtl.GetOneChannel()
+	connRemote, err := tr.sessCtl.GetOneChannelContext(tr.ctx)
 	if err != nil {
 		return fmt.Errorf("AcceptNewChannel(): %s", err)
 	}
@@ -61,7 +61,7 @@ func (tr *TCPRelay) Handle() error {
 
 	// Get the TCP dialer function from dependencies or use default
 	dialerFn := config.GetTCPDialerFunc(tr.deps)
-	conn, err := dialerFn("tcp", nil, tcpAddr)
+	conn, err := dialerFn(tr.ctx, "tcp", nil, tcpAddr)
 	if err != nil {
 		if isErrorConnectionRefused(err) {
 			if err := socks.WriteReplyError(connRemote, socks.ReplyConnectionRefused); err != nil {
@@ -97,7 +97,7 @@ func (tr *TCPRelay) Handle() error {
 	}
 
 	pipeio.Pipe(tr.ctx, connRemote, conn, func(err error) {
-		log.ErrorMsg("Handling connect to %s: %s", addr, err)
+		log.ErrorMsg("Handling connect to %s: %s\n", addr, err)
 	})
 
 	return nil

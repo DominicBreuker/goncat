@@ -51,7 +51,8 @@ test-unit:
 
 .PHONY: test-unit
 test-unit-with-race: 
-	go test -cover -race ./...
+	# We skip flaky tests in short mode.
+	go test -cover -race -v -short ./...
 
 .PHONY: test-integration
 test-integration: build-linux

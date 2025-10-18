@@ -14,6 +14,7 @@ import (
 	"dominicbreuker/goncat/pkg/transport/ws"
 	"fmt"
 	"net"
+	"time"
 )
 
 // Server manages a network listener and handles incoming connections
@@ -52,7 +53,17 @@ func New(ctx context.Context, cfg *config.Shared, handle transport.Handler) (*Se
 
 		s.handle = func(conn net.Conn) error {
 			tlsConn := tls.Server(conn, tlsCfg)
-			tlsConn.Handshake()
+
+			// set a handshake deadline to avoid blocking forever
+			_ = tlsConn.SetDeadline(time.Now().Add(cfg.Timeout))
+			if err := tlsConn.Handshake(); err != nil {
+				// ensure connection closed on handshake failure
+				_ = tlsConn.Close()
+				return fmt.Errorf("tls handshake: %s", err)
+			}
+			// clear deadline after handshake
+			_ = tlsConn.SetDeadline(time.Time{})
+
 			return handle(tlsConn)
 		}
 	} else {

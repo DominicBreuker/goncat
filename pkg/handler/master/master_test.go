@@ -8,7 +8,10 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 )
+
+const testTimeout = 50 * time.Millisecond
 
 // TestNew creates a new master handler and verifies initialization.
 func TestNew(t *testing.T) {
@@ -21,6 +24,7 @@ func TestNew(t *testing.T) {
 	ctx := context.Background()
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
@@ -32,7 +36,7 @@ func TestNew(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := mux.AcceptSession(server)
+		_, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Errorf("AcceptSession() failed: %v", err)
 		}
@@ -65,7 +69,7 @@ func TestNew_SessionError(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	cfg := &config.Shared{}
+	cfg := &config.Shared{Timeout: testTimeout}
 	mCfg := &config.Master{}
 
 	// Create a connection that will be immediately closed
@@ -85,6 +89,7 @@ func TestNew_ConfigValidation(t *testing.T) {
 	ctx := context.Background()
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "",
@@ -115,14 +120,14 @@ func TestClose(t *testing.T) {
 	defer server.Close()
 
 	ctx := context.Background()
-	cfg := &config.Shared{}
+	cfg := &config.Shared{Timeout: testTimeout}
 	mCfg := &config.Master{}
 
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := mux.AcceptSession(server)
+		_, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			// Expected error when master closes
 			return
@@ -270,7 +275,7 @@ func TestStartLocalPortFwdJob(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	cfg := &config.Shared{}
+	cfg := &config.Shared{Timeout: testTimeout}
 	mCfg := &config.Master{}
 
 	client, server := net.Pipe()
@@ -281,7 +286,7 @@ func TestStartLocalPortFwdJob(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := mux.AcceptSession(server)
+		_, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error (expected on cleanup): %v", err)
 		}
@@ -321,7 +326,7 @@ func TestStartRemotePortFwdJob(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	cfg := &config.Shared{}
+	cfg := &config.Shared{Timeout: testTimeout}
 	mCfg := &config.Master{}
 
 	client, server := net.Pipe()
@@ -331,7 +336,7 @@ func TestStartRemotePortFwdJob(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSession(server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -339,7 +344,7 @@ func TestStartRemotePortFwdJob(t *testing.T) {
 		defer sess.Close()
 
 		// Receive the port forwarding message
-		_, err = sess.Receive()
+		_, err = sess.ReceiveContext(context.Background())
 		if err != nil {
 			t.Logf("Receive() error (may be expected on cleanup): %v", err)
 		}
@@ -376,7 +381,7 @@ func TestHandleConnectAsync(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	cfg := &config.Shared{}
+	cfg := &config.Shared{Timeout: testTimeout}
 	mCfg := &config.Master{}
 
 	client, server := net.Pipe()
@@ -387,7 +392,7 @@ func TestHandleConnectAsync(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := mux.AcceptSession(server)
+		_, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 		}
@@ -415,7 +420,7 @@ func TestStartSocksProxyJob(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	cfg := &config.Shared{}
+	cfg := &config.Shared{Timeout: testTimeout}
 	mCfg := &config.Master{
 		Socks: &config.SocksCfg{
 			Host: "127.0.0.1",
@@ -431,7 +436,7 @@ func TestStartSocksProxyJob(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := mux.AcceptSession(server)
+		_, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 		}
@@ -467,7 +472,7 @@ func TestStartSocksProxyJob_InvalidConfig(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	cfg := &config.Shared{}
+	cfg := &config.Shared{Timeout: testTimeout}
 	mCfg := &config.Master{
 		Socks: &config.SocksCfg{
 			Host: "127.0.0.1",
@@ -483,7 +488,7 @@ func TestStartSocksProxyJob_InvalidConfig(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := mux.AcceptSession(server)
+		_, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 		}
@@ -516,6 +521,7 @@ func TestHandleForeground_Plain(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
@@ -529,7 +535,7 @@ func TestHandleForeground_Plain(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSession(server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -537,7 +543,7 @@ func TestHandleForeground_Plain(t *testing.T) {
 		defer sess.Close()
 
 		// Receive the foreground message and open a channel
-		m, err := sess.Receive()
+		m, err := sess.ReceiveContext(ctx)
 		if err != nil {
 			t.Logf("Receive() error: %v", err)
 			return
@@ -549,7 +555,7 @@ func TestHandleForeground_Plain(t *testing.T) {
 		}
 
 		// Open a channel for the foreground connection
-		_, err = sess.GetOneChannel()
+		_, err = sess.GetOneChannelContext(ctx)
 		if err != nil {
 			t.Logf("GetOneChannel() error (may be expected): %v", err)
 		}
@@ -589,6 +595,7 @@ func TestHandleForeground_PTY(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
@@ -602,7 +609,7 @@ func TestHandleForeground_PTY(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSession(server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -610,7 +617,7 @@ func TestHandleForeground_PTY(t *testing.T) {
 		defer sess.Close()
 
 		// Receive the foreground message and open channels
-		m, err := sess.Receive()
+		m, err := sess.ReceiveContext(ctx)
 		if err != nil {
 			t.Logf("Receive() error: %v", err)
 			return
@@ -622,12 +629,12 @@ func TestHandleForeground_PTY(t *testing.T) {
 		}
 
 		// Open two channels for PTY mode (data and control)
-		_, err = sess.AcceptNewChannel()
+		_, err = sess.AcceptNewChannelContext(context.Background())
 		if err != nil {
 			t.Logf("AcceptNewChannel() error (may be expected): %v", err)
 			return
 		}
-		_, err = sess.AcceptNewChannel()
+		_, err = sess.AcceptNewChannelContext(context.Background())
 		if err != nil {
 			t.Logf("AcceptNewChannel() error (may be expected): %v", err)
 		}
@@ -663,7 +670,7 @@ func TestStartForegroundJob(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	cfg := &config.Shared{}
+	cfg := &config.Shared{Timeout: testTimeout}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
 		Pty:  false,
@@ -676,7 +683,7 @@ func TestStartForegroundJob(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSession(server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -684,13 +691,13 @@ func TestStartForegroundJob(t *testing.T) {
 		defer sess.Close()
 
 		// Receive and handle the foreground message
-		_, err = sess.Receive()
+		_, err = sess.ReceiveContext(context.Background())
 		if err != nil {
 			t.Logf("Receive() error: %v", err)
 			return
 		}
 
-		_, err = sess.GetOneChannel()
+		_, err = sess.GetOneChannelContext(ctx)
 		if err != nil {
 			t.Logf("GetOneChannel() error: %v", err)
 		}
@@ -727,6 +734,7 @@ func TestHandle_BasicFlow(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
@@ -740,7 +748,7 @@ func TestHandle_BasicFlow(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSession(server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -748,7 +756,7 @@ func TestHandle_BasicFlow(t *testing.T) {
 		defer sess.Close()
 
 		// Receive the foreground message
-		m, err := sess.Receive()
+		m, err := sess.ReceiveContext(ctx)
 		if err != nil {
 			t.Logf("Receive() error: %v", err)
 			return
@@ -760,7 +768,7 @@ func TestHandle_BasicFlow(t *testing.T) {
 		}
 
 		// Open a channel for the foreground connection
-		conn, err := sess.AcceptNewChannel()
+		conn, err := sess.AcceptNewChannelContext(context.Background())
 		if err != nil {
 			t.Logf("AcceptNewChannel() error: %v", err)
 			return
@@ -805,6 +813,7 @@ func TestHandle_WithLocalPortForwarding(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
@@ -826,7 +835,7 @@ func TestHandle_WithLocalPortForwarding(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSession(server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -834,14 +843,14 @@ func TestHandle_WithLocalPortForwarding(t *testing.T) {
 		defer sess.Close()
 
 		// Receive the foreground message
-		_, err = sess.Receive()
+		_, err = sess.ReceiveContext(ctx)
 		if err != nil {
 			t.Logf("Receive() error: %v", err)
 			return
 		}
 
 		// Accept channel
-		conn, err := sess.AcceptNewChannel()
+		conn, err := sess.AcceptNewChannelContext(context.Background())
 		if err != nil {
 			t.Logf("AcceptNewChannel() error: %v", err)
 			return
@@ -883,6 +892,7 @@ func TestHandle_WithRemotePortForwarding(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
@@ -904,7 +914,7 @@ func TestHandle_WithRemotePortForwarding(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSession(server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -912,7 +922,7 @@ func TestHandle_WithRemotePortForwarding(t *testing.T) {
 		defer sess.Close()
 
 		// Receive the remote port forwarding message
-		m, err := sess.Receive()
+		m, err := sess.ReceiveContext(ctx)
 		if err != nil {
 			t.Logf("Receive() error: %v", err)
 			return
@@ -923,14 +933,14 @@ func TestHandle_WithRemotePortForwarding(t *testing.T) {
 		}
 
 		// Receive the foreground message
-		_, err = sess.Receive()
+		_, err = sess.ReceiveContext(ctx)
 		if err != nil {
 			t.Logf("Receive() error: %v", err)
 			return
 		}
 
 		// Accept channel
-		conn, err := sess.AcceptNewChannel()
+		conn, err := sess.AcceptNewChannelContext(context.Background())
 		if err != nil {
 			t.Logf("AcceptNewChannel() error: %v", err)
 			return
@@ -972,6 +982,7 @@ func TestHandle_WithSOCKS(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
@@ -989,7 +1000,7 @@ func TestHandle_WithSOCKS(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSession(server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -997,14 +1008,14 @@ func TestHandle_WithSOCKS(t *testing.T) {
 		defer sess.Close()
 
 		// Receive the foreground message
-		_, err = sess.Receive()
+		_, err = sess.ReceiveContext(ctx)
 		if err != nil {
 			t.Logf("Receive() error: %v", err)
 			return
 		}
 
 		// Accept channel
-		conn, err := sess.AcceptNewChannel()
+		conn, err := sess.AcceptNewChannelContext(context.Background())
 		if err != nil {
 			t.Logf("AcceptNewChannel() error: %v", err)
 			return
@@ -1046,6 +1057,7 @@ func TestHandle_ReceiveConnectMessage(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
@@ -1067,7 +1079,7 @@ func TestHandle_ReceiveConnectMessage(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSession(server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -1075,7 +1087,7 @@ func TestHandle_ReceiveConnectMessage(t *testing.T) {
 		defer sess.Close()
 
 		// Receive port fwd message
-		_, err = sess.Receive()
+		_, err = sess.ReceiveContext(ctx)
 		if err != nil {
 			t.Logf("Receive() error: %v", err)
 			return
@@ -1086,19 +1098,19 @@ func TestHandle_ReceiveConnectMessage(t *testing.T) {
 			RemoteHost: "localhost",
 			RemotePort: 8080,
 		}
-		if err := sess.Send(connectMsg); err != nil {
+		if err := sess.SendContext(ctx, connectMsg); err != nil {
 			t.Logf("Send(Connect) error: %v", err)
 		}
 
 		// Receive foreground message
-		_, err = sess.Receive()
+		_, err = sess.ReceiveContext(ctx)
 		if err != nil {
 			t.Logf("Receive() error: %v", err)
 			return
 		}
 
 		// Accept channel
-		conn, err := sess.AcceptNewChannel()
+		conn, err := sess.AcceptNewChannelContext(context.Background())
 		if err != nil {
 			t.Logf("AcceptNewChannel() error: %v", err)
 			return
@@ -1141,6 +1153,7 @@ func TestHandle_UnexpectedMessage(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
@@ -1154,7 +1167,7 @@ func TestHandle_UnexpectedMessage(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSession(server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -1166,19 +1179,19 @@ func TestHandle_UnexpectedMessage(t *testing.T) {
 			RemoteHost: "example.com",
 			RemotePort: 80,
 		}
-		if err := sess.Send(unexpectedMsg); err != nil {
+		if err := sess.SendContext(ctx, unexpectedMsg); err != nil {
 			t.Logf("Send(unexpected) error: %v", err)
 		}
 
 		// Receive foreground message
-		_, err = sess.Receive()
+		_, err = sess.ReceiveContext(ctx)
 		if err != nil {
 			t.Logf("Receive() error: %v", err)
 			return
 		}
 
 		// Accept channel
-		conn, err := sess.AcceptNewChannel()
+		conn, err := sess.AcceptNewChannelContext(context.Background())
 		if err != nil {
 			t.Logf("AcceptNewChannel() error: %v", err)
 			return
@@ -1220,6 +1233,7 @@ func TestHandle_UnauthorizedConnect(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
@@ -1241,7 +1255,7 @@ func TestHandle_UnauthorizedConnect(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSession(server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -1249,7 +1263,7 @@ func TestHandle_UnauthorizedConnect(t *testing.T) {
 		defer sess.Close()
 
 		// Receive port fwd message
-		_, err = sess.Receive()
+		_, err = sess.ReceiveContext(ctx)
 		if err != nil {
 			t.Logf("Receive() error: %v", err)
 			return
@@ -1260,19 +1274,19 @@ func TestHandle_UnauthorizedConnect(t *testing.T) {
 			RemoteHost: "unauthorized.example.com",
 			RemotePort: 9999,
 		}
-		if err := sess.Send(connectMsg); err != nil {
+		if err := sess.SendContext(ctx, connectMsg); err != nil {
 			t.Logf("Send(Connect) error: %v", err)
 		}
 
 		// Receive foreground message
-		_, err = sess.Receive()
+		_, err = sess.ReceiveContext(ctx)
 		if err != nil {
 			t.Logf("Receive() error: %v", err)
 			return
 		}
 
 		// Accept channel
-		conn, err := sess.AcceptNewChannel()
+		conn, err := sess.AcceptNewChannelContext(context.Background())
 		if err != nil {
 			t.Logf("AcceptNewChannel() error: %v", err)
 			return
@@ -1317,6 +1331,7 @@ func TestHandleForeground_WithLogFile(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec:    "/bin/sh",
@@ -1331,7 +1346,7 @@ func TestHandleForeground_WithLogFile(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSession(server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -1339,7 +1354,7 @@ func TestHandleForeground_WithLogFile(t *testing.T) {
 		defer sess.Close()
 
 		// Receive the foreground message
-		m, err := sess.Receive()
+		m, err := sess.ReceiveContext(ctx)
 		if err != nil {
 			t.Logf("Receive() error: %v", err)
 			return
@@ -1351,7 +1366,7 @@ func TestHandleForeground_WithLogFile(t *testing.T) {
 		}
 
 		// Open a channel for the foreground connection
-		conn, err := sess.AcceptNewChannel()
+		conn, err := sess.AcceptNewChannelContext(context.Background())
 		if err != nil {
 			t.Logf("AcceptNewChannel() error: %v", err)
 			return
@@ -1399,6 +1414,7 @@ func TestHandleForeground_PTYWithLogFile(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec:    "/bin/sh",
@@ -1413,7 +1429,7 @@ func TestHandleForeground_PTYWithLogFile(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSession(server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -1421,7 +1437,7 @@ func TestHandleForeground_PTYWithLogFile(t *testing.T) {
 		defer sess.Close()
 
 		// Receive the foreground message
-		m, err := sess.Receive()
+		m, err := sess.ReceiveContext(ctx)
 		if err != nil {
 			t.Logf("Receive() error: %v", err)
 			return
@@ -1433,12 +1449,12 @@ func TestHandleForeground_PTYWithLogFile(t *testing.T) {
 		}
 
 		// Open two channels for PTY mode
-		_, err = sess.AcceptNewChannel()
+		_, err = sess.AcceptNewChannelContext(context.Background())
 		if err != nil {
 			t.Logf("AcceptNewChannel() error: %v", err)
 			return
 		}
-		_, err = sess.AcceptNewChannel()
+		_, err = sess.AcceptNewChannelContext(context.Background())
 		if err != nil {
 			t.Logf("AcceptNewChannel() error: %v", err)
 		}

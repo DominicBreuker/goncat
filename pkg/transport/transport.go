@@ -4,11 +4,15 @@
 // different transport protocols such as TCP and WebSocket.
 package transport
 
-import "net"
+import (
+	"context"
+	"net"
+)
 
 // Dialer is an interface for establishing outbound connections.
+// Dial accepts a context so implementations can honor cancellation/timeouts.
 type Dialer interface {
-	Dial() (net.Conn, error)
+	Dial(ctx context.Context) (net.Conn, error)
 }
 
 // Listener is an interface for accepting inbound connections.

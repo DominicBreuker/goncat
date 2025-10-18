@@ -1,39 +1,41 @@
 package mux
 
 import (
+	"context"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"encoding/gob"
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/hashicorp/yamux"
 )
 
-// MasterSession represents the master side of a multiplexed connection.
-// The master initiates the connection and sends commands to the slave.
-// It uses gob encoding for message passing over dedicated control channels.
+// MasterSession is the master-side mux wrapper. It encodes to ctlClientToServer
+// and decodes from ctlServerToClient using gob.
 type MasterSession struct {
 	sess *Session
 
 	enc *gob.Encoder
 	dec *gob.Decoder
 
+	timeout time.Duration
+
 	mu sync.Mutex
 }
 
-// Close closes the master session and its underlying multiplexed connection.
+// Close closes the session.
 func (s *MasterSession) Close() error {
 	return s.sess.Close()
 }
 
-// OpenSession creates a new master session over the given connection.
-// It establishes a yamux client session and opens two control channels:
-// one for client-to-server messages (with encoder) and one for server-to-client
-// messages (with decoder).
-func OpenSession(conn net.Conn) (*MasterSession, error) {
+// OpenSessionContext creates a master session and opens the two control streams.
+// ctx cancels control stream opens. timeout specifies the deadline for control operations.
+func OpenSessionContext(ctx context.Context, conn net.Conn, timeout time.Duration) (*MasterSession, error) {
 	out := MasterSession{
-		sess: &Session{},
+		sess:    &Session{},
+		timeout: timeout,
 	}
 	var err error
 
@@ -42,33 +44,33 @@ func OpenSession(conn net.Conn) (*MasterSession, error) {
 		return nil, fmt.Errorf("yamux.Client(conn): %s", err)
 	}
 
-	out.sess.ctlClientToServer, err = out.openNewChannel()
+	out.sess.ctlClientToServer, err = out.GetOneChannelContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("out.OpenNewChannel() for ctlClientToServer: %s", err)
+		return nil, fmt.Errorf("out.GetOneChannelContext() for ctlClientToServer: %s", err)
 	}
 	out.enc = gob.NewEncoder(out.sess.ctlClientToServer)
 
-	out.sess.ctlServerToClient, err = out.openNewChannel()
+	out.sess.ctlServerToClient, err = out.GetOneChannelContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("out.OpenNewChannel() for ctlServerToClient: %s", err)
+		return nil, fmt.Errorf("out.GetOneChannelContext() for ctlServerToClient: %s", err)
 	}
 	out.dec = gob.NewDecoder(out.sess.ctlServerToClient)
 
 	return &out, nil
 }
 
-// SendAndGetOneChannel sends a message to the slave and opens a new channel
-// for data transfer. This is used for operations that require one bidirectional
-// data stream, such as port forwarding or SOCKS connections.
-func (s *MasterSession) SendAndGetOneChannel(m msg.Message) (net.Conn, error) {
+// SendAndGetOneChannelContext sends m and opens one yamux stream. The send
+// and stream-open are ordered by holding s.mu.
+func (s *MasterSession) SendAndGetOneChannelContext(ctx context.Context, m msg.Message) (net.Conn, error) {
+	// Lock across send + opening the new channel to keep ordering atomic.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.Send(m); err != nil {
+	if err := s.sendLocked(m, time.Time{}); err != nil {
 		return nil, fmt.Errorf("send(m): %s", err)
 	}
 
-	conn, err := s.openNewChannel()
+	conn, err := s.GetOneChannelContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("openNewChannel(): %s", err)
 	}
@@ -76,49 +78,94 @@ func (s *MasterSession) SendAndGetOneChannel(m msg.Message) (net.Conn, error) {
 	return conn, nil
 }
 
-// SendAndGetTwoChannels sends a message to the slave and opens two new channels
-// for data transfer. This is used for operations that require two unidirectional
-// streams, such as separating stdin/stdout for command execution.
-func (s *MasterSession) SendAndGetTwoChannels(m msg.Message) (net.Conn, net.Conn, error) {
+// SendAndGetTwoChannelsContext sends m and opens two yamux streams atomically.
+func (s *MasterSession) SendAndGetTwoChannelsContext(ctx context.Context, m msg.Message) (net.Conn, net.Conn, error) {
+	// Lock across send + opening two channels to keep ordering atomic.
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	if err := s.Send(m); err != nil {
+	if err := s.sendLocked(m, time.Time{}); err != nil {
 		return nil, nil, fmt.Errorf("send(m): %s", err)
 	}
 
-	conn1, err := s.openNewChannel()
+	conn1, err := s.GetOneChannelContext(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("openNewChannel() for conn1: %s", err)
+		return nil, nil, fmt.Errorf("GetOneChannelContext() for conn1: %s", err)
 	}
 
-	conn2, err := s.openNewChannel()
+	conn2, err := s.GetOneChannelContext(ctx)
 	if err != nil {
 		conn1.Close()
-		return nil, nil, fmt.Errorf("openNewChannel() for conn2: %s", err)
+		return nil, nil, fmt.Errorf("GetOneChannelContext() for conn2: %s", err)
 	}
 
 	return conn1, conn2, nil
 }
 
-// GetOneChannel opens a new channel without sending a message first.
-// This is used when the slave is expecting a channel to be opened by the master.
-func (s *MasterSession) GetOneChannel() (net.Conn, error) {
-	return s.openNewChannel()
-}
-
-// openNewChannel opens a new yamux stream over the multiplexed connection.
-func (s *MasterSession) openNewChannel() (net.Conn, error) {
-	out, err := s.sess.mux.Open()
-	if err != nil {
-		return nil, fmt.Errorf("session.Open(), ctl: %s", err)
+// GetOneChannelContext opens a yamux stream; if yamux lacks a context-aware
+// API we run Open() in a goroutine and return on ctx.Done().
+func (s *MasterSession) GetOneChannelContext(ctx context.Context) (net.Conn, error) {
+	if s.sess == nil || s.sess.mux == nil {
+		return nil, fmt.Errorf("no mux session")
 	}
 
-	return out, nil
+	// Run blocking Open() in a goroutine and select on ctx.Done(). This is
+	// the portable approach because the yamux package does not provide a
+	// context-aware Open on the Session API. Using a goroutine + buffered
+	// result channel lets us respect the caller's context while avoiding
+	// goroutine leaks when the caller cancels early.
+	type result struct {
+		c   net.Conn
+		err error
+	}
+	resCh := make(chan result, 1)
+	go func() {
+		out, err := s.sess.mux.Open()
+		resCh <- result{out, err}
+	}()
+
+	select {
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	case r := <-resCh:
+		if r.err != nil {
+			return nil, fmt.Errorf("session.Open(), ctl: %s", r.err)
+		}
+		return r.c, nil
+	}
 }
 
-// Send sends a message to the slave over the control channel using gob encoding.
-func (s *MasterSession) Send(m msg.Message) error {
+// SendContext encodes m on the control channel. ctx cancels or shortens the op.
+func (s *MasterSession) SendContext(ctx context.Context, m msg.Message) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	// honour ctx cancellation by checking before write and using a deadline
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+
+	// compute absolute deadline: the earlier of caller's context deadline (if any)
+	// and the default timeout from configuration.
+	dl := time.Now().Add(s.timeout)
+	if d, ok := ctx.Deadline(); ok && d.Before(dl) {
+		dl = d
+	}
+
+	return s.sendLocked(m, dl)
+}
+
+// sendLocked encodes m while s.mu is held and sets a write deadline.
+func (s *MasterSession) sendLocked(m msg.Message, deadline time.Time) error {
+	if s.sess != nil && s.sess.ctlClientToServer != nil {
+		// if caller passed zero time, fall back to timeout from configuration
+		if deadline.IsZero() {
+			deadline = time.Now().Add(s.timeout)
+		}
+		_ = s.sess.ctlClientToServer.SetWriteDeadline(deadline)
+		defer s.sess.ctlClientToServer.SetWriteDeadline(time.Time{})
+	}
+
 	if err := s.enc.Encode(&m); err != nil {
 		return fmt.Errorf("sending msg: %s", err)
 	}
@@ -126,9 +173,37 @@ func (s *MasterSession) Send(m msg.Message) error {
 	return nil
 }
 
-// Receive receives a message from the slave over the control channel using gob decoding.
-func (s *MasterSession) Receive() (msg.Message, error) {
+// ReceiveContext decodes a message from the control stream, honoring ctx.
+// If ctx has no deadline we watch ctx.Done() and set an immediate read
+// deadline to interrupt Decode.
+func (s *MasterSession) ReceiveContext(ctx context.Context) (msg.Message, error) {
 	var m msg.Message
+	if s.sess != nil && s.sess.ctlServerToClient != nil {
+		// compute absolute deadline
+		dl := time.Now().Add(s.timeout)
+		if d, ok := ctx.Deadline(); ok && d.Before(dl) {
+			dl = d
+		}
+
+		_ = s.sess.ctlServerToClient.SetReadDeadline(dl)
+		defer s.sess.ctlServerToClient.SetReadDeadline(time.Time{})
+
+		// if caller didn't provide a deadline, allow ctx cancellation to
+		// interrupt the blocking decode by setting an immediate read deadline
+		// when ctx is cancelled. Use a done channel to avoid goroutine leaks.
+		if _, ok := ctx.Deadline(); !ok {
+			done := make(chan struct{})
+			go func() {
+				select {
+				case <-ctx.Done():
+					_ = s.sess.ctlServerToClient.SetReadDeadline(time.Now())
+				case <-done:
+				}
+			}()
+			defer close(done)
+		}
+	}
+
 	err := s.dec.Decode(&m)
 	return m, err
 }

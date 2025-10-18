@@ -41,6 +41,7 @@ type mockCmd struct {
 	started     bool
 	mu          sync.Mutex
 	doneCh      chan struct{}
+	doneOnce    sync.Once
 }
 
 func (m *mockCmd) StdoutPipe() (io.ReadCloser, error) {
@@ -96,11 +97,17 @@ func (m *mockCmd) Start() error {
 
 	// Start a goroutine to simulate shell behavior
 	go func() {
-		defer close(m.doneCh) // Signal completion to Wait()
+		// Ensure doneCh is closed exactly once when the goroutine finishes.
+		defer m.doneOnce.Do(func() { close(m.doneCh) })
 
 		buf := make([]byte, 4096)
 		var line []byte
 		for {
+			// If stdinRead is nil, break immediately to avoid nil deref.
+			if m.stdinRead == nil {
+				break
+			}
+
 			n, err := m.stdinRead.Read(buf)
 			if n > 0 {
 				line = append(line, buf[:n]...)
@@ -121,8 +128,12 @@ func (m *mockCmd) Start() error {
 		}
 
 		// After stdin closes and all output is processed, close writers
-		m.stdoutWrite.Close()
-		m.stderrWrite.Close()
+		if m.stdoutWrite != nil {
+			_ = m.stdoutWrite.Close()
+		}
+		if m.stderrWrite != nil {
+			_ = m.stderrWrite.Close()
+		}
 	}()
 
 	return nil
@@ -144,9 +155,12 @@ func (m *mockCmd) processCommand(cmd string) {
 			_, _ = m.stdoutWrite.Write([]byte("mockcmd[" + m.program + "]\n"))
 		}
 	} else if cmd == "exit" {
+		// Simulate shell exit: close stdin to stop the input loop and
+		// signal completion.
 		if m.stdinRead != nil {
-			m.stdinRead.Close()
+			_ = m.stdinRead.Close()
 		}
+		m.doneOnce.Do(func() { close(m.doneCh) })
 	} else {
 		if m.stderrWrite != nil {
 			_, _ = m.stderrWrite.Write([]byte("command not supported by mock: " + cmd + "\n"))
@@ -184,11 +198,9 @@ func (m *mockProcess) Kill() error {
 	}
 
 	// Signal done if not already
-	select {
-	case <-m.cmd.doneCh:
-		// already closed
-	default:
+	m.cmd.doneOnce.Do(func() {
+		// closing doneCh to signal Wait().
 		close(m.cmd.doneCh)
-	}
+	})
 	return nil
 }

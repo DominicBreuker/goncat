@@ -30,6 +30,13 @@ func makeSlaveHandler(ctx context.Context, cfg *config.Shared) func(conn net.Con
 		defer log.InfoMsg("Connection to %s closed\n", conn.RemoteAddr())
 		defer conn.Close()
 
+		// Close the active connection when the parent context is cancelled so
+		// per-connection handlers (which may block on reads) can exit promptly.
+		go func() {
+			<-ctx.Done()
+			conn.Close()
+		}()
+
 		slv, err := slave.New(ctx, cfg, conn)
 		if err != nil {
 			return fmt.Errorf("slave.New(): %s", err)

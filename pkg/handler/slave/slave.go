@@ -9,6 +9,7 @@ import (
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux"
 	"dominicbreuker/goncat/pkg/mux/msg"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -26,7 +27,7 @@ type Slave struct {
 // New creates a new Slave handler over the given connection.
 // It accepts a multiplexed session for handling commands from the master.
 func New(ctx context.Context, cfg *config.Shared, conn net.Conn) (*Slave, error) {
-	sess, err := mux.AcceptSession(conn)
+	sess, err := mux.AcceptSessionContext(ctx, conn, cfg.Timeout)
 	if err != nil {
 		return nil, fmt.Errorf("mux.AcceptSession(conn): %s", err)
 	}
@@ -50,10 +51,17 @@ func (slv *Slave) Handle() error {
 	defer cancel()
 
 	for {
-		m, err := slv.sess.Receive()
+		m, err := slv.sess.ReceiveContext(slv.ctx)
 		if err != nil {
 			if err == io.EOF {
 				return nil
+			}
+			// Ignore deadline/timeout errors caused by context/deadline checks.
+			if err == context.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
+				continue
+			}
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				continue
 			}
 
 			log.ErrorMsg("Receiving next command: %s\n", err)

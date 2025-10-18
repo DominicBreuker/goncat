@@ -2,12 +2,15 @@ package slave
 
 import (
 	"context"
+	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"encoding/gob"
 	"fmt"
 	"io"
 	"net"
+	"sync"
+	"time"
 )
 
 // UDPRelay manages UDP datagram forwarding for SOCKS5 ASSOCIATE requests on the slave side.
@@ -19,19 +22,22 @@ type UDPRelay struct {
 	ConnRemote net.Conn
 
 	cancel   context.CancelFunc
+	mu       sync.RWMutex
 	isClosed bool
 	sessCtl  ClientControlSession
 }
 
 // NewUDPRelay creates a new UDP relay for handling SOCKS5 ASSOCIATE requests.
 // It binds a local UDP port for sending/receiving datagrams and opens a control channel.
-func NewUDPRelay(ctx context.Context, sessCtl ClientControlSession) (*UDPRelay, error) {
-	connLocal, err := net.ListenPacket("udp", "0.0.0.0:")
+func NewUDPRelay(ctx context.Context, sessCtl ClientControlSession, deps *config.Dependencies) (*UDPRelay, error) {
+	// Get the packet listener function from dependencies or use default
+	listenerFn := config.GetPacketListenerFunc(deps)
+	connLocal, err := listenerFn("udp", "0.0.0.0:")
 	if err != nil {
-		return nil, fmt.Errorf("net.ListenPacket(udp, 0.0.0.0:): %s", err)
+		return nil, fmt.Errorf("ListenPacket(udp, 0.0.0.0:): %s", err)
 	}
 
-	connRemote, err := sessCtl.GetOneChannel()
+	connRemote, err := sessCtl.GetOneChannelContext(ctx)
 	if err != nil {
 		defer connLocal.Close()
 		return nil, fmt.Errorf("AcceptNewChannel(): %s", err)
@@ -51,14 +57,23 @@ func NewUDPRelay(ctx context.Context, sessCtl ClientControlSession) (*UDPRelay, 
 
 // Close shuts down the UDP relay and closes all connections.
 func (r *UDPRelay) Close() error {
+	r.mu.Lock()
 	r.isClosed = true
+	r.mu.Unlock()
 
 	r.cancel()
 	defer r.ConnRemote.Close()
 	return r.ConnLocal.Close()
 }
 
-// LogError logs an error message with a prefix to indicate where it comes from
+// closed checks if the relay has been closed (thread-safe).
+func (r *UDPRelay) closed() bool {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.isClosed
+}
+
+// LogError logs an error message with a prefix to indicate where it comes from.
 func (r *UDPRelay) LogError(format string, a ...interface{}) {
 	log.ErrorMsg("UDP Relay: "+format, a...)
 }
@@ -74,7 +89,11 @@ func (r *UDPRelay) Serve() error {
 func (r *UDPRelay) localToRemote() {
 	writeRemote := gob.NewEncoder(r.ConnRemote)
 
-	data := make(chan []byte)
+	type udpPacket struct {
+		data []byte
+		addr *net.UDPAddr
+	}
+	data := make(chan udpPacket)
 
 	go func() {
 		defer close(data)
@@ -82,22 +101,43 @@ func (r *UDPRelay) localToRemote() {
 
 		buff := make([]byte, 65507)
 		for {
-			if r.isClosed {
+			if r.closed() {
 				return
+			}
+
+			// Short read deadline to periodically unblock and check context cancellation.
+			if udpConn, ok := r.ConnLocal.(interface{ SetReadDeadline(time.Time) error }); ok {
+				udpConn.SetReadDeadline(time.Now().Add(200 * time.Millisecond))
 			}
 
 			n, remoteAddr, err := r.ConnLocal.ReadFrom(buff)
 			if err != nil {
-				if r.isClosed {
+				if ne, ok := err.(net.Error); ok && ne.Timeout() {
+					if r.ctx.Err() != nil {
+						return
+					}
+					continue
+				}
+
+				if r.closed() {
 					return // ignore errors if closed
 				}
 
-				r.LogError("receiving packet from %s: %s", remoteAddr, err)
+				r.LogError("receiving packet from %s: %s\n", remoteAddr, err)
 				return
 			}
 
+			// Extract UDP address
+			udpAddr, ok := remoteAddr.(*net.UDPAddr)
+			if !ok {
+				continue
+			}
+
+			// Copy data and send to channel
+			b := make([]byte, n)
+			copy(b, buff[:n])
 			select {
-			case data <- buff[:n]:
+			case data <- udpPacket{data: b, addr: udpAddr}:
 			case <-r.ctx.Done():
 				return
 			}
@@ -108,15 +148,17 @@ func (r *UDPRelay) localToRemote() {
 		select {
 		case <-r.ctx.Done():
 			return
-		case b, ok := <-data:
+		case pkt, ok := <-data:
 			if !ok {
 				return
 			}
 
 			if err := writeRemote.Encode(&msg.SocksDatagram{
-				Data: b,
+				Addr: pkt.addr.IP.String(),
+				Port: pkt.addr.Port,
+				Data: pkt.data,
 			}); err != nil {
-				if r.isClosed {
+				if r.closed() {
 					return // ignore errors if closed
 				}
 
@@ -179,7 +221,7 @@ func (r *UDPRelay) remoteToLocal() error {
 
 // sendToDst sends a UDP datagram to the specified destination address and port.
 func (r *UDPRelay) sendToDst(addr string, port int, data []byte) error {
-	if r.isClosed {
+	if r.closed() {
 		return fmt.Errorf("use of closed relay")
 	}
 

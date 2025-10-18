@@ -101,6 +101,10 @@ func (f *fakeServerControlSession) SendAndGetOneChannel(m msg.Message) (net.Conn
 	return nil, nil
 }
 
+func (f *fakeServerControlSession) SendAndGetOneChannelContext(ctx context.Context, m msg.Message) (net.Conn, error) {
+	return f.SendAndGetOneChannel(m)
+}
+
 func TestNewServer_AllFields(t *testing.T) {
 	t.Parallel()
 
@@ -490,7 +494,7 @@ func TestServer_Handle_AcceptAndForward(t *testing.T) {
 	// Use mock TCP network
 	mockNet := mocks.NewMockTCPNetwork()
 	deps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCP,
+		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
 	}
 

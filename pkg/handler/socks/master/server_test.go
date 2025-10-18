@@ -23,7 +23,18 @@ func (f *fakeServerControlSession) SendAndGetOneChannel(m msg.Message) (net.Conn
 	return nil, nil
 }
 
+func (f *fakeServerControlSession) SendAndGetOneChannelContext(ctx context.Context, m msg.Message) (net.Conn, error) {
+	return f.SendAndGetOneChannel(m)
+}
+
 func (f *fakeServerControlSession) Send(m msg.Message) error {
+	if f.sendFn != nil {
+		return f.sendFn(m)
+	}
+	return nil
+}
+
+func (f *fakeServerControlSession) SendContext(ctx context.Context, m msg.Message) error {
 	if f.sendFn != nil {
 		return f.sendFn(m)
 	}
@@ -367,7 +378,7 @@ func TestNewUDPRelay_InvalidAddress(t *testing.T) {
 		t.Fatalf("Failed to create test request: %v", err)
 	}
 
-	_, err = NewUDPRelay(ctx, invalidAddr, req, client)
+	_, err = NewUDPRelay(ctx, invalidAddr, req, client, nil)
 	if err == nil {
 		t.Error("NewUDPRelay() expected error with invalid address, got nil")
 	}

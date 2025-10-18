@@ -32,8 +32,9 @@ func NewDialer(ctx context.Context, addr string, proto config.Protocol) *Dialer 
 
 // Dial establishes a WebSocket connection to the configured URL.
 // It returns a net.Conn that wraps the WebSocket connection for binary message exchange.
-func (d *Dialer) Dial() (net.Conn, error) {
-	c, _, err := websocket.Dial(d.ctx, d.url, &websocket.DialOptions{
+// Accepts a context to allow cancellation.
+func (d *Dialer) Dial(ctx context.Context) (net.Conn, error) {
+	c, _, err := websocket.Dial(ctx, d.url, &websocket.DialOptions{
 		HTTPClient: &http.Client{
 			Transport: &http.Transport{
 				TLSClientConfig: &tls.Config{
@@ -47,5 +48,5 @@ func (d *Dialer) Dial() (net.Conn, error) {
 		return nil, fmt.Errorf("websocket.Dial(%s): %s", d.url, err)
 	}
 
-	return websocket.NetConn(d.ctx, c, websocket.MessageBinary), nil
+	return websocket.NetConn(ctx, c, websocket.MessageBinary), nil
 }

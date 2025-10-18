@@ -35,7 +35,7 @@ type Config struct {
 // ServerControlSession represents the interface for communicating over
 // a multiplexed control session to establish new forwarding channels.
 type ServerControlSession interface {
-	SendAndGetOneChannel(m msg.Message) (net.Conn, error)
+	SendAndGetOneChannelContext(ctx context.Context, m msg.Message) (net.Conn, error)
 }
 
 // String returns a human-readable string representation of the port forwarding configuration.
@@ -76,7 +76,7 @@ func (srv *Server) Handle() error {
 	}()
 
 	for {
-		conn, err := l.Accept()
+		conn, err := srv.acceptWithContext(l)
 		if err != nil {
 			if srv.ctx.Err() != nil {
 				return nil // cancelled
@@ -96,13 +96,36 @@ func (srv *Server) Handle() error {
 	}
 }
 
+// acceptWithContext accepts from the provided listener but returns early when
+// srv.ctx is cancelled. It runs Accept() in a goroutine and selects on the
+// server context to avoid leaking goroutines when the caller cancels.
+func (srv *Server) acceptWithContext(l net.Listener) (net.Conn, error) {
+	type res struct {
+		c   net.Conn
+		err error
+	}
+
+	ch := make(chan res, 1)
+	go func() {
+		c, e := l.Accept()
+		ch <- res{c: c, err: e}
+	}()
+
+	select {
+	case <-srv.ctx.Done():
+		return nil, srv.ctx.Err()
+	case r := <-ch:
+		return r.c, r.err
+	}
+}
+
 func (srv *Server) handlePortForwardingConn(connLocal net.Conn) error {
 	m := msg.Connect{
 		RemoteHost: srv.cfg.RemoteHost,
 		RemotePort: srv.cfg.RemotePort,
 	}
 
-	connRemote, err := srv.sessCtl.SendAndGetOneChannel(m)
+	connRemote, err := srv.sessCtl.SendAndGetOneChannelContext(srv.ctx, m)
 	if err != nil {
 		return fmt.Errorf("SendAndGetOneChannel() for conn: %s", err)
 	}

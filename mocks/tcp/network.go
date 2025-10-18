@@ -1,5 +1,5 @@
-// Package mocks provides mock implementations for testing.
-package mocks
+// Package tcp provides mock TCP network primitives for testing.
+package tcp
 
 import (
 	"context"
@@ -12,7 +12,7 @@ import (
 // MockTCPNetwork simulates a TCP network for testing without real network connections.
 // It allows creating listeners and dialers that communicate through in-memory pipes.
 type MockTCPNetwork struct {
-	listeners    map[string]*mockTCPListener
+	listeners    map[string]*MockTCPListener
 	mu           sync.Mutex
 	listenerCond *sync.Cond // Condition variable to signal listener changes
 }
@@ -20,7 +20,7 @@ type MockTCPNetwork struct {
 // NewMockTCPNetwork creates a new mock TCP network.
 func NewMockTCPNetwork() *MockTCPNetwork {
 	m := &MockTCPNetwork{
-		listeners: make(map[string]*mockTCPListener),
+		listeners: make(map[string]*MockTCPListener),
 	}
 	m.listenerCond = sync.NewCond(&m.mu)
 	return m
@@ -40,11 +40,12 @@ func (m *MockTCPNetwork) ListenTCP(network string, laddr *net.TCPAddr) (net.List
 		return nil, fmt.Errorf("address already in use: %s", addr)
 	}
 
-	listener := &mockTCPListener{
-		addr:    laddr,
-		connCh:  make(chan *mockTCPConn, 10),
-		closeCh: make(chan struct{}),
-		network: m,
+	listener := &MockTCPListener{
+		addr:       laddr,
+		connCh:     make(chan *MockTCPConn, 10),
+		acceptedCh: make(chan *MockTCPConn, 16),
+		closeCh:    make(chan struct{}),
+		network:    m,
 	}
 	m.listeners[addr] = listener
 	m.listenerCond.Broadcast() // Signal that a new listener is available
@@ -77,12 +78,12 @@ func (m *MockTCPNetwork) DialTCP(network string, laddr, raddr *net.TCPAddr) (net
 	// Create a pair of connected pipes
 	clientConn, serverConn := net.Pipe()
 
-	mockClient := &mockTCPConn{
+	mockClient := &MockTCPConn{
 		Conn:       clientConn,
 		localAddr:  laddr,
 		remoteAddr: raddr,
 	}
-	mockServer := &mockTCPConn{
+	mockServer := &MockTCPConn{
 		Conn:       serverConn,
 		localAddr:  raddr,
 		remoteAddr: laddr,
@@ -121,7 +122,7 @@ func (m *MockTCPNetwork) DialTCPContext(ctx context.Context, network string, lad
 // WaitForListener waits for a listener to be created on the specified address within the given timeout.
 // It returns nil if the listener is found, or an error if the timeout expires.
 // The timeout is specified in milliseconds.
-func (m *MockTCPNetwork) WaitForListener(addr string, timeoutMs int) error {
+func (m *MockTCPNetwork) WaitForListener(addr string, timeoutMs int) (*MockTCPListener, error) {
 	deadline := time.Now().Add(time.Duration(timeoutMs) * time.Millisecond)
 
 	m.mu.Lock()
@@ -129,13 +130,13 @@ func (m *MockTCPNetwork) WaitForListener(addr string, timeoutMs int) error {
 
 	for {
 		// Check if the listener already exists
-		if _, exists := m.listeners[addr]; exists {
-			return nil
+		if l, exists := m.listeners[addr]; exists {
+			return l, nil
 		}
 
 		// Check if we've exceeded the timeout
 		if time.Now().After(deadline) {
-			return fmt.Errorf("timeout waiting for listener on %s", addr)
+			return nil, fmt.Errorf("timeout waiting for listener on %s", addr)
 		}
 
 		// Wait for a signal that a new listener is available, with a small timeout
@@ -147,73 +148,3 @@ func (m *MockTCPNetwork) WaitForListener(addr string, timeoutMs int) error {
 		m.listenerCond.Wait()
 	}
 }
-
-// mockTCPListener is a mock implementation of net.TCPListener.
-type mockTCPListener struct {
-	addr    *net.TCPAddr
-	connCh  chan *mockTCPConn
-	closeCh chan struct{}
-	closed  bool
-	mu      sync.Mutex
-	network *MockTCPNetwork
-}
-
-// Accept waits for and returns the next connection to the listener.
-func (l *mockTCPListener) Accept() (net.Conn, error) {
-	select {
-	case conn := <-l.connCh:
-		return conn, nil
-	case <-l.closeCh:
-		return nil, fmt.Errorf("listener closed")
-	}
-}
-
-// Close closes the listener.
-func (l *mockTCPListener) Close() error {
-	l.mu.Lock()
-	defer l.mu.Unlock()
-
-	if l.closed {
-		return nil
-	}
-	l.closed = true
-	close(l.closeCh)
-
-	// Remove the listener from the network's map
-	l.network.mu.Lock()
-	delete(l.network.listeners, l.addr.String())
-	l.network.mu.Unlock()
-
-	return nil
-}
-
-// Addr returns the listener's network address.
-func (l *mockTCPListener) Addr() net.Addr {
-	return l.addr
-}
-
-// mockTCPConn is a mock implementation of net.TCPConn.
-type mockTCPConn struct {
-	net.Conn
-	localAddr  *net.TCPAddr
-	remoteAddr *net.TCPAddr
-}
-
-// LocalAddr returns the local network address.
-func (c *mockTCPConn) LocalAddr() net.Addr {
-	if c.localAddr != nil {
-		return c.localAddr
-	}
-	return c.Conn.LocalAddr()
-}
-
-// RemoteAddr returns the remote network address.
-func (c *mockTCPConn) RemoteAddr() net.Addr {
-	if c.remoteAddr != nil {
-		return c.remoteAddr
-	}
-	return c.Conn.RemoteAddr()
-}
-
-var _ net.Listener = (*mockTCPListener)(nil)
-var _ net.Conn = (*mockTCPConn)(nil)

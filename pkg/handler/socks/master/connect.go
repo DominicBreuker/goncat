@@ -1,6 +1,9 @@
 package master
 
 import (
+	"context"
+	"time"
+
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"dominicbreuker/goncat/pkg/pipeio"
@@ -17,7 +20,12 @@ func (srv *Server) handleConnect(connLocal net.Conn, sr *socks.Request) error {
 		RemotePort: int(sr.DstPort),
 	}
 
-	connRemote, err := srv.sessCtl.SendAndGetOneChannel(m)
+	// Bound the control operation with a short timeout so a stalled control
+	// session doesn't block the handler indefinitely.
+	opCtx, cancel := context.WithTimeout(srv.ctx, 10*time.Second)
+	defer cancel()
+
+	connRemote, err := srv.sessCtl.SendAndGetOneChannelContext(opCtx, m)
 	if err != nil {
 		return fmt.Errorf("SendAndGetOneChannel() for conn: %s", err)
 	}

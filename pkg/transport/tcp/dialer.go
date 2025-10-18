@@ -4,6 +4,7 @@
 package tcp
 
 import (
+	"context"
 	"dominicbreuker/goncat/pkg/config"
 	"fmt"
 	"net"
@@ -32,8 +33,9 @@ func NewDialer(addr string, deps *config.Dependencies) (*Dialer, error) {
 }
 
 // Dial establishes a TCP connection to the configured address with keep-alive enabled.
-func (d *Dialer) Dial() (net.Conn, error) {
-	conn, err := d.dialerFn("tcp", nil, d.tcpAddr)
+// It accepts a context so the caller can cancel the dial.
+func (d *Dialer) Dial(ctx context.Context) (net.Conn, error) {
+	conn, err := d.dialerFn(ctx, "tcp", nil, d.tcpAddr)
 	if err != nil {
 		return nil, fmt.Errorf("net.DialTCP(tcp, %s): %s", d.tcpAddr.String(), err)
 	}

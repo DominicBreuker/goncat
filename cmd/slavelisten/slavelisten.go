@@ -11,6 +11,7 @@ import (
 	"dominicbreuker/goncat/pkg/log"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/urfave/cli/v3"
 )
@@ -47,6 +48,7 @@ func GetCommand() *cli.Command {
 				SSL:      cmd.Bool(shared.SSLFlag),
 				Key:      cmd.String(shared.KeyFlag),
 				Verbose:  cmd.Bool(shared.VerboseFlag),
+				Timeout:  time.Duration(cmd.Int(shared.TimeoutFlag)) * time.Millisecond,
 			}
 
 			if errors := config.Validate(cfg); len(errors) > 0 {

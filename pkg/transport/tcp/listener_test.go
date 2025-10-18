@@ -64,7 +64,7 @@ func TestListener_Serve(t *testing.T) {
 	// Use mock TCP network
 	mockNet := mocks.NewMockTCPNetwork()
 	deps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCP,
+		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
 	}
 
@@ -114,7 +114,7 @@ func TestListener_SingleConnection(t *testing.T) {
 	// Use mock TCP network
 	mockNet := mocks.NewMockTCPNetwork()
 	deps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCP,
+		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
 	}
 
@@ -186,7 +186,7 @@ func TestListener_HandlerError(t *testing.T) {
 	// Use mock TCP network
 	mockNet := mocks.NewMockTCPNetwork()
 	deps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCP,
+		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
 	}
 
@@ -239,7 +239,7 @@ func TestListener_Close(t *testing.T) {
 	// Use mock TCP network
 	mockNet := mocks.NewMockTCPNetwork()
 	deps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCP,
+		TCPDialer:   mockNet.DialTCPContext,
 		TCPListener: mockNet.ListenTCP,
 	}
 
