@@ -93,7 +93,6 @@ func (m *MockTCPNetwork) DialTCP(network string, laddr, raddr *net.TCPAddr) (net
 	select {
 	case listener.connCh <- mockServer:
 		// Connection established
-		fmt.Printf("MockTCPNetwork: DialTCP established connection from %s to %s\n", laddr.String(), raddr.String())
 	case <-listener.closeCh:
 		clientConn.Close()
 		serverConn.Close()

@@ -234,6 +234,11 @@ func TestSlaveSession_SendAndGetOneChannel(t *testing.T) {
 
 // TestSlaveSession_GetOneChannel verifies accepting a channel without sending a message.
 func TestSlaveSession_GetOneChannel(t *testing.T) {
+	// Skip this flaky test in short mode.
+	if testing.Short() {
+		t.Skip("skipping flaky test in short mode")
+	}
+
 	t.Parallel()
 
 	client, server := net.Pipe()
