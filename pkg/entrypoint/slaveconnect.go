@@ -2,23 +2,15 @@ package entrypoint
 
 import (
 	"context"
-	"dominicbreuker/goncat/pkg/client"
 	"dominicbreuker/goncat/pkg/config"
-	"dominicbreuker/goncat/pkg/handler/slave"
 	"fmt"
-	"net"
 )
 
-// slaveFactory is a function type for creating slave handlers.
-type slaveFactory func(context.Context, *config.Shared, net.Conn) (handlerInterface, error)
+// uses interfaces/factories from internal.go (DI for testing)
 
 // SlaveConnect connects to a remote master and follows its instructions as a slave.
 func SlaveConnect(ctx context.Context, cfg *config.Shared) error {
-	return slaveConnect(ctx, cfg, func(ctx context.Context, cfg *config.Shared) clientInterface {
-		return client.New(ctx, cfg)
-	}, func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
-		return slave.New(ctx, cfg, conn)
-	})
+	return slaveConnect(ctx, cfg, realClientFactory(), realSlaveFactory())
 }
 
 // slaveConnect is the internal implementation that accepts injected dependencies for testing.

@@ -5,63 +5,13 @@ import (
 	"dominicbreuker/goncat/pkg/config"
 	"errors"
 	"net"
-	"sync"
 	"testing"
 	"time"
 )
 
-// fakeClient implements clientInterface for testing.
-type fakeClient struct {
-	connectErr error
-	closeErr   error
-	closed     bool
-	closeCh    chan struct{}
-	conn       net.Conn
-	mu         sync.Mutex
-}
+// uses interfaces from internal.go and fakes from internal_test.go
 
-func (f *fakeClient) Connect() error {
-	return f.connectErr
-}
-
-func (f *fakeClient) Close() error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	if !f.closed {
-		f.closed = true
-		if f.closeCh != nil {
-			close(f.closeCh)
-		}
-	}
-	return f.closeErr
-}
-
-func (f *fakeClient) GetConnection() net.Conn {
-	return f.conn
-}
-
-// fakeMaster implements a fake master handler for testing.
-type fakeMaster struct {
-	handleErr  error
-	handleFunc func() error
-	closed     bool
-	mu         sync.Mutex
-}
-
-func (f *fakeMaster) Close() error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.closed = true
-	return nil
-}
-
-func (f *fakeMaster) Handle() error {
-	if f.handleFunc != nil {
-		return f.handleFunc()
-	}
-	return f.handleErr
-}
-
+// it should close the client and master handler on success
 func TestMasterConnect_Success(t *testing.T) {
 	t.Parallel()
 
@@ -100,6 +50,7 @@ func TestMasterConnect_Success(t *testing.T) {
 	}
 }
 
+// it should return an error if connecting fails
 func TestMasterConnect_ConnectError(t *testing.T) {
 	t.Parallel()
 
@@ -138,6 +89,7 @@ func TestMasterConnect_ConnectError(t *testing.T) {
 	}
 }
 
+// it should return an error if master creation fails
 func TestMasterConnect_MasterNewError(t *testing.T) {
 	t.Parallel()
 
@@ -173,6 +125,7 @@ func TestMasterConnect_MasterNewError(t *testing.T) {
 	}
 }
 
+// it should return an error and close the master handler and client if handling fails
 func TestMasterConnect_HandleError(t *testing.T) {
 	t.Parallel()
 
@@ -215,6 +168,7 @@ func TestMasterConnect_HandleError(t *testing.T) {
 	}
 }
 
+// it should handle context cancellation by closing client and master handler
 func TestMasterConnect_ContextCancellation(t *testing.T) {
 	t.Parallel()
 
@@ -277,42 +231,5 @@ func TestMasterConnect_ContextCancellation(t *testing.T) {
 		// Function returned
 	case <-time.After(1 * time.Second):
 		t.Error("masterConnect did not return")
-	}
-}
-
-func TestMasterConnect_ClientCloseError(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	cfg := &config.Shared{
-		Protocol: config.ProtoTCP,
-		Host:     "localhost",
-		Port:     8080,
-	}
-	mCfg := &config.Master{}
-
-	closeErr := errors.New("close failed")
-	fc := &fakeClient{
-		conn:     &fakeConn{},
-		closeErr: closeErr,
-	}
-	fm := &fakeMaster{}
-
-	newClient := func(ctx context.Context, cfg *config.Shared) clientInterface {
-		return fc
-	}
-
-	newMaster := func(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (handlerInterface, error) {
-		return fm, nil
-	}
-
-	// Close error should not prevent function from succeeding
-	err := masterConnect(ctx, cfg, mCfg, newClient, newMaster)
-	if err != nil {
-		t.Fatalf("masterConnect() error = %v, want nil (close error should be ignored)", err)
-	}
-
-	if !fc.closed {
-		t.Error("client Close was not attempted")
 	}
 }

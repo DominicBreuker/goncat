@@ -5,32 +5,11 @@ import (
 	"dominicbreuker/goncat/pkg/config"
 	"errors"
 	"net"
-	"sync"
 	"testing"
 	"time"
 )
 
-// fakeSlave implements a fake slave handler for testing.
-type fakeSlave struct {
-	handleErr  error
-	handleFunc func() error
-	closed     bool
-	mu         sync.Mutex
-}
-
-func (f *fakeSlave) Close() error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.closed = true
-	return nil
-}
-
-func (f *fakeSlave) Handle() error {
-	if f.handleFunc != nil {
-		return f.handleFunc()
-	}
-	return f.handleErr
-}
+// uses interfaces from internal.go and fakes from internal_test.go
 
 func TestSlaveConnect_Success(t *testing.T) {
 	t.Parallel()

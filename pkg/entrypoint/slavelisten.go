@@ -5,18 +5,16 @@ import (
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/handler/slave"
 	"dominicbreuker/goncat/pkg/log"
-	"dominicbreuker/goncat/pkg/server"
-	"dominicbreuker/goncat/pkg/transport"
 	"fmt"
 	"net"
 )
 
+// uses interfaces/factories from internal.go (DI for testing)
+
 // SlaveListen starts a server that listens for incoming master connections
 // and follows their instructions as a slave.
 func SlaveListen(ctx context.Context, cfg *config.Shared) error {
-	return slaveListen(ctx, cfg, func(ctx context.Context, cfg *config.Shared, handle transport.Handler) (serverInterface, error) {
-		return server.New(ctx, cfg, handle)
-	}, makeSlaveHandler)
+	return slaveListen(ctx, cfg, realServerFactory(), makeSlaveHandler)
 }
 
 // slaveListen is the internal implementation that accepts injected dependencies for testing.

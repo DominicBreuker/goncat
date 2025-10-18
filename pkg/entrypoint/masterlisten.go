@@ -8,27 +8,16 @@ import (
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/handler/master"
 	"dominicbreuker/goncat/pkg/log"
-	"dominicbreuker/goncat/pkg/server"
-	"dominicbreuker/goncat/pkg/transport"
 	"fmt"
 	"net"
 )
 
-// serverInterface defines the interface for a server that can serve and be closed.
-type serverInterface interface {
-	Serve() error
-	Close() error
-}
-
-// serverFactory is a function type for creating servers.
-type serverFactory func(ctx context.Context, cfg *config.Shared, handle transport.Handler) (serverInterface, error)
+// uses interfaces/factories from internal.go (DI for testing)
 
 // MasterListen starts a server that listens for incoming slave connections
 // and controls them as a master.
 func MasterListen(ctx context.Context, cfg *config.Shared, mCfg *config.Master) error {
-	return masterListen(ctx, cfg, mCfg, func(ctx context.Context, cfg *config.Shared, handle transport.Handler) (serverInterface, error) {
-		return server.New(ctx, cfg, handle)
-	}, makeMasterHandler)
+	return masterListen(ctx, cfg, mCfg, realServerFactory(), makeMasterHandler)
 }
 
 // masterListen is the internal implementation that accepts injected dependencies for testing.

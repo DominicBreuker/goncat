@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-// Note: This test file uses fakeServer and fakeConn from masterlisten_test.go since they are in the same package.
+// uses interfaces from internal.go and fakes from internal_test.go
 
 func TestSlaveListen_Success(t *testing.T) {
 	t.Parallel()
