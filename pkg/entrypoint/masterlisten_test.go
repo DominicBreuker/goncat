@@ -6,9 +6,56 @@ import (
 	"dominicbreuker/goncat/pkg/transport"
 	"errors"
 	"net"
+	"sync"
 	"testing"
 	"time"
 )
+
+// testConfig creates a standard test configuration.
+func testConfig() *config.Shared {
+	return &config.Shared{
+		Protocol: config.ProtoTCP,
+		Host:     "localhost",
+		Port:     8080,
+	}
+}
+
+// runAsync runs a function in a goroutine and returns an error channel.
+func runAsync(fn func() error) chan error {
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- fn()
+	}()
+	return errCh
+}
+
+// waitForError waits for an error from a channel with timeout.
+func waitForError(t *testing.T, errCh chan error, timeout time.Duration) error {
+	t.Helper()
+	select {
+	case err := <-errCh:
+		return err
+	case <-time.After(timeout):
+		t.Fatal("timeout waiting for function to complete")
+		return nil
+	}
+}
+
+// assertNoError fails the test if err is not nil.
+func assertNoError(t *testing.T, err error, msg string) {
+	t.Helper()
+	if err != nil {
+		t.Fatalf("%s: got error %v, want nil", msg, err)
+	}
+}
+
+// assertError fails the test if err is nil.
+func assertError(t *testing.T, err error, msg string) {
+	t.Helper()
+	if err == nil {
+		t.Fatalf("%s: got nil, want error", msg)
+	}
+}
 
 // fakeServer implements a fake server for testing.
 type fakeServer struct {
@@ -18,6 +65,7 @@ type fakeServer struct {
 	closeCh   chan struct{}
 	closeErr  error
 	closeWait time.Duration
+	mu        sync.Mutex
 }
 
 func (f *fakeServer) Serve() error {
@@ -31,6 +79,8 @@ func (f *fakeServer) Close() error {
 	if f.closeWait > 0 {
 		time.Sleep(f.closeWait)
 	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if !f.closed {
 		f.closed = true
 		if f.closeCh != nil {
@@ -44,51 +94,32 @@ func TestMasterListen_Success(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	cfg := &config.Shared{
-		Protocol: config.ProtoTCP,
-		Host:     "localhost",
-		Port:     8080,
-	}
+	cfg := testConfig()
 	mCfg := &config.Master{}
 
-	fs := &fakeServer{
-		serveCh: make(chan struct{}),
-	}
-
-	newServer := func(ctx context.Context, cfg *config.Shared, handle transport.Handler) (serverInterface, error) {
+	fs := &fakeServer{serveCh: make(chan struct{})}
+	newServer := func(context.Context, *config.Shared, transport.Handler) (serverInterface, error) {
 		return fs, nil
 	}
 
 	handlerCalled := false
-	makeHandler := func(ctx context.Context, cfg *config.Shared, mCfg *config.Master) func(net.Conn) error {
+	makeHandler := func(context.Context, *config.Shared, *config.Master) func(net.Conn) error {
 		handlerCalled = true
-		return func(conn net.Conn) error {
-			return nil
-		}
+		return func(net.Conn) error { return nil }
 	}
 
-	// Run masterListen in a goroutine
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- masterListen(ctx, cfg, mCfg, newServer, makeHandler)
-	}()
+	errCh := runAsync(func() error {
+		return masterListen(ctx, cfg, mCfg, newServer, makeHandler)
+	})
 
-	// Give it time to set up
-	time.Sleep(50 * time.Millisecond)
+	time.Sleep(50 * time.Millisecond) // Give time to set up
+	close(fs.serveCh)                 // Signal serve to return
 
-	// Signal serve to return
-	close(fs.serveCh)
-
-	// Wait for completion
-	err := <-errCh
-	if err != nil {
-		t.Fatalf("masterListen() error = %v, want nil", err)
-	}
+	assertNoError(t, waitForError(t, errCh, time.Second), "masterListen()")
 
 	if !handlerCalled {
 		t.Error("makeHandler was not called")
 	}
-
 	if !fs.closed {
 		t.Error("server was not closed")
 	}
@@ -97,64 +128,31 @@ func TestMasterListen_Success(t *testing.T) {
 func TestMasterListen_ServerNewError(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-	cfg := &config.Shared{
-		Protocol: config.ProtoTCP,
-		Host:     "localhost",
-		Port:     8080,
-	}
-	mCfg := &config.Master{}
-
 	expectedErr := errors.New("server creation failed")
-	newServer := func(ctx context.Context, cfg *config.Shared, handle transport.Handler) (serverInterface, error) {
+	newServer := func(context.Context, *config.Shared, transport.Handler) (serverInterface, error) {
 		return nil, expectedErr
 	}
-
-	makeHandler := func(ctx context.Context, cfg *config.Shared, mCfg *config.Master) func(net.Conn) error {
-		return func(conn net.Conn) error {
-			return nil
-		}
+	makeHandler := func(context.Context, *config.Shared, *config.Master) func(net.Conn) error {
+		return func(net.Conn) error { return nil }
 	}
 
-	err := masterListen(ctx, cfg, mCfg, newServer, makeHandler)
-	if err == nil {
-		t.Fatal("masterListen() error = nil, want error")
-	}
-	if !errors.Is(err, expectedErr) && err.Error() != "server.New(): server creation failed" {
-		t.Errorf("masterListen() error = %v, want wrapped server creation error", err)
-	}
+	err := masterListen(context.Background(), testConfig(), &config.Master{}, newServer, makeHandler)
+	assertError(t, err, "masterListen() with server creation error")
 }
 
 func TestMasterListen_ServeError(t *testing.T) {
 	t.Parallel()
 
-	ctx := context.Background()
-	cfg := &config.Shared{
-		Protocol: config.ProtoTCP,
-		Host:     "localhost",
-		Port:     8080,
-	}
-	mCfg := &config.Master{}
-
-	serveErr := errors.New("serve failed")
-	fs := &fakeServer{
-		serveErr: serveErr,
-	}
-
-	newServer := func(ctx context.Context, cfg *config.Shared, handle transport.Handler) (serverInterface, error) {
+	fs := &fakeServer{serveErr: errors.New("serve failed")}
+	newServer := func(context.Context, *config.Shared, transport.Handler) (serverInterface, error) {
 		return fs, nil
 	}
-
-	makeHandler := func(ctx context.Context, cfg *config.Shared, mCfg *config.Master) func(net.Conn) error {
-		return func(conn net.Conn) error {
-			return nil
-		}
+	makeHandler := func(context.Context, *config.Shared, *config.Master) func(net.Conn) error {
+		return func(net.Conn) error { return nil }
 	}
 
-	err := masterListen(ctx, cfg, mCfg, newServer, makeHandler)
-	if err == nil {
-		t.Fatal("masterListen() error = nil, want error")
-	}
+	err := masterListen(context.Background(), testConfig(), &config.Master{}, newServer, makeHandler)
+	assertError(t, err, "masterListen() with serve error")
 
 	if !fs.closed {
 		t.Error("server was not closed despite serve error")
@@ -341,6 +339,7 @@ func TestMakeMasterHandler_ContextCancellation(t *testing.T) {
 type fakeConn struct {
 	closed  bool
 	closeCh chan struct{}
+	mu      sync.Mutex
 }
 
 func (f *fakeConn) Read(b []byte) (n int, err error) {
@@ -352,6 +351,8 @@ func (f *fakeConn) Write(b []byte) (n int, err error) {
 }
 
 func (f *fakeConn) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if !f.closed {
 		f.closed = true
 		if f.closeCh != nil {

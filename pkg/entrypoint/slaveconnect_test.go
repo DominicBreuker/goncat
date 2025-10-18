@@ -5,6 +5,7 @@ import (
 	"dominicbreuker/goncat/pkg/config"
 	"errors"
 	"net"
+	"sync"
 	"testing"
 	"time"
 )
@@ -14,9 +15,12 @@ type fakeSlave struct {
 	handleErr  error
 	handleFunc func() error
 	closed     bool
+	mu         sync.Mutex
 }
 
 func (f *fakeSlave) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.closed = true
 	return nil
 }

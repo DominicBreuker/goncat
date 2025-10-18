@@ -5,6 +5,7 @@ import (
 	"dominicbreuker/goncat/pkg/config"
 	"errors"
 	"net"
+	"sync"
 	"testing"
 	"time"
 )
@@ -16,6 +17,7 @@ type fakeClient struct {
 	closed     bool
 	closeCh    chan struct{}
 	conn       net.Conn
+	mu         sync.Mutex
 }
 
 func (f *fakeClient) Connect() error {
@@ -23,6 +25,8 @@ func (f *fakeClient) Connect() error {
 }
 
 func (f *fakeClient) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	if !f.closed {
 		f.closed = true
 		if f.closeCh != nil {
@@ -41,9 +45,12 @@ type fakeMaster struct {
 	handleErr  error
 	handleFunc func() error
 	closed     bool
+	mu         sync.Mutex
 }
 
 func (f *fakeMaster) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
 	f.closed = true
 	return nil
 }
