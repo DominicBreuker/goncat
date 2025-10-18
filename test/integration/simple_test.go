@@ -2,11 +2,8 @@ package integration
 
 import (
 	"context"
-	"dominicbreuker/goncat/mocks"
-	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/entrypoint"
 	"dominicbreuker/goncat/test/helpers"
-	"io"
 	"testing"
 	"time"
 )
@@ -17,38 +14,12 @@ import (
 //   - "goncat master listen 'tcp://*:12345'" (master listening)
 //   - "goncat slave connect tcp://127.0.0.1:12345" (slave connecting)
 func TestEndToEndDataExchange(t *testing.T) {
-	// Create mock network for TCP connections
-	mockNet := mocks.NewMockTCPNetwork()
+	// Setup mock dependencies and default configs
+	setup := helpers.SetupMockDependenciesAndConfigs()
+	defer setup.Close()
 
-	// Create mock stdio for master and slave
-	masterStdio := mocks.NewMockStdio()
-	slaveStdio := mocks.NewMockStdio()
-	defer masterStdio.Close()
-	defer slaveStdio.Close()
-
-	// Setup master dependencies (network + stdio)
-	masterDeps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCPContext,
-		TCPListener: mockNet.ListenTCP,
-		Stdin:       func() io.Reader { return masterStdio.GetStdin() },
-		Stdout:      func() io.Writer { return masterStdio.GetStdout() },
-	}
-
-	// Setup slave dependencies (network + stdio)
-	slaveDeps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCPContext,
-		TCPListener: mockNet.ListenTCP,
-		Stdin:       func() io.Reader { return slaveStdio.GetStdin() },
-		Stdout:      func() io.Writer { return slaveStdio.GetStdout() },
-	}
-
-	// Master configuration - simulates "master listen 'tcp://*:12345'"
-	masterSharedCfg := helpers.DefaultSharedConfig(masterDeps)
-	masterCfg := helpers.DefaultMasterConfig()
-	// No exec, just foreground piping (default)
-
-	// Slave configuration - simulates "slave connect tcp://127.0.0.1:12345"
-	slaveSharedCfg := helpers.DefaultSharedConfig(slaveDeps)
+	// No additional configuration needed for this simple test
+	// (using defaults: TCP protocol, 127.0.0.1:12345, no exec, just foreground piping)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -59,7 +30,7 @@ func TestEndToEndDataExchange(t *testing.T) {
 
 	// Start master server using entrypoint (listens for connections)
 	go func() {
-		if err := entrypoint.MasterListen(ctx, masterSharedCfg, masterCfg); err != nil {
+		if err := entrypoint.MasterListen(ctx, setup.MasterSharedCfg, setup.MasterCfg); err != nil {
 			// Context cancellation is expected
 			select {
 			case <-ctx.Done():
@@ -73,13 +44,13 @@ func TestEndToEndDataExchange(t *testing.T) {
 	}()
 
 	// Wait for master to start listening
-	if err := mockNet.WaitForListener("127.0.0.1:12345", 2000); err != nil {
+	if _, err := setup.TCPNetwork.WaitForListener("127.0.0.1:12345", 2000); err != nil {
 		t.Fatalf("Master failed to start listening: %v", err)
 	}
 
 	// Start slave using entrypoint (connects to master)
 	go func() {
-		if err := entrypoint.SlaveConnect(ctx, slaveSharedCfg); err != nil {
+		if err := entrypoint.SlaveConnect(ctx, setup.SlaveSharedCfg); err != nil {
 			slaveErr <- err
 			return
 		}
@@ -88,28 +59,28 @@ func TestEndToEndDataExchange(t *testing.T) {
 
 	// Test master → slave data flow
 	masterInput := "Hello from master!\n"
-	masterStdio.WriteToStdin([]byte(masterInput))
+	setup.MasterStdio.WriteToStdin([]byte(masterInput))
 
 	// Wait for data to arrive at slave's stdout
-	if err := slaveStdio.WaitForOutput("Hello from master!", 2000); err != nil {
+	if err := setup.SlaveStdio.WaitForOutput("Hello from master!", 2000); err != nil {
 		t.Errorf("Data did not arrive at slave: %v", err)
 	}
 
 	// Test slave → master data flow (bidirectional)
 	slaveInput := "Hello from slave!\n"
-	slaveStdio.WriteToStdin([]byte(slaveInput))
+	setup.SlaveStdio.WriteToStdin([]byte(slaveInput))
 
 	// Wait for data to arrive at master's stdout
-	if err := masterStdio.WaitForOutput("Hello from slave!", 2000); err != nil {
+	if err := setup.MasterStdio.WaitForOutput("Hello from slave!", 2000); err != nil {
 		t.Errorf("Data did not arrive at master: %v", err)
 	}
 
 	// Test multiple messages to ensure continuous bidirectional communication
 	masterInput2 := "Second message from master\n"
-	masterStdio.WriteToStdin([]byte(masterInput2))
+	setup.MasterStdio.WriteToStdin([]byte(masterInput2))
 
 	// Wait for second message to arrive at slave's stdout
-	if err := slaveStdio.WaitForOutput("Second message from master", 2000); err != nil {
+	if err := setup.SlaveStdio.WaitForOutput("Second message from master", 2000); err != nil {
 		t.Errorf("Second message did not arrive at slave: %v", err)
 	}
 

@@ -2,11 +2,8 @@ package integration
 
 import (
 	"context"
-	"dominicbreuker/goncat/mocks"
-	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/entrypoint"
 	"dominicbreuker/goncat/test/helpers"
-	"io"
 	"testing"
 	"time"
 )
@@ -17,42 +14,12 @@ import (
 //   - "goncat master listen 'tcp://*:12345' --exec /bin/sh" (master listening with exec)
 //   - "goncat slave connect tcp://127.0.0.1:12345" (slave connecting)
 func TestExecCommandExecution(t *testing.T) {
-	// Create mock network for TCP connections
-	mockNet := mocks.NewMockTCPNetwork()
+	// Setup mock dependencies and default configs
+	setup := helpers.SetupMockDependenciesAndConfigs()
+	defer setup.Close()
 
-	// Create mock stdio for master and slave
-	masterStdio := mocks.NewMockStdio()
-	slaveStdio := mocks.NewMockStdio()
-	defer masterStdio.Close()
-	defer slaveStdio.Close()
-
-	// Create mock exec for slave to simulate command execution
-	mockExec := mocks.NewMockExec()
-
-	// Setup master dependencies (network + stdio)
-	masterDeps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCPContext,
-		TCPListener: mockNet.ListenTCP,
-		Stdin:       func() io.Reader { return masterStdio.GetStdin() },
-		Stdout:      func() io.Writer { return masterStdio.GetStdout() },
-	}
-
-	// Setup slave dependencies (network + stdio + exec)
-	slaveDeps := &config.Dependencies{
-		TCPDialer:   mockNet.DialTCPContext,
-		TCPListener: mockNet.ListenTCP,
-		Stdin:       func() io.Reader { return slaveStdio.GetStdin() },
-		Stdout:      func() io.Writer { return slaveStdio.GetStdout() },
-		ExecCommand: mockExec.Command,
-	}
-
-	// Master configuration - simulates "master listen 'tcp://*:12345' --exec /bin/sh"
-	masterSharedCfg := helpers.DefaultSharedConfig(masterDeps)
-	masterCfg := helpers.DefaultMasterConfig()
-	masterCfg.Exec = "/bin/sh" // Execute /bin/sh on slave
-
-	// Slave configuration - simulates "slave connect tcp://127.0.0.1:12345"
-	slaveSharedCfg := helpers.DefaultSharedConfig(slaveDeps)
+	// Configure master to execute /bin/sh on slave
+	setup.MasterCfg.Exec = "/bin/sh" // Execute /bin/sh on slave
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -63,7 +30,7 @@ func TestExecCommandExecution(t *testing.T) {
 
 	// Start master server using entrypoint (listens for connections)
 	go func() {
-		if err := entrypoint.MasterListen(ctx, masterSharedCfg, masterCfg); err != nil {
+		if err := entrypoint.MasterListen(ctx, setup.MasterSharedCfg, setup.MasterCfg); err != nil {
 			// Context cancellation is expected
 			select {
 			case <-ctx.Done():
@@ -77,13 +44,13 @@ func TestExecCommandExecution(t *testing.T) {
 	}()
 
 	// Wait for master to start listening
-	if err := mockNet.WaitForListener("127.0.0.1:12345", 2000); err != nil {
+	if _, err := setup.TCPNetwork.WaitForListener("127.0.0.1:12345", 2000); err != nil {
 		t.Fatalf("Master failed to start listening: %v", err)
 	}
 
 	// Start slave using entrypoint (connects to master)
 	go func() {
-		if err := entrypoint.SlaveConnect(ctx, slaveSharedCfg); err != nil {
+		if err := entrypoint.SlaveConnect(ctx, setup.SlaveSharedCfg); err != nil {
 			slaveErr <- err
 			return
 		}
@@ -91,31 +58,31 @@ func TestExecCommandExecution(t *testing.T) {
 	}()
 
 	// Test 1: Echo command - the mock shell processes "echo <text>" commands
-	masterStdio.WriteToStdin([]byte("echo hello world\n"))
+	setup.MasterStdio.WriteToStdin([]byte("echo hello world\n"))
 
 	// Wait for the output to appear
-	if err := masterStdio.WaitForOutput("hello world", 2000); err != nil {
+	if err := setup.MasterStdio.WaitForOutput("hello world", 2000); err != nil {
 		t.Errorf("Echo command output did not appear: %v", err)
 	}
 
 	// Test 2: Whoami command - the mock shell responds with mockcmd[/bin/sh]
-	masterStdio.WriteToStdin([]byte("whoami\n"))
+	setup.MasterStdio.WriteToStdin([]byte("whoami\n"))
 
 	// Wait for the output to appear
-	if err := masterStdio.WaitForOutput("mockcmd[/bin/sh]", 2000); err != nil {
+	if err := setup.MasterStdio.WaitForOutput("mockcmd[/bin/sh]", 2000); err != nil {
 		t.Errorf("Whoami command output did not appear: %v", err)
 	}
 
 	// Test 3: Unsupported command - should get error response
-	masterStdio.WriteToStdin([]byte("unsupported\n"))
+	setup.MasterStdio.WriteToStdin([]byte("unsupported\n"))
 
 	// Wait for the error message to appear
-	if err := masterStdio.WaitForOutput("command not supported by mock", 2000); err != nil {
+	if err := setup.MasterStdio.WaitForOutput("command not supported by mock", 2000); err != nil {
 		t.Errorf("Error message did not appear: %v", err)
 	}
 
 	// Test 4: Exit command - this should cause the shell to terminate and slave to exit
-	masterStdio.WriteToStdin([]byte("exit\n"))
+	setup.MasterStdio.WriteToStdin([]byte("exit\n"))
 
 	// Wait for slave to complete after shell exits
 	select {
