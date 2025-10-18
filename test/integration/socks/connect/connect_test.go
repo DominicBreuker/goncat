@@ -3,6 +3,7 @@ package connect
 import (
 	"bufio"
 	"context"
+	mocks_tcp "dominicbreuker/goncat/mocks/tcp"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/entrypoint"
 	"dominicbreuker/goncat/pkg/socks"
@@ -32,45 +33,12 @@ func TestSocksConnect(t *testing.T) {
 
 	// Setup mock destination server on slave side (this would be at 127.0.0.1:8080)
 	// This server will respond with unique data when contacted via SOCKS proxy
-	destServerAddr, err := net.ResolveTCPAddr("tcp", "127.0.0.1:8080")
+	// Use the standard echo server pattern for consistency
+	srv, err := mocks_tcp.NewServer(setup.TCPNetwork.ListenTCP, "tcp", "127.0.0.1:8080", "DESTINATION_SERVER_RESPONSE: ")
 	if err != nil {
-		t.Fatalf("Failed to resolve destination server address: %v", err)
+		t.Fatalf("Failed to start destination server: %v", err)
 	}
-
-	destServerListener, err := setup.TCPNetwork.ListenTCP("tcp", destServerAddr)
-	if err != nil {
-		t.Fatalf("Failed to create destination server listener: %v", err)
-	}
-	defer destServerListener.Close()
-
-	// Start mock destination server in a goroutine
-	destServerStarted := make(chan struct{})
-	go func() {
-		close(destServerStarted)
-		for {
-			conn, err := destServerListener.Accept()
-			if err != nil {
-				return // listener closed
-			}
-			go func(c net.Conn) {
-				defer c.Close()
-				// Read request data
-				buf := make([]byte, 1024)
-				n, err := c.Read(buf)
-				if err != nil && err != io.EOF {
-					t.Logf("Destination server read error: %v", err)
-					return
-				}
-				request := string(buf[:n])
-				// Respond with unique data that includes the request
-				response := fmt.Sprintf("DESTINATION_SERVER_RESPONSE: You sent '%s'", strings.TrimSpace(request))
-				c.Write([]byte(response))
-			}(conn)
-		}
-	}()
-
-	// Wait for destination server to start
-	<-destServerStarted
+	defer srv.Close()
 
 	// Configure master with SOCKS proxy
 	// Simulates "master listen 'tcp://*:12345' -D 127.0.0.1:1080"
@@ -99,9 +67,11 @@ func TestSocksConnect(t *testing.T) {
 	}()
 
 	// Wait for master to start listening
-	if _, err := setup.TCPNetwork.WaitForListener("127.0.0.1:12345", 2000); err != nil {
+	var lMaster *mocks_tcp.MockTCPListener
+	if lMaster, err = setup.TCPNetwork.WaitForListener("127.0.0.1:12345", 2000); err != nil {
 		t.Fatalf("Master failed to start listening: %v", err)
 	}
+	t.Logf("Master has started listening on %s", lMaster.Addr().String())
 
 	// Start slave using entrypoint (connects to master)
 	go func() {
@@ -112,10 +82,26 @@ func TestSocksConnect(t *testing.T) {
 		slaveErr <- nil
 	}()
 
+	// Wait for slave to connect to master
+	var cSlaveToMaster *mocks_tcp.MockTCPConn
+	if cSlaveToMaster, err = lMaster.WaitForNewConnection(2000); err != nil {
+		t.Fatalf("Slave failed to connect to master: %v", err)
+	}
+	t.Logf("Slave is connected to master: %s->%s", cSlaveToMaster.RemoteAddr().String(), cSlaveToMaster.LocalAddr().String())
+
 	// Wait for the SOCKS proxy to be available
-	if _, err := setup.TCPNetwork.WaitForListener("127.0.0.1:1080", 2000); err != nil {
+	var lSocks *mocks_tcp.MockTCPListener
+	if lSocks, err = setup.TCPNetwork.WaitForListener("127.0.0.1:1080", 2000); err != nil {
 		t.Fatalf("SOCKS proxy failed to start listening: %v", err)
 	}
+	t.Logf("SOCKS proxy has started listening on %s", lSocks.Addr().String())
+
+	// Wait for destination server to be available
+	var lDest *mocks_tcp.MockTCPListener
+	if lDest, err = setup.TCPNetwork.WaitForListener("127.0.0.1:8080", 2000); err != nil {
+		t.Fatalf("Destination server failed to start listening: %v", err)
+	}
+	t.Logf("Destination server has started listening on %s", lDest.Addr().String())
 
 	// Now test the SOCKS proxy by acting as a SOCKS5 client
 	// Connect to the SOCKS proxy at 127.0.0.1:1080
@@ -235,7 +221,7 @@ func TestSocksConnect(t *testing.T) {
 
 		// Step 3: Now we're connected through the SOCKS proxy to the destination server
 		// Send test data through the tunnel
-		testData := "Hello through SOCKS proxy!"
+		testData := "Hello through SOCKS proxy!\n"
 		if _, err := bufSocksConn.WriteString(testData); err != nil {
 			clientErr = fmt.Errorf("failed to write test data: %v", err)
 			return
@@ -246,21 +232,36 @@ func TestSocksConnect(t *testing.T) {
 		}
 
 		// Read response from the destination server (should come through the SOCKS proxy)
-		responseBuf := make([]byte, 1024)
+		// Required, the piping through the relay is not immediate
+		time.Sleep(100 * time.Millisecond)
 
 		socksConn.SetReadDeadline(time.Now().Add(3 * time.Second))
-		n, err := bufSocksConn.Read(responseBuf)
+		line, err := bufSocksConn.ReadString('\n')
 		if err != nil && err != io.EOF {
 			clientErr = fmt.Errorf("failed to read response: %v", err)
 			return
 		}
 
-		clientResponse = string(responseBuf[:n])
+		clientResponse = strings.TrimSpace(line)
 		clientSuccess = true
 	}()
 
 	// Wait for client to complete
 	clientWg.Wait()
+
+	// Wait for the SOCKS client connection to arrive at the proxy
+	var cClientToSocks *mocks_tcp.MockTCPConn
+	if cClientToSocks, err = lSocks.WaitForNewConnection(2000); err != nil {
+		t.Fatalf("SOCKS client failed to connect to proxy: %v", err)
+	}
+	t.Logf("SOCKS client connected to proxy: %s->%s", cClientToSocks.RemoteAddr().String(), cClientToSocks.LocalAddr().String())
+
+	// Wait for the relay connection from SOCKS proxy to destination server
+	var cRelayToDest *mocks_tcp.MockTCPConn
+	if cRelayToDest, err = lDest.WaitForNewConnection(2000); err != nil {
+		t.Fatalf("SOCKS relay failed to connect to destination server: %v", err)
+	}
+	t.Logf("SOCKS relay connected to destination server: %s->%s", cRelayToDest.RemoteAddr().String(), cRelayToDest.LocalAddr().String())
 
 	// Verify the client test results
 	if clientErr != nil {
@@ -328,24 +329,25 @@ func TestSocksConnect(t *testing.T) {
 			remaining := make([]byte, addrLen+2)
 			io.ReadFull(bufSocksConn, remaining)
 
-			// Send test data
-			testData := fmt.Sprintf("Message %d", iteration)
+			// Send test data (add newline for line-oriented echo server)
+			testData := fmt.Sprintf("Message %d\n", iteration)
 			bufSocksConn.WriteString(testData)
 			bufSocksConn.Flush()
 
-			// Read response
-			responseBuf := make([]byte, 1024)
+			// Read response (required, the piping through the relay is not immediate)
+			time.Sleep(100 * time.Millisecond)
+
 			socksConn.SetReadDeadline(time.Now().Add(2 * time.Second))
-			responseReader := bufio.NewReader(socksConn)
-			n, err := responseReader.Read(responseBuf)
+			line, err := bufSocksConn.ReadString('\n')
 			if err != nil && err != io.EOF {
 				t.Errorf("Iteration %d: failed to read: %v", iteration, err)
 				return
 			}
 
-			response := string(responseBuf[:n])
-			if !strings.Contains(response, testData) {
-				t.Errorf("Iteration %d: expected response to contain '%s', got: %q", iteration, testData, response)
+			response := strings.TrimSpace(line)
+			expectedData := fmt.Sprintf("Message %d", iteration)
+			if !strings.Contains(response, expectedData) {
+				t.Errorf("Iteration %d: expected response to contain '%s', got: %q", iteration, expectedData, response)
 			} else {
 				t.Logf("✓ Iteration %d successful! Response: %q", iteration, response)
 			}

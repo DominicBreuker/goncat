@@ -184,10 +184,11 @@ setup.MasterCfg.Exec = "/bin/sh"
 **TestSocksConnect** (`socks/connect/connect_test.go`):
 - Simulates "goncat master listen tcp://*:12345 -D 127.0.0.1:1080" and "goncat slave connect tcp://127.0.0.1:12345"
 - Uses mocked TCP network for all connections (master-slave tunnel, SOCKS proxy, and destination server)
-- Creates a mock destination server at 127.0.0.1:8080 on the slave side that responds with unique, verifiable data
+- Creates a mock destination server at 127.0.0.1:8080 on the slave side using `mocks_tcp.NewServer` with line-oriented echo
 - Implements full SOCKS5 client handshake (method selection, CONNECT request)
 - Tests a mock SOCKS client connecting to the proxy at 127.0.0.1:1080 on the master side
 - Validates complete bidirectional data flow through the SOCKS proxy tunnel
+- Uses `WaitForListener` and `WaitForNewConnection` to synchronize test flow without arbitrary sleeps
 - Tests multiple connections to ensure stability
 - Demonstrates realistic SOCKS proxy scenario entirely in-memory
 - Note: Only tests SOCKS CONNECT; ASSOCIATE (UDP) is tested separately
