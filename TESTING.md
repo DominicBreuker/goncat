@@ -143,7 +143,26 @@ func TestWithTempFile(t *testing.T) {
 - Avoid `time.Sleep()` - use channels or `context.WithTimeout()` instead
 - Use `t.Parallel()` where safe to speed up test suite
 - Guard shared state with mutexes or avoid it entirely
-- Run with race detector in CI: `go test -race ./...`
+- **CRITICAL**: All tests must be race-free
+  - Always run tests with race detector: `go test -race ./...`
+  - CI runs with race detection enabled - tests will fail if races are detected
+  - Protect concurrent access to shared state with `sync.Mutex` or other synchronization primitives
+  - Example: If a fake struct has a `closed` field accessed by multiple goroutines, protect it:
+    ```go
+    type fakeServer struct {
+        closed bool
+        mu     sync.Mutex
+    }
+    
+    func (f *fakeServer) Close() error {
+        f.mu.Lock()
+        defer f.mu.Unlock()
+        if !f.closed {
+            f.closed = true
+        }
+        return nil
+    }
+    ```
 
 ## Golden Files
 
@@ -421,6 +440,12 @@ make lint        # Format, vet, staticcheck
 make test-unit   # Unit tests with coverage
 make test        # All tests including integration
 ```
+
+**Race Detection in CI:**
+- All tests run with `-race` flag enabled in CI
+- Any race condition will cause the build to fail
+- Always test locally with `go test -race ./...` before pushing
+- See "Concurrency & Timing" section for guidelines on writing race-free tests
 
 ## Documentation
 

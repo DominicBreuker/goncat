@@ -117,12 +117,17 @@ make test-integration  # Only E2E tests
 - Integration tests: Use `mocks/` package and `config.Dependencies`
 - E2E tests: No mocking, validates real binaries
 - All test types: Use table-driven tests, test behavior, cover edge cases
+- **CRITICAL**: All tests must be race-free
+  - Always run `go test -race ./...` before committing
+  - CI runs with race detection - builds fail on race conditions
+  - Protect shared state in fakes with `sync.Mutex`
 
 ### Known Build/Test Issues
 
-1. **Integration tests require Docker** - unit tests will pass without Docker but `make test` will fail
-2. **KEY_SALT changes on each build** - this is intentional for security
-3. **Pre-existing go vet warning** - `pkg/handler/socks/slave/associate.go:174:2: unreachable code` exists in main branch, ignore it
+1. **Race detection is mandatory** - All tests must pass `go test -race ./...` - CI will fail on race conditions
+2. **Integration tests require Docker** - unit tests will pass without Docker but `make test` will fail
+3. **KEY_SALT changes on each build** - this is intentional for security
+4. **Pre-existing go vet warning** - `pkg/handler/socks/slave/associate.go:174:2: unreachable code` exists in main branch, ignore it
 
 ## Project Structure
 
