@@ -6,6 +6,7 @@ import (
 	"dominicbreuker/goncat/pkg/handler/slave"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/server"
+	"dominicbreuker/goncat/pkg/transport"
 	"fmt"
 	"net"
 )
@@ -13,10 +14,36 @@ import (
 // SlaveListen starts a server that listens for incoming master connections
 // and follows their instructions as a slave.
 func SlaveListen(ctx context.Context, cfg *config.Shared) error {
-	s, err := server.New(ctx, cfg, makeSlaveHandler(ctx, cfg))
+	return slaveListen(ctx, cfg, func(ctx context.Context, cfg *config.Shared, handle transport.Handler) (serverInterface, error) {
+		return server.New(ctx, cfg, handle)
+	}, makeSlaveHandler)
+}
+
+// slaveListen is the internal implementation that accepts injected dependencies for testing.
+func slaveListen(
+	ctx context.Context,
+	cfg *config.Shared,
+	newServer serverFactory,
+	makeHandler func(context.Context, *config.Shared) func(net.Conn) error,
+) error {
+	s, err := newServer(ctx, cfg, makeHandler(ctx, cfg))
 	if err != nil {
 		return fmt.Errorf("server.New(): %s", err)
 	}
+
+	// Always close the server when this function returns.
+	defer func() {
+		_ = s.Close()
+	}()
+
+	// Ensure the server is closed when the context is cancelled so Serve() can return.
+	go func() {
+		<-ctx.Done()
+		// best-effort close to unblock Accept/Serve; log any error for diagnostics
+		if err := s.Close(); err != nil {
+			log.InfoMsg("slave entrypoint: error closing server on context done: %s", err)
+		}
+	}()
 
 	if err := s.Serve(); err != nil {
 		return fmt.Errorf("serving: %s", err)

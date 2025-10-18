@@ -6,11 +6,29 @@ import (
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/handler/slave"
 	"fmt"
+	"net"
 )
+
+// slaveFactory is a function type for creating slave handlers.
+type slaveFactory func(context.Context, *config.Shared, net.Conn) (handlerInterface, error)
 
 // SlaveConnect connects to a remote master and follows its instructions as a slave.
 func SlaveConnect(ctx context.Context, cfg *config.Shared) error {
-	c := client.New(ctx, cfg)
+	return slaveConnect(ctx, cfg, func(ctx context.Context, cfg *config.Shared) clientInterface {
+		return client.New(ctx, cfg)
+	}, func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
+		return slave.New(ctx, cfg, conn)
+	})
+}
+
+// slaveConnect is the internal implementation that accepts injected dependencies for testing.
+func slaveConnect(
+	ctx context.Context,
+	cfg *config.Shared,
+	newClient clientFactory,
+	newSlave slaveFactory,
+) error {
+	c := newClient(ctx, cfg)
 	if err := c.Connect(); err != nil {
 		return fmt.Errorf("connecting: %s", err)
 	}
@@ -20,12 +38,9 @@ func SlaveConnect(ctx context.Context, cfg *config.Shared) error {
 	go func() {
 		<-ctx.Done()
 		_ = c.Close()
-		if conn := c.GetConnection(); conn != nil {
-			conn.Close()
-		}
 	}()
 
-	h, err := slave.New(ctx, cfg, c.GetConnection())
+	h, err := newSlave(ctx, cfg, c.GetConnection())
 	if err != nil {
 		return fmt.Errorf("slave.New(): %s", err)
 	}
