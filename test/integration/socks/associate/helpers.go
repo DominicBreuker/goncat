@@ -296,7 +296,6 @@ func (c *SOCKSClient) SendUDPDatagram(t *testing.T, data string) (string, error)
 	}
 	udpDatagram = append(udpDatagram, []byte(data)...)
 
-	fmt.Printf("DEBUG: SendUDPDatagram write %q\n", udpDatagram)
 	// Send datagram
 	_, err := c.UDPConn.WriteTo(udpDatagram, c.UDPRelayAddr)
 	if err != nil {
@@ -306,13 +305,10 @@ func (c *SOCKSClient) SendUDPDatagram(t *testing.T, data string) (string, error)
 	// Wait for response (using read deadline for timeout)
 	responseBuf := make([]byte, 65507)
 	c.UDPConn.SetReadDeadline(time.Now().Add(3 * time.Second))
-	fmt.Printf("DEBUG: SendUDPDatagram reading response...\n")
 	n, _, err := c.UDPConn.ReadFrom(responseBuf)
 	if err != nil {
-		fmt.Printf("DEBUG: SendUDPDatagram read error: %v\n", err)
 		return "", fmt.Errorf("failed to read UDP response: %v", err)
 	}
-	fmt.Printf("DEBUG: SendUDPDatagram response read: %q\n", responseBuf[:n])
 
 	// Parse SOCKS5 UDP header (skip 10 bytes for IPv4)
 	if n < 10 {

@@ -64,7 +64,6 @@ func (m *MockUDPNetwork) ListenUDP(network string, laddr *net.UDPAddr) (net.Pack
 	m.listeners[addr] = listener
 	m.listenerCond.Broadcast() // Signal that a new listener is available
 
-	fmt.Printf("DEBUG: MockUDPNetwork ListenUDP created listener on %s\n", addr)
 	return listener, nil
 }
 
@@ -98,8 +97,6 @@ func (m *MockUDPNetwork) WriteTo(data []byte, srcAddr *net.UDPAddr, dstAddr *net
 		addr: srcAddr,
 	}
 	copy(packet.data, data)
-
-	fmt.Printf("DEBUG: MockUDPNetwork WriteTo delivering packet from %s to %s - data: %s\n", srcAddr.String(), dstAddr.String(), packet.data)
 
 	select {
 	case listener.packets <- packet:
@@ -199,7 +196,6 @@ func (l *mockUDPListener) ReadFrom(p []byte) (n int, addr net.Addr, err error) {
 func (l *mockUDPListener) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	l.mu.Lock()
 	if l.closed {
-		fmt.Printf("DEBUG: MockUDPListener WriteTo from %s to %s failed: connection closed\n", l.addr.String(), addr.String())
 		l.mu.Unlock()
 		return 0, fmt.Errorf("connection closed")
 	}
@@ -235,7 +231,6 @@ func (l *mockUDPListener) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	// Default small fallback timeout to mimic network buffering behavior
 	defaultTimeout := 100 * time.Millisecond
 
-	fmt.Printf("DEBUG: MockUDPListener WriteTo delivering packet from %s to %s - data: %s\n", l.addr.String(), udpAddr.String(), packet.data)
 	if wd.IsZero() {
 		select {
 		case destListener.packets <- packet:
@@ -243,7 +238,6 @@ func (l *mockUDPListener) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 		case <-destListener.closeCh:
 			return len(p), nil // Destination closed, but we sent it
 		case <-time.After(defaultTimeout):
-			fmt.Printf("DEBUG: MockUDPListener (wd.IsZero()) WriteTo timeout sending packet to %s\n", udpAddr.String())
 			return len(p), nil // Timeout, but pretend we sent it
 		}
 	}
@@ -261,7 +255,6 @@ func (l *mockUDPListener) WriteTo(p []byte, addr net.Addr) (n int, err error) {
 	case <-destListener.closeCh:
 		return len(p), nil
 	case <-time.After(timeout):
-		fmt.Printf("DEBUG: MockUDPListener WriteTo timeout sending packet to %s\n", udpAddr.String())
 		return 0, &net.OpError{Op: "write", Net: "udp", Err: fmt.Errorf("i/o timeout")}
 	}
 }
@@ -282,7 +275,6 @@ func (l *mockUDPListener) Close() error {
 	delete(l.network.listeners, l.addr.String())
 	l.network.mu.Unlock()
 
-	fmt.Printf("DEBUG: MockUDPListener on %s closed\n", l.addr.String())
 	return nil
 }
 

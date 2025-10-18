@@ -54,7 +54,6 @@ func (slv *Slave) Handle() error {
 		m, err := slv.sess.ReceiveContext(slv.ctx)
 		if err != nil {
 			if err == io.EOF {
-				log.InfoMsg("DEBUG: ReceiveConext EOF\n")
 				return nil
 			}
 			// Ignore deadline/timeout errors caused by context/deadline checks.

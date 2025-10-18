@@ -22,7 +22,6 @@ type MockTCPListener struct {
 func (l *MockTCPListener) Accept() (net.Conn, error) {
 	select {
 	case conn := <-l.connCh:
-		fmt.Printf("DEBUG: MockTCPListener: Accepted connection on %s from %s\n", l.addr.String(), conn.RemoteAddr().String())
 		// Notify any waiter that the connection was accepted. Use a non-blocking send
 		// so Accept behavior doesn't change if nobody is waiting.
 		select {
@@ -50,7 +49,6 @@ func (l *MockTCPListener) Close() error {
 	// Remove the listener from the network's map
 	l.network.mu.Lock()
 	delete(l.network.listeners, l.addr.String())
-	fmt.Printf("DEBUG: MockTCPNetwork: Listener on %s closed\n", l.addr.String())
 	l.network.mu.Unlock()
 
 	return nil

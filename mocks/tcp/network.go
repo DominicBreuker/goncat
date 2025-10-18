@@ -104,8 +104,6 @@ func (m *MockTCPNetwork) DialTCP(network string, laddr, raddr *net.TCPAddr) (net
 		return nil, fmt.Errorf("connection timeout")
 	}
 
-	fmt.Printf("DEBUG: MockTCPNetwork: DialTCP from %s to %s\n", laddr.String(), raddr.String())
-
 	return mockClient, nil
 }
 
