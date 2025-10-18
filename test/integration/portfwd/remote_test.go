@@ -1,9 +1,8 @@
-package integration
+package portfwd
 
 import (
 	"context"
 	mocks_tcp "dominicbreuker/goncat/mocks/tcp"
-	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/entrypoint"
 	"dominicbreuker/goncat/test/helpers"
 	"strings"
@@ -11,38 +10,35 @@ import (
 	"time"
 )
 
-// TestLocalPortForwarding simulates a complete local port forwarding scenario
+// TestRemotePortForwarding simulates a complete remote port forwarding scenario
 // with mocked network and demonstrates full end-to-end data flow through the tunnel.
 // This test mimics the behavior of:
-//   - "goncat master listen 'tcp://*:12345' -L 8000:127.0.0.1:9000" (master listening with local port forwarding)
+//   - "goncat master listen 'tcp://*:12345' -R 8000:127.0.0.1:9000" (master listening with remote port forwarding)
 //   - "goncat slave connect tcp://127.0.0.1:12345" (slave connecting)
 //
-// With an additional mock server on the slave side at 127.0.0.1:9000 that responds with unique data,
-// and a mock client on the master side connecting to the forwarded port 8000.
-func TestLocalPortForwarding(t *testing.T) {
+// With remote port forwarding, the slave binds port 8000, and connections to it are tunneled
+// to the master side, which then connects to 127.0.0.1:9000 (from the master's perspective).
+// This is the reverse of local port forwarding.
+func TestRemotePortForwarding(t *testing.T) {
 	// Setup mock dependencies and default configs
 	setup := helpers.SetupMockDependenciesAndConfigs()
 	defer setup.Close()
 
-	// Configure master with local port forwarding
-	// Simulates "master listen 'tcp://*:12345' -L 8000:127.0.0.1:9000"
-	setup.MasterCfg.LocalPortForwarding = []*config.LocalPortForwardingCfg{
-		{
-			LocalHost:  "127.0.0.1",
-			LocalPort:  8000,
-			RemoteHost: "127.0.0.1",
-			RemotePort: 9000,
-		},
-	}
-
-	// Setup mock "remote server" on slave side (this would be the server at 127.0.0.1:9000)
+	// Setup mock "remote server" on master side (this would be the server at 127.0.0.1:9000)
 	// This server will respond with unique data when contacted
 	// Start the reusable mock echo server using the mock network's ListenTCP
-	srv, err := mocks_tcp.New(setup.TCPNetwork.ListenTCP, "tcp", "127.0.0.1:9000", "REMOTE_SERVER_RESPONSE: ")
+	srv, err := mocks_tcp.NewServer(setup.TCPNetwork.ListenTCP, "tcp", "127.0.0.1:9000", "REMOTE_SERVER_RESPONSE: ")
 	if err != nil {
 		t.Fatalf("Failed to start remote server: %v", err)
 	}
 	defer srv.Close()
+
+	// Configure master with remote port forwarding
+	// Simulates "master listen 'tcp://*:12345' -R 127.0.0.1:8000:127.0.0.1:9000"
+	// This tells the slave to bind port 8000 on 127.0.0.1 and forward connections to master's 127.0.0.1:9000
+	// Use ParseRemotePortForwardingSpecs to properly initialize the config
+	// Format: [slave_host]:[slave_port]:[master_host]:[master_port]
+	setup.MasterCfg.ParseRemotePortForwardingSpecs([]string{"127.0.0.1:8000:127.0.0.1:9000"})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
@@ -83,17 +79,17 @@ func TestLocalPortForwarding(t *testing.T) {
 	t.Logf("Slave is connected to master: %s->%s", cSlaveToMaster.RemoteAddr().String(), cSlaveToMaster.LocalAddr().String())
 
 	// Wait for forwarding listener and its target echo server
-	var lLocal *mocks_tcp.MockTCPListener
-	if lLocal, err = setup.TCPNetwork.WaitForListener("127.0.0.1:8000", 2000); err != nil {
+	var lRemote *mocks_tcp.MockTCPListener
+	if lRemote, err = setup.TCPNetwork.WaitForListener("127.0.0.1:8000", 2000); err != nil {
 		t.Fatalf("Forwarded port failed to start listening: %v", err)
 	}
-	t.Logf("Master has started listening on %s for port forwarding", lLocal.Addr().String())
+	t.Logf("Slave has started listening on %s for remote port forwarding", lRemote.Addr().String())
 
-	var lRemote *mocks_tcp.MockTCPListener
-	if lRemote, err = setup.TCPNetwork.WaitForListener("127.0.0.1:9000", 2000); err != nil {
-		t.Fatalf("Echo server failed to start listening: %v", err)
+	var lDestination *mocks_tcp.MockTCPListener
+	if lDestination, err = setup.TCPNetwork.WaitForListener("127.0.0.1:9000", 2000); err != nil {
+		t.Fatalf("Destination server failed to start listening: %v", err)
 	}
-	t.Logf("Remote server has started listening on %v", lRemote.Addr().String())
+	t.Logf("Destination server has started listening on %v", lDestination.Addr().String())
 
 	client, err := mocks_tcp.NewClient(setup.TCPNetwork.DialTCP, "tcp", "127.0.0.1:8000")
 	if err != nil {
@@ -102,18 +98,18 @@ func TestLocalPortForwarding(t *testing.T) {
 	defer client.Close()
 
 	var cClientToRelay *mocks_tcp.MockTCPConn
-	if cClientToRelay, err = lLocal.WaitForNewConnection(2000); err != nil {
-		t.Fatalf("Local client failed to connect to forwarded port: %v", err)
+	if cClientToRelay, err = lRemote.WaitForNewConnection(2000); err != nil {
+		t.Fatalf("Client failed to connect to forwarded port: %v", err)
 	}
-	t.Logf("Local TCP client connected to forwarded port: %s->%s", cClientToRelay.RemoteAddr().String(), cClientToRelay.LocalAddr().String())
+	t.Logf("Client connected to forwarded port: %s->%s", cClientToRelay.RemoteAddr().String(), cClientToRelay.LocalAddr().String())
 
-	var cRelayToRemote *mocks_tcp.MockTCPConn
-	if cRelayToRemote, err = lRemote.WaitForNewConnection(2000); err != nil {
-		t.Fatalf("Relay failed to connect to remote server: %v", err)
+	var cRelayToDestination *mocks_tcp.MockTCPConn
+	if cRelayToDestination, err = lDestination.WaitForNewConnection(2000); err != nil {
+		t.Fatalf("Relay failed to connect to destination server: %v", err)
 	}
-	t.Logf("Relay connectec to remote server: %s->%s", cRelayToRemote.RemoteAddr().String(), cRelayToRemote.LocalAddr().String())
+	t.Logf("Relay connected to destination server: %s->%s", cRelayToDestination.RemoteAddr().String(), cRelayToDestination.LocalAddr().String())
 
-	testData := "Hello through tunnel!"
+	testData := "Hello through reverse tunnel!"
 	if err := client.WriteLine(testData); err != nil {
 		t.Fatalf("failed to write to forwarded port: %v", err)
 	}
@@ -128,7 +124,7 @@ func TestLocalPortForwarding(t *testing.T) {
 
 	// Verify the response contains both the expected prefix and the sent data
 	expectedPrefix := "REMOTE_SERVER_RESPONSE:"
-	expectedContent := "Hello through tunnel!"
+	expectedContent := "Hello through reverse tunnel!"
 	if !strings.Contains(resp, expectedPrefix) {
 		t.Errorf("Expected response to contain '%s', got: %q", expectedPrefix, resp)
 	}
@@ -136,7 +132,7 @@ func TestLocalPortForwarding(t *testing.T) {
 		t.Errorf("Expected response to contain sent data '%s', got: %q", expectedContent, resp)
 	}
 
-	t.Logf("✓ Port forwarding test successful! Response: %q", resp)
+	t.Logf("✓ Remote port forwarding test successful! Response: %q", resp)
 
 	// Check for errors (non-blocking)
 	select {

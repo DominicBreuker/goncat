@@ -29,13 +29,13 @@ type Server struct {
 	wg        sync.WaitGroup
 }
 
-// New creates a Server by calling the provided TCP listener function
+// NewServer creates a Server by calling the provided TCP listener function
 // (see pkg/config). The listener func is expected to create and return a
 // net.Listener (for example the project's mock network listener). The
 // network and address string (like "127.0.0.1:9000" or ":0") are used to
 // resolve a *net.TCPAddr that is forwarded to the listener function. The
 // server will use the provided prefix for responses.
-func New(listener config.TCPListenerFunc, network string, addr string, prefix string) (*Server, error) {
+func NewServer(listener config.TCPListenerFunc, network string, addr string, prefix string) (*Server, error) {
 	if listener == nil {
 		return nil, fmt.Errorf("listener func is nil")
 	}
