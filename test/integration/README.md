@@ -2,6 +2,16 @@
 
 This directory contains integration test utilities and examples for testing goncat functionality with mocked dependencies.
 
+## Directory Structure
+
+Tests are organized by feature:
+- `plain/` - Basic end-to-end connection tests without special features
+- `exec/` - Command execution tests (--exec flag)
+- `portfwd/` - Port forwarding tests (local and remote)
+- `socks/` - SOCKS proxy tests
+  - `connect/` - SOCKS5 CONNECT tests
+  - `associate/` - SOCKS5 UDP ASSOCIATE tests
+
 ## Key Features
 
 **Fast and Deterministic Tests**: The mock implementations provide `WaitForOutput` and `WaitForListener` methods that block until expected conditions are met, eliminating the need for arbitrary `time.Sleep` calls. This makes tests both faster (9x improvement) and more reliable.
@@ -63,7 +73,7 @@ if err != nil {
 defer client.Close()
 
 // Create a test server
-srv, err := mocks_tcp.New(setup.TCPNetwork.ListenTCP, "tcp", "127.0.0.1:9000", "RESPONSE: ")
+srv, err := mocks_tcp.NewServer(setup.TCPNetwork.ListenTCP, "tcp", "127.0.0.1:9000", "RESPONSE: ")
 if err != nil {
     t.Fatalf("failed to start server: %v", err)
 }
@@ -132,43 +142,46 @@ setup.MasterCfg.Exec = "/bin/sh"
 
 ## Integration Tests
 
-### TestEndToEndDataExchange
-`TestEndToEndDataExchange` in `simple_test.go` demonstrates full end-to-end testing:
+### Plain Connection Tests (`plain/`)
+
+**TestEndToEndDataExchange** (`plain_test.go`):
 - Simulates "goncat master listen tcp://*:12345" and "goncat slave connect tcp://127.0.0.1:12345"
 - Uses mocked TCP network and stdio on both sides
 - Validates bidirectional data flow: master stdin → network → slave stdout and vice versa
 - Tests complete master-slave handler lifecycle with mocked dependencies
 
-### TestExecCommandExecution
-`TestExecCommandExecution` in `exec_test.go` demonstrates command execution testing:
+### Command Execution Tests (`exec/`)
+
+**TestExecCommandExecution** (`exec_test.go`):
 - Simulates "goncat master listen tcp://*:12345 --exec /bin/sh" and "goncat slave connect tcp://127.0.0.1:12345"
 - Uses mocked TCP network, stdio, and command execution
 - Validates specific shell commands: `echo`, `whoami`, unsupported commands, and `exit`
 - Tests that the slave terminates when the shell exits
 - Tests the --exec feature without spawning real processes
 
-### TestLocalPortForwarding
-`TestLocalPortForwarding` in `local_port_forward_test.go` demonstrates local port forwarding testing:
+### Port Forwarding Tests (`portfwd/`)
+
+**TestLocalPortForwarding** (`portfwd/local_test.go`):
 - Simulates "goncat master listen tcp://*:12345 -L 8000:127.0.0.1:9000" and "goncat slave connect tcp://127.0.0.1:12345"
 - Uses mocked TCP network for all connections (master-slave tunnel, forwarded port, and remote server)
 - Creates a mock remote server at 127.0.0.1:9000 that responds with unique, verifiable data
 - Tests a mock client connecting to the forwarded port 8000 on the master side
 - Validates complete bidirectional data flow through the port forwarding tunnel
-- Tests multiple connections to ensure stability
 - Demonstrates realistic port forwarding scenario entirely in-memory
+- Uses `WaitForListener` and `WaitForNewConnection` to synchronize test flow
 
-### TestRemotePortForwarding
-`TestRemotePortForwarding` in `remote_port_forward_test.go` demonstrates remote port forwarding testing:
+**TestRemotePortForwarding** (`portfwd/remote_test.go`):
 - Simulates "goncat master listen tcp://*:12345 -R 127.0.0.1:8000:127.0.0.1:9000" and "goncat slave connect tcp://127.0.0.1:12345"
 - Uses mocked TCP network for all connections (master-slave tunnel, forwarded port on slave, and remote server on master)
 - Creates a mock remote server at 127.0.0.1:9000 on the master side that responds with unique, verifiable data
 - Tests a mock client connecting to the forwarded port 8000 on the slave side
 - Validates complete bidirectional data flow through the reverse port forwarding tunnel
-- Tests multiple connections to ensure stability
 - Demonstrates the reverse of local port forwarding: slave binds the port, master provides the destination
+- Uses `WaitForListener` and `WaitForNewConnection` to synchronize test flow
 
-### TestSocksConnect
-`TestSocksConnect` in `socks_connect_test.go` demonstrates SOCKS5 proxy testing:
+### SOCKS Proxy Tests (`socks/`)
+
+**TestSocksConnect** (`socks/connect/connect_test.go`):
 - Simulates "goncat master listen tcp://*:12345 -D 127.0.0.1:1080" and "goncat slave connect tcp://127.0.0.1:12345"
 - Uses mocked TCP network for all connections (master-slave tunnel, SOCKS proxy, and destination server)
 - Creates a mock destination server at 127.0.0.1:8080 on the slave side that responds with unique, verifiable data
@@ -177,21 +190,14 @@ setup.MasterCfg.Exec = "/bin/sh"
 - Validates complete bidirectional data flow through the SOCKS proxy tunnel
 - Tests multiple connections to ensure stability
 - Demonstrates realistic SOCKS proxy scenario entirely in-memory
-- Note: Only tests SOCKS CONNECT; ASSOCIATE (UDP) is tested separately in `test/integration/socks/associate/`
+- Note: Only tests SOCKS CONNECT; ASSOCIATE (UDP) is tested separately
 
-### SOCKS UDP ASSOCIATE Tests
-The `test/integration/socks/associate/` directory contains tests for SOCKS5 UDP ASSOCIATE functionality:
+**SOCKS UDP ASSOCIATE Tests** (`socks/associate/`):
 
-**TestSingleClient** (`single_client_test.go`):
-- Tests SOCKS5 UDP ASSOCIATE with a single client
-- Validates complete UDP packet flow through the SOCKS proxy
+The `socks/associate/` directory contains tests for SOCKS5 UDP ASSOCIATE functionality:
 
-**TestMultipleClients** (`multiple_clients_test.go`):
-- Tests SOCKS5 UDP ASSOCIATE with multiple concurrent clients
-- Each client gets its own UDP relay and can send/receive independently
-- Validates that multiple clients can use the proxy simultaneously
+- **TestSingleClient** (`single_client_test.go`): Tests SOCKS5 UDP ASSOCIATE with a single client, validates complete UDP packet flow through the SOCKS proxy
 
-**Shared Setup** (`helpers.go`):
-- `SetupTest()` creates all test infrastructure using the unified helper
-- `CreateSOCKSClient()` performs SOCKS5 handshake and UDP ASSOCIATE request
-- `SOCKSClient.SendUDPDatagram()` sends and receives SOCKS5 UDP datagrams
+- **TestMultipleClients** (`multiple_clients_test.go`): Tests SOCKS5 UDP ASSOCIATE with multiple concurrent clients, each client gets its own UDP relay and can send/receive independently
+
+- **Shared Setup** (`helpers.go`): `SetupTest()` creates all test infrastructure using the unified helper, `CreateSOCKSClient()` performs SOCKS5 handshake and UDP ASSOCIATE request, `SOCKSClient.SendUDPDatagram()` sends and receives SOCKS5 UDP datagrams

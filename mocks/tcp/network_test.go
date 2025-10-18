@@ -8,7 +8,7 @@ func TestMockNetworkEcho(t *testing.T) {
 	mockNet := NewMockTCPNetwork()
 
 	// Start server on a fixed test port
-	srv, err := New(mockNet.ListenTCP, "tcp", "127.0.0.1:9001", "ECHO: ")
+	srv, err := NewServer(mockNet.ListenTCP, "tcp", "127.0.0.1:9001", "ECHO: ")
 	if err != nil {
 		t.Fatalf("failed to start server: %v", err)
 	}
