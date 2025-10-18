@@ -83,7 +83,7 @@ func (c *Client) Connect() error {
 	}
 
 	if c.cfg.SSL {
-		c.conn, err = upgradeToTLS(c.conn, c.cfg.GetKey())
+		c.conn, err = upgradeToTLS(c.conn, c.cfg.GetKey(), c.cfg.Timeout)
 		if err != nil {
 			return fmt.Errorf("upgradeToTLS: %s", err)
 		}
@@ -95,7 +95,7 @@ func (c *Client) Connect() error {
 // upgradeToTLS wraps the given connection with TLS encryption.
 // If a key is provided, it enables mutual authentication using generated certificates.
 // The function configures TLS 1.3 as the minimum version and sets up TCP keep-alive.
-func upgradeToTLS(conn net.Conn, key string) (net.Conn, error) {
+func upgradeToTLS(conn net.Conn, key string, timeout time.Duration) (net.Conn, error) {
 	// enable TCP keep-alive directly on the underlying connection if possible
 	if tcpConn, ok := conn.(*net.TCPConn); ok {
 		if err := tcpConn.SetKeepAlive(true); err != nil {
@@ -123,7 +123,7 @@ func upgradeToTLS(conn net.Conn, key string) (net.Conn, error) {
 	tlsConn := tls.Client(conn, cfg)
 
 	// set a handshake deadline to avoid blocking indefinitely
-	_ = tlsConn.SetDeadline(time.Now().Add(10 * time.Second))
+	_ = tlsConn.SetDeadline(time.Now().Add(timeout))
 	if err := tlsConn.Handshake(); err != nil {
 		_ = tlsConn.Close()
 		return nil, fmt.Errorf("tls handshake: %s", err)

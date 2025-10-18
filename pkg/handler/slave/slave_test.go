@@ -7,6 +7,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 )
 
 // TestNew creates a new slave handler and verifies initialization.
@@ -27,7 +28,7 @@ func TestNew(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := mux.OpenSessionContext(context.Background(), client)
+		_, err := mux.OpenSessionContext(context.Background(), client, 50*time.Millisecond)
 		if err != nil {
 			t.Errorf("OpenSession() failed: %v", err)
 		}
@@ -102,7 +103,7 @@ func TestClose(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := mux.OpenSessionContext(context.Background(), client)
+		_, err := mux.OpenSessionContext(context.Background(), client, 50*time.Millisecond)
 		if err != nil {
 			// Expected error when slave closes
 			return

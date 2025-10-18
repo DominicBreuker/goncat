@@ -20,6 +20,8 @@ type MasterSession struct {
 	enc *gob.Encoder
 	dec *gob.Decoder
 
+	timeout time.Duration
+
 	mu sync.Mutex
 }
 
@@ -29,10 +31,11 @@ func (s *MasterSession) Close() error {
 }
 
 // OpenSessionContext creates a master session and opens the two control streams.
-// ctx cancels control stream opens.
-func OpenSessionContext(ctx context.Context, conn net.Conn) (*MasterSession, error) {
+// ctx cancels control stream opens. timeout specifies the deadline for control operations.
+func OpenSessionContext(ctx context.Context, conn net.Conn, timeout time.Duration) (*MasterSession, error) {
 	out := MasterSession{
-		sess: &Session{},
+		sess:    &Session{},
+		timeout: timeout,
 	}
 	var err error
 
@@ -143,8 +146,8 @@ func (s *MasterSession) SendContext(ctx context.Context, m msg.Message) error {
 	}
 
 	// compute absolute deadline: the earlier of caller's context deadline (if any)
-	// and the default ControlOpDeadline from now.
-	dl := time.Now().Add(ControlOpDeadline)
+	// and the default timeout from configuration.
+	dl := time.Now().Add(s.timeout)
 	if d, ok := ctx.Deadline(); ok && d.Before(dl) {
 		dl = d
 	}
@@ -155,9 +158,9 @@ func (s *MasterSession) SendContext(ctx context.Context, m msg.Message) error {
 // sendLocked encodes m while s.mu is held and sets a write deadline.
 func (s *MasterSession) sendLocked(m msg.Message, deadline time.Time) error {
 	if s.sess != nil && s.sess.ctlClientToServer != nil {
-		// if caller passed zero time, fall back to ControlOpDeadline
+		// if caller passed zero time, fall back to timeout from configuration
 		if deadline.IsZero() {
-			deadline = time.Now().Add(ControlOpDeadline)
+			deadline = time.Now().Add(s.timeout)
 		}
 		_ = s.sess.ctlClientToServer.SetWriteDeadline(deadline)
 		defer s.sess.ctlClientToServer.SetWriteDeadline(time.Time{})
@@ -177,7 +180,7 @@ func (s *MasterSession) ReceiveContext(ctx context.Context) (msg.Message, error)
 	var m msg.Message
 	if s.sess != nil && s.sess.ctlServerToClient != nil {
 		// compute absolute deadline
-		dl := time.Now().Add(ControlOpDeadline)
+		dl := time.Now().Add(s.timeout)
 		if d, ok := ctx.Deadline(); ok && d.Before(dl) {
 			dl = d
 		}

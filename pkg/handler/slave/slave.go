@@ -27,7 +27,7 @@ type Slave struct {
 // New creates a new Slave handler over the given connection.
 // It accepts a multiplexed session for handling commands from the master.
 func New(ctx context.Context, cfg *config.Shared, conn net.Conn) (*Slave, error) {
-	sess, err := mux.AcceptSessionContext(ctx, conn)
+	sess, err := mux.AcceptSessionContext(ctx, conn, cfg.Timeout)
 	if err != nil {
 		return nil, fmt.Errorf("mux.AcceptSession(conn): %s", err)
 	}

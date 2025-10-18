@@ -29,7 +29,7 @@ type Master struct {
 // New creates a new Master handler over the given connection.
 // It opens a multiplexed session for managing multiple concurrent operations.
 func New(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (*Master, error) {
-	sess, err := mux.OpenSessionContext(context.Background(), conn)
+	sess, err := mux.OpenSessionContext(context.Background(), conn, cfg.Timeout)
 	if err != nil {
 		return nil, fmt.Errorf("mux.OpenSession(conn): %s", err)
 	}

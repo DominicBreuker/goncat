@@ -21,6 +21,8 @@ type SlaveSession struct {
 	dec *gob.Decoder
 	enc *gob.Encoder
 
+	timeout time.Duration
+
 	mu sync.Mutex
 }
 
@@ -30,10 +32,12 @@ func (s *SlaveSession) Close() error {
 }
 
 // AcceptSessionContext creates a new slave session over the given connection
-// while honoring the provided context for control-channel accepts.
-func AcceptSessionContext(ctx context.Context, conn net.Conn) (*SlaveSession, error) {
+// while honoring the provided context for control-channel accepts. timeout specifies
+// the deadline for control operations.
+func AcceptSessionContext(ctx context.Context, conn net.Conn, timeout time.Duration) (*SlaveSession, error) {
 	out := SlaveSession{
-		sess: &Session{},
+		sess:    &Session{},
+		timeout: timeout,
 	}
 	var err error
 
@@ -101,13 +105,13 @@ func (s *SlaveSession) SendAndGetOneChannelContext(ctx context.Context, m msg.Me
 
 // ReceiveContext receives a message honoring the provided context's
 // cancellation and deadline. The effective read deadline is the earlier of
-// the caller's context deadline (if set) and now+ControlOpDeadline. If the
+// the caller's context deadline (if set) and the configured timeout. If the
 // caller provides a cancellable context without a deadline, we watch
 // ctx.Done() and set the read deadline to now to interrupt blocking reads.
 func (s *SlaveSession) ReceiveContext(ctx context.Context) (msg.Message, error) {
 	if s.sess != nil && s.sess.ctlClientToServer != nil {
 		// compute absolute deadline
-		dl := time.Now().Add(ControlOpDeadline)
+		dl := time.Now().Add(s.timeout)
 		if d, ok := ctx.Deadline(); ok && d.Before(dl) {
 			dl = d
 		}
@@ -143,7 +147,7 @@ func (s *SlaveSession) SendContext(ctx context.Context, m msg.Message) error {
 		return ctx.Err()
 	}
 
-	dl := time.Now().Add(ControlOpDeadline)
+	dl := time.Now().Add(s.timeout)
 	if d, ok := ctx.Deadline(); ok && d.Before(dl) {
 		dl = d
 	}
@@ -156,7 +160,7 @@ func (s *SlaveSession) SendContext(ctx context.Context, m msg.Message) error {
 func (s *SlaveSession) sendLocked(m msg.Message, deadline time.Time) error {
 	if s.sess != nil && s.sess.ctlServerToClient != nil {
 		if deadline.IsZero() {
-			deadline = time.Now().Add(ControlOpDeadline)
+			deadline = time.Now().Add(s.timeout)
 		}
 		_ = s.sess.ctlServerToClient.SetWriteDeadline(deadline)
 		defer s.sess.ctlServerToClient.SetWriteDeadline(time.Time{})

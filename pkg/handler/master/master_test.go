@@ -11,14 +11,7 @@ import (
 	"time"
 )
 
-// TestMain shortens the mux control op deadline to make tests that rely on
-// control-channel timeouts complete quickly. Restore the original value after
-// tests if needed.
-func TestMain(m *testing.M) {
-	// Short deadline for unit tests to avoid waiting the default 10s.
-	mux.ControlOpDeadline = 50 * time.Millisecond
-	m.Run()
-}
+const testTimeout = 50 * time.Millisecond
 
 // TestNew creates a new master handler and verifies initialization.
 func TestNew(t *testing.T) {
@@ -31,6 +24,7 @@ func TestNew(t *testing.T) {
 	ctx := context.Background()
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
@@ -42,7 +36,7 @@ func TestNew(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := mux.AcceptSessionContext(context.Background(), server)
+		_, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Errorf("AcceptSession() failed: %v", err)
 		}
@@ -75,7 +69,7 @@ func TestNew_SessionError(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	cfg := &config.Shared{}
+	cfg := &config.Shared{Timeout: testTimeout}
 	mCfg := &config.Master{}
 
 	// Create a connection that will be immediately closed
@@ -95,6 +89,7 @@ func TestNew_ConfigValidation(t *testing.T) {
 	ctx := context.Background()
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "",
@@ -125,14 +120,14 @@ func TestClose(t *testing.T) {
 	defer server.Close()
 
 	ctx := context.Background()
-	cfg := &config.Shared{}
+	cfg := &config.Shared{Timeout: testTimeout}
 	mCfg := &config.Master{}
 
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := mux.AcceptSessionContext(context.Background(), server)
+		_, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			// Expected error when master closes
 			return
@@ -280,7 +275,7 @@ func TestStartLocalPortFwdJob(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	cfg := &config.Shared{}
+	cfg := &config.Shared{Timeout: testTimeout}
 	mCfg := &config.Master{}
 
 	client, server := net.Pipe()
@@ -291,7 +286,7 @@ func TestStartLocalPortFwdJob(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := mux.AcceptSessionContext(context.Background(), server)
+		_, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error (expected on cleanup): %v", err)
 		}
@@ -331,7 +326,7 @@ func TestStartRemotePortFwdJob(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	cfg := &config.Shared{}
+	cfg := &config.Shared{Timeout: testTimeout}
 	mCfg := &config.Master{}
 
 	client, server := net.Pipe()
@@ -341,7 +336,7 @@ func TestStartRemotePortFwdJob(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSessionContext(context.Background(), server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -386,7 +381,7 @@ func TestHandleConnectAsync(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	cfg := &config.Shared{}
+	cfg := &config.Shared{Timeout: testTimeout}
 	mCfg := &config.Master{}
 
 	client, server := net.Pipe()
@@ -397,7 +392,7 @@ func TestHandleConnectAsync(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := mux.AcceptSessionContext(context.Background(), server)
+		_, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 		}
@@ -425,7 +420,7 @@ func TestStartSocksProxyJob(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	cfg := &config.Shared{}
+	cfg := &config.Shared{Timeout: testTimeout}
 	mCfg := &config.Master{
 		Socks: &config.SocksCfg{
 			Host: "127.0.0.1",
@@ -441,7 +436,7 @@ func TestStartSocksProxyJob(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := mux.AcceptSessionContext(context.Background(), server)
+		_, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 		}
@@ -477,7 +472,7 @@ func TestStartSocksProxyJob_InvalidConfig(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	cfg := &config.Shared{}
+	cfg := &config.Shared{Timeout: testTimeout}
 	mCfg := &config.Master{
 		Socks: &config.SocksCfg{
 			Host: "127.0.0.1",
@@ -493,7 +488,7 @@ func TestStartSocksProxyJob_InvalidConfig(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := mux.AcceptSessionContext(context.Background(), server)
+		_, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 		}
@@ -526,6 +521,7 @@ func TestHandleForeground_Plain(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
@@ -539,7 +535,7 @@ func TestHandleForeground_Plain(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSessionContext(context.Background(), server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -599,6 +595,7 @@ func TestHandleForeground_PTY(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
@@ -612,7 +609,7 @@ func TestHandleForeground_PTY(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSessionContext(context.Background(), server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -673,7 +670,7 @@ func TestStartForegroundJob(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	cfg := &config.Shared{}
+	cfg := &config.Shared{Timeout: testTimeout}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
 		Pty:  false,
@@ -686,7 +683,7 @@ func TestStartForegroundJob(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSessionContext(context.Background(), server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -737,6 +734,7 @@ func TestHandle_BasicFlow(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
@@ -750,7 +748,7 @@ func TestHandle_BasicFlow(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSessionContext(context.Background(), server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -815,6 +813,7 @@ func TestHandle_WithLocalPortForwarding(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
@@ -836,7 +835,7 @@ func TestHandle_WithLocalPortForwarding(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSessionContext(context.Background(), server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -893,6 +892,7 @@ func TestHandle_WithRemotePortForwarding(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
@@ -914,7 +914,7 @@ func TestHandle_WithRemotePortForwarding(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSessionContext(context.Background(), server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -982,6 +982,7 @@ func TestHandle_WithSOCKS(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
@@ -999,7 +1000,7 @@ func TestHandle_WithSOCKS(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSessionContext(context.Background(), server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -1056,6 +1057,7 @@ func TestHandle_ReceiveConnectMessage(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
@@ -1077,7 +1079,7 @@ func TestHandle_ReceiveConnectMessage(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSessionContext(context.Background(), server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -1151,6 +1153,7 @@ func TestHandle_UnexpectedMessage(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
@@ -1164,7 +1167,7 @@ func TestHandle_UnexpectedMessage(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSessionContext(context.Background(), server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -1230,6 +1233,7 @@ func TestHandle_UnauthorizedConnect(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec: "/bin/sh",
@@ -1251,7 +1255,7 @@ func TestHandle_UnauthorizedConnect(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSessionContext(context.Background(), server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -1327,6 +1331,7 @@ func TestHandleForeground_WithLogFile(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec:    "/bin/sh",
@@ -1341,7 +1346,7 @@ func TestHandleForeground_WithLogFile(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSessionContext(context.Background(), server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return
@@ -1409,6 +1414,7 @@ func TestHandleForeground_PTYWithLogFile(t *testing.T) {
 
 	cfg := &config.Shared{
 		Verbose: false,
+		Timeout: testTimeout,
 	}
 	mCfg := &config.Master{
 		Exec:    "/bin/sh",
@@ -1423,7 +1429,7 @@ func TestHandleForeground_PTYWithLogFile(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		sess, err := mux.AcceptSessionContext(context.Background(), server)
+		sess, err := mux.AcceptSessionContext(context.Background(), server, testTimeout)
 		if err != nil {
 			t.Logf("AcceptSession() error: %v", err)
 			return

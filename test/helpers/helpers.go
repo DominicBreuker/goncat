@@ -5,6 +5,7 @@ import (
 	"dominicbreuker/goncat/mocks"
 	"dominicbreuker/goncat/pkg/config"
 	"io"
+	"time"
 )
 
 // SetupMockDependencies creates a complete set of mock dependencies
@@ -50,6 +51,7 @@ func DefaultSharedConfig(deps *config.Dependencies) *config.Shared {
 		SSL:      false,
 		Key:      "",
 		Verbose:  false,
+		Timeout:  10 * time.Second,
 		Deps:     deps,
 	}
 }

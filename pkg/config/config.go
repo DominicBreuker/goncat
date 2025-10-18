@@ -5,6 +5,7 @@ package config
 
 import (
 	"fmt"
+	"time"
 )
 
 // Shared contains configuration settings common to both master and slave modes,
@@ -16,6 +17,7 @@ type Shared struct {
 	SSL      bool
 	Key      string
 	Verbose  bool
+	Timeout  time.Duration
 	Deps     *Dependencies
 }
 

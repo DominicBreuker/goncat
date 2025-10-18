@@ -55,7 +55,7 @@ func New(ctx context.Context, cfg *config.Shared, handle transport.Handler) (*Se
 			tlsConn := tls.Server(conn, tlsCfg)
 
 			// set a handshake deadline to avoid blocking forever
-			_ = tlsConn.SetDeadline(time.Now().Add(10 * time.Second))
+			_ = tlsConn.SetDeadline(time.Now().Add(cfg.Timeout))
 			if err := tlsConn.Handshake(); err != nil {
 				// ensure connection closed on handshake failure
 				_ = tlsConn.Close()

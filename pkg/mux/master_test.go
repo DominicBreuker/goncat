@@ -7,6 +7,7 @@ import (
 	"net"
 	"sync"
 	"testing"
+	"time"
 )
 
 // TestOpenSession verifies master session creation.
@@ -23,14 +24,14 @@ func TestOpenSession(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		_, err := AcceptSessionContext(context.Background(), server)
+		_, err := AcceptSessionContext(context.Background(), server, 50*time.Millisecond)
 		if err != nil {
 			t.Errorf("AcceptSession() failed: %v", err)
 		}
 	}()
 
 	// Open master session
-	master, err := OpenSessionContext(context.Background(), client)
+	master, err := OpenSessionContext(context.Background(), client, 50*time.Millisecond)
 	if err != nil {
 		t.Fatalf("OpenSession() failed: %v", err)
 	}
@@ -66,7 +67,7 @@ func TestMasterSession_Close(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		slave, err := AcceptSessionContext(context.Background(), server)
+		slave, err := AcceptSessionContext(context.Background(), server, 50*time.Millisecond)
 		if err != nil {
 			t.Errorf("AcceptSession() failed: %v", err)
 			return
@@ -76,7 +77,7 @@ func TestMasterSession_Close(t *testing.T) {
 		slave.Close()
 	}()
 
-	master, err := OpenSessionContext(context.Background(), client)
+	master, err := OpenSessionContext(context.Background(), client, 50*time.Millisecond)
 	if err != nil {
 		t.Fatalf("OpenSession() failed: %v", err)
 	}
@@ -104,7 +105,7 @@ func TestMasterSession_SendAndReceive(t *testing.T) {
 	var slaveReceivedMsg msg.Message
 	go func() {
 		defer wg.Done()
-		slave, err := AcceptSessionContext(context.Background(), server)
+		slave, err := AcceptSessionContext(context.Background(), server, 50*time.Millisecond)
 		if err != nil {
 			t.Errorf("AcceptSession() failed: %v", err)
 			return
@@ -124,7 +125,7 @@ func TestMasterSession_SendAndReceive(t *testing.T) {
 		}
 	}()
 
-	master, err := OpenSessionContext(context.Background(), client)
+	master, err := OpenSessionContext(context.Background(), client, 50*time.Millisecond)
 	if err != nil {
 		t.Fatalf("OpenSession() failed: %v", err)
 	}
@@ -168,7 +169,7 @@ func TestMasterSession_SendAndGetOneChannel(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		slave, err := AcceptSessionContext(context.Background(), server)
+		slave, err := AcceptSessionContext(context.Background(), server, 50*time.Millisecond)
 		if err != nil {
 			t.Errorf("AcceptSession() failed: %v", err)
 			return
@@ -196,7 +197,7 @@ func TestMasterSession_SendAndGetOneChannel(t *testing.T) {
 		}
 	}()
 
-	master, err := OpenSessionContext(context.Background(), client)
+	master, err := OpenSessionContext(context.Background(), client, 50*time.Millisecond)
 	if err != nil {
 		t.Fatalf("OpenSession() failed: %v", err)
 	}
@@ -234,7 +235,7 @@ func TestMasterSession_SendAndGetTwoChannels(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		slave, err := AcceptSessionContext(context.Background(), server)
+		slave, err := AcceptSessionContext(context.Background(), server, 50*time.Millisecond)
 		if err != nil {
 			t.Errorf("AcceptSession() failed: %v", err)
 			return
@@ -272,7 +273,7 @@ func TestMasterSession_SendAndGetTwoChannels(t *testing.T) {
 		}
 	}()
 
-	master, err := OpenSessionContext(context.Background(), client)
+	master, err := OpenSessionContext(context.Background(), client, 50*time.Millisecond)
 	if err != nil {
 		t.Fatalf("OpenSession() failed: %v", err)
 	}
@@ -320,7 +321,7 @@ func TestMasterSession_GetOneChannel(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		slave, err := AcceptSessionContext(context.Background(), server)
+		slave, err := AcceptSessionContext(context.Background(), server, 50*time.Millisecond)
 		if err != nil {
 			t.Errorf("AcceptSession() failed: %v", err)
 			return
@@ -347,7 +348,7 @@ func TestMasterSession_GetOneChannel(t *testing.T) {
 		}
 	}()
 
-	master, err := OpenSessionContext(context.Background(), client)
+	master, err := OpenSessionContext(context.Background(), client, 50*time.Millisecond)
 	if err != nil {
 		t.Fatalf("OpenSession() failed: %v", err)
 	}
@@ -389,7 +390,7 @@ func TestMasterSession_ConcurrentSends(t *testing.T) {
 	receivedCount := 0
 	go func() {
 		defer wg.Done()
-		slave, err := AcceptSessionContext(context.Background(), server)
+		slave, err := AcceptSessionContext(context.Background(), server, 50*time.Millisecond)
 		if err != nil {
 			t.Errorf("AcceptSession() failed: %v", err)
 			return
@@ -407,7 +408,7 @@ func TestMasterSession_ConcurrentSends(t *testing.T) {
 		}
 	}()
 
-	master, err := OpenSessionContext(context.Background(), client)
+	master, err := OpenSessionContext(context.Background(), client, 50*time.Millisecond)
 	if err != nil {
 		t.Fatalf("OpenSession() failed: %v", err)
 	}
@@ -447,7 +448,7 @@ func TestMasterSession_SendAndGetTwoChannels_ClosesProperly(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		slave, err := AcceptSessionContext(context.Background(), server)
+		slave, err := AcceptSessionContext(context.Background(), server, 50*time.Millisecond)
 		if err != nil {
 			t.Errorf("AcceptSession() failed: %v", err)
 			return
@@ -476,7 +477,7 @@ func TestMasterSession_SendAndGetTwoChannels_ClosesProperly(t *testing.T) {
 		conn2.Close()
 	}()
 
-	master, err := OpenSessionContext(context.Background(), client)
+	master, err := OpenSessionContext(context.Background(), client, 50*time.Millisecond)
 	if err != nil {
 		t.Fatalf("OpenSession() failed: %v", err)
 	}
@@ -517,7 +518,7 @@ func TestOpenSession_ServerClosesEarly(t *testing.T) {
 	server.Close()
 
 	// Should fail to open session
-	_, err := OpenSessionContext(context.Background(), client)
+	_, err := OpenSessionContext(context.Background(), client, 50*time.Millisecond)
 	if err == nil {
 		t.Error("OpenSession() succeeded with closed server; want error")
 	}
@@ -537,7 +538,7 @@ func TestMasterSession_ConcurrentSendAndGetOneChannel(t *testing.T) {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		slave, err := AcceptSessionContext(context.Background(), server)
+		slave, err := AcceptSessionContext(context.Background(), server, 50*time.Millisecond)
 		if err != nil {
 			t.Errorf("AcceptSession() failed: %v", err)
 			return
@@ -567,7 +568,7 @@ func TestMasterSession_ConcurrentSendAndGetOneChannel(t *testing.T) {
 		}
 	}()
 
-	master, err := OpenSessionContext(context.Background(), client)
+	master, err := OpenSessionContext(context.Background(), client, 50*time.Millisecond)
 	if err != nil {
 		t.Fatalf("OpenSession() failed: %v", err)
 	}

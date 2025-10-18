@@ -31,12 +31,12 @@ func TestReceiveContextCancellation_MasterAndSlave(t *testing.T) {
 	sch := make(chan sres, 1)
 
 	go func() {
-		ms, err := OpenSessionContext(context.Background(), a)
+		ms, err := OpenSessionContext(context.Background(), a, 50*time.Millisecond)
 		mch <- mres{ms, err}
 	}()
 
 	go func() {
-		ss, err := AcceptSessionContext(context.Background(), b)
+		ss, err := AcceptSessionContext(context.Background(), b, 50*time.Millisecond)
 		sch <- sres{ss, err}
 	}()
 
