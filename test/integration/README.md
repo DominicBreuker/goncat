@@ -6,28 +6,68 @@ This directory contains integration test utilities and examples for testing gonc
 
 **Fast and Deterministic Tests**: The mock implementations provide `WaitForOutput` and `WaitForListener` methods that block until expected conditions are met, eliminating the need for arbitrary `time.Sleep` calls. This makes tests both faster (9x improvement) and more reliable.
 
+## Unified Test Setup
+
+Integration tests use a unified helper function `helpers.SetupMockDependenciesAndConfigs()` that provides all necessary mocks and default configurations in a single call.
+
+**Usage**:
+```go
+func TestExample(t *testing.T) {
+    // Setup all mocks and default configs
+    setup := helpers.SetupMockDependenciesAndConfigs()
+    defer setup.Close()
+
+    // Modify configs as needed for this specific test
+    setup.MasterCfg.Exec = "/bin/sh"
+    setup.MasterCfg.LocalPortForwarding = []*config.LocalPortForwardingCfg{
+        {LocalHost: "127.0.0.1", LocalPort: 8000, RemoteHost: "127.0.0.1", RemotePort: 9000},
+    }
+
+    // Use setup.TCPNetwork, setup.UDPNetwork, setup.MasterStdio, etc.
+    // Access configs via setup.MasterSharedCfg, setup.SlaveSharedCfg, setup.MasterCfg
+}
+```
+
+The `MockDependenciesAndConfigs` struct includes:
+- **Mock Networks**: `TCPNetwork` (from `mocks/tcp`), `UDPNetwork`
+- **Mock Stdio**: `MasterStdio`, `SlaveStdio` for master and slave processes
+- **Mock Exec**: `MockExec` for command execution tests
+- **Dependencies**: `MasterDeps`, `SlaveDeps` pre-configured with all mocks
+- **Default Configs**: `MasterSharedCfg`, `SlaveSharedCfg`, `MasterCfg` ready to use or modify
+- **Cleanup**: `Close()` method for proper resource cleanup
+
 ## Mock TCP Network
 
-The `mocktcp.go` file provides a `MockTCPNetwork` that simulates TCP connections without using real network sockets.
+The `mocks/tcp` package provides a `MockTCPNetwork` that simulates TCP connections without using real network sockets.
 
 **Features**: 
 - In-memory connections via `net.Pipe()`
 - Multiple listeners
 - Automatic lifecycle management
-- `WaitForListener(addr, timeoutMs)` - Blocks until a listener is bound to the specified address or timeout expires. Useful for synchronizing test flow without arbitrary sleeps.
+- `WaitForListener(addr, timeoutMs)` - Blocks until a listener is bound to the specified address or timeout expires. Returns the listener and an error. Useful for synchronizing test flow without arbitrary sleeps.
+- Helper types: `Client` and `Server` for easy test client/server creation
 
 **Usage**:
 ```go
-mockNet := NewMockTCPNetwork()
-deps := &config.Dependencies{
-    TCPDialer:   mockNet.DialTCP,
-    TCPListener: mockNet.ListenTCP,
-}
-
-// Wait for a service to start listening
-if err := mockNet.WaitForListener("127.0.0.1:12345", 2000); err != nil {
+// Already available in setup
+listener, err := setup.TCPNetwork.WaitForListener("127.0.0.1:12345", 2000)
+if err != nil {
     t.Fatalf("Service failed to start: %v", err)
 }
+
+// Create a test client
+client, err := mocks_tcp.NewClient(setup.TCPNetwork.DialTCP, "tcp", "127.0.0.1:8000")
+if err != nil {
+    t.Fatalf("failed to connect: %v", err)
+}
+defer client.Close()
+
+// Create a test server
+srv, err := mocks_tcp.New(setup.TCPNetwork.ListenTCP, "tcp", "127.0.0.1:9000", "RESPONSE: ")
+if err != nil {
+    t.Fatalf("failed to start server: %v", err)
+}
+defer srv.Close()
 ```
 
 ## Mock Standard I/O
@@ -41,20 +81,35 @@ The `mockstdio.go` file provides `MockStdio` for mocking stdin and stdout stream
 
 **Usage**:
 ```go
-mockStdio := NewMockStdio()
-mockStdio.WriteToStdin([]byte("input data"))
-deps := &config.Dependencies{
-    Stdin:  func() io.Reader { return mockStdio.GetStdin() },
-    Stdout: func() io.Writer { return mockStdio.GetStdout() },
-}
+// Already available in setup
+setup.MasterStdio.WriteToStdin([]byte("input data"))
 
 // Wait for expected output instead of sleeping
-if err := mockStdio.WaitForOutput("expected text", 2000); err != nil {
+if err := setup.MasterStdio.WaitForOutput("expected text", 2000); err != nil {
     t.Errorf("Expected output not found: %v", err)
 }
 
 // Or check all output collected so far
-output := mockStdio.ReadFromStdout()
+output := setup.MasterStdio.ReadFromStdout()
+```
+
+## Mock UDP Network
+
+The `mockudp.go` file provides `MockUDPNetwork` for mocking UDP connections.
+
+**Features**: 
+- In-memory packet delivery via channels
+- Multiple listeners
+- `WaitForListener(addr, timeoutMs)` - Similar to TCP mock
+
+**Usage**:
+```go
+// Already available in setup
+listener, err := setup.UDPNetwork.ListenUDP("udp", udpAddr)
+if err != nil {
+    t.Fatalf("Failed to create UDP listener: %v", err)
+}
+defer listener.Close()
 ```
 
 ## Mock Command Execution
@@ -69,18 +124,11 @@ The `mockexec.go` file provides `MockExec` for mocking command execution without
 
 **Usage**:
 ```go
-mockExec := NewMockExec()
-deps := &config.Dependencies{
-    ExecCommand: mockExec.Command,
-}
-// Command will behave like a simple shell
+// Already available in setup via dependencies
+// The mock exec is pre-configured in both master and slave dependencies
+// Just set the Exec field in the master config
+setup.MasterCfg.Exec = "/bin/sh"
 ```
-
-## Dependency Injection
-
-Uses `config.Dependencies` struct to inject mocks. Helper functions (`GetTCPDialerFunc`, `GetTCPListenerFunc`, `GetStdinFunc`, `GetStdoutFunc`, `GetExecCommandFunc`) return either mock or default implementations.
-
-**Current mocks**: TCP network, stdin/stdout, command execution.
 
 ## Integration Tests
 
@@ -129,15 +177,21 @@ Uses `config.Dependencies` struct to inject mocks. Helper functions (`GetTCPDial
 - Validates complete bidirectional data flow through the SOCKS proxy tunnel
 - Tests multiple connections to ensure stability
 - Demonstrates realistic SOCKS proxy scenario entirely in-memory
-- Note: Only tests SOCKS CONNECT; ASSOCIATE (UDP) is not tested due to lack of UDP mocking
+- Note: Only tests SOCKS CONNECT; ASSOCIATE (UDP) is tested separately in `test/integration/socks/associate/`
 
-## Test Helpers
+### SOCKS UDP ASSOCIATE Tests
+The `test/integration/socks/associate/` directory contains tests for SOCKS5 UDP ASSOCIATE functionality:
 
-The `test/helpers/` directory contains utilities to reduce boilerplate in tests:
+**TestSingleClient** (`single_client_test.go`):
+- Tests SOCKS5 UDP ASSOCIATE with a single client
+- Validates complete UDP packet flow through the SOCKS proxy
 
-**SetupMockDependencies()**: Creates mock network and stdio dependencies  
-**SetupMockDependenciesWithExec()**: Also includes mock exec for command testing  
-**DefaultSharedConfig()**: Creates standard Shared config with sensible defaults  
-**DefaultMasterConfig()**: Creates standard Master config with sensible defaults
+**TestMultipleClients** (`multiple_clients_test.go`):
+- Tests SOCKS5 UDP ASSOCIATE with multiple concurrent clients
+- Each client gets its own UDP relay and can send/receive independently
+- Validates that multiple clients can use the proxy simultaneously
 
-These helpers allow tests to focus on test-specific configuration while reusing common setup code.
+**Shared Setup** (`helpers.go`):
+- `SetupTest()` creates all test infrastructure using the unified helper
+- `CreateSOCKSClient()` performs SOCKS5 handshake and UDP ASSOCIATE request
+- `SOCKSClient.SendUDPDatagram()` sends and receives SOCKS5 UDP datagrams
