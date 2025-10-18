@@ -73,54 +73,50 @@ make staticcheck       # Run staticcheck (installs if needed)
 
 ### Testing
 
-**Unit Tests:**
+We have three distinct types of tests with different purposes and mocking strategies:
+
+**Unit Tests (in `*_test.go` files):**
 ```bash
 make test-unit         # Unit tests with coverage report
 go test -cover ./...   # Same as above
 ```
-- Fast execution: ~2-3 seconds
-- Reports code coverage for each package
-- See `TESTING.md` for comprehensive testing guidelines
+- **Location**: `*_test.go` files next to source code
+- **Mocking**: Internal dependency injection with simple fakes in test files
+- **Pattern**: Internal unexported functions accept injected dependencies (e.g., `masterListen()` with `serverFactory`)
+- **Do NOT use**: `mocks/` package (that's for integration tests only)
+- **Fast execution**: ~2-3 seconds
+- **Example**: `pkg/entrypoint/*_test.go` uses fake servers/clients
 
-**Integration Tests (Mocked):**
+**Integration Tests (in `test/integration/`):**
 ```bash
-go test ./test/integration/...  # High-level integration tests with mocks
+go test ./test/integration/...  # Integration tests with mocked system resources
 ```
-- Fast execution: ~2 seconds
-- Uses mocked network and stdio (no real TCP or terminal I/O)
-- Tests complete master-slave communication flows
-- Located in `test/integration/` directory
-- See `test/integration/README.md` for details
+- **Location**: `test/integration/` directory
+- **Mocking**: Use `mocks/` package (MockTCPNetwork, MockStdio, MockExec)
+- **Pattern**: Pass mocks via `config.Dependencies` to entrypoint functions
+- **Purpose**: Test complete tool workflows without real network/terminal I/O
+- **Fast execution**: ~2 seconds
+- **IMPORTANT**: All integration tests must remain passing
+- **See**: `test/integration/README.md` for details
 
-**E2E Tests (Docker):**
+**E2E Tests (in `test/e2e/`):**
 ```bash
 make test              # All tests (unit + E2E)
 make test-integration  # Only E2E tests
 ```
-- **REQUIRES:** Docker and Docker Compose installed
-- **REQUIRES:** Linux binary built first (runs `make build-linux` automatically)
-- Tests both bind shell and reverse shell scenarios
-- Tests all transport protocols: tcp, ws, wss
-- Uses Alpine Linux containers with expect for testing
-- Total test time: ~2-3 minutes
-- Tests are in `test/e2e/` directory with expect scripts
-
-**E2E Test Details:**
-- Uses `docker compose` with test configurations in `test/e2e/` directory
-- Two main test scenarios:
-  - `slave-listen` (bind shell): master connects to listening slave
-  - `slave-connect` (reverse shell): slave connects to listening master
-- Tests verify: basic connectivity, exec mode, PTY mode
-- All tests run with `--exit-code-from` to propagate test failures
-
-**IMPORTANT:** All integration tests in `test/integration/` must be kept running. These tests use mocked dependencies and validate the complete tool flow.
+- **Location**: `test/e2e/` directory with expect scripts
+- **Mocking**: None - uses real compiled binaries
+- **Environment**: Docker containers with Alpine Linux
+- **Requirements**: Docker and Docker Compose
+- **Duration**: ~2-3 minutes
+- **Scenarios**: Bind/reverse shell with tcp, ws, wss protocols
 
 **Testing Guidelines:**
 - See `TESTING.md` for comprehensive testing guidelines
-- Use table-driven tests with subtests
-- Test behavior, not implementation details
-- Cover edge cases and error paths
-- Keep tests fast, focused, and deterministic
+- Unit tests: Use internal dependency injection, create simple fakes in test files
+- Integration tests: Use `mocks/` package and `config.Dependencies`
+- E2E tests: No mocking, validates real binaries
+- All test types: Use table-driven tests, test behavior, cover edge cases
 
 ### Known Build/Test Issues
 

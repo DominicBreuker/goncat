@@ -4,12 +4,39 @@ This document provides comprehensive testing guidelines for the goncat project. 
 
 ## Overview
 
-Our testing strategy includes:
-- **Unit tests**: Test individual functions and components in isolation (in `*_test.go` files)
-- **Integration tests**: Test complete flows with mocked dependencies (in `test/integration/`)
-- **E2E tests**: End-to-end tests with real binaries in Docker (in `test/e2e/`)
+Our testing strategy includes three distinct types of tests:
+
+### Unit Tests
+- **Location**: `*_test.go` files next to source code
+- **Purpose**: Test individual functions and components in isolation
+- **Mocking strategy**: Use internal dependency injection with fake implementations
+- **No external mocks**: Unit tests do NOT use mocks from `mocks/` package
+- **Pattern**: Create internal unexported functions that accept injected dependencies (e.g., `masterListen()` accepting `serverFactory`), while exported functions (e.g., `MasterListen()`) delegate to internal functions with real dependencies
+- **Example**: `pkg/entrypoint/*_test.go` tests use fake servers/clients injected via function parameters
+
+### Integration Tests
+- **Location**: `test/integration/` directory
+- **Purpose**: Test complete tool workflows using entrypoint functions
+- **Mocking strategy**: Use mocks from `mocks/` package (MockTCPNetwork, MockStdio, MockExec)
+- **Dependencies**: Passed via `config.Dependencies` struct to avoid real system resources
+- **Scope**: Test master-slave communication flows without real network/terminal I/O
+- **Speed**: Fast (~2 seconds) and deterministic
+- **Example**: `test/integration/plain/` tests complete bidirectional data flow
+
+### End-to-End (E2E) Tests
+- **Location**: `test/e2e/` directory
+- **Purpose**: Validate real compiled binaries in realistic environments
+- **Mocking strategy**: No mocks - uses actual compiled binaries
+- **Environment**: Docker containers with Alpine Linux and expect scripts
+- **Scope**: Tests all transport protocols (tcp, ws, wss) in bind/reverse shell scenarios
+- **Speed**: Slower (~2-3 minutes) but validates real-world behavior
+- **Requirements**: Docker and Docker Compose
+
+### Coverage & Organization
 - **Coverage goals**: Aim for meaningful coverage of edge cases and error paths, not just 100% line coverage
-- **Test organization**: Unit tests live alongside code; integration/E2E tests in `test/` directory
+- **Unit tests**: Fast, isolated, test behavior and error handling
+- **Integration tests**: Validate complete flows remain working
+- **E2E tests**: Ensure real binaries work in production-like scenarios
 
 ## Structure & Naming
 
@@ -148,119 +175,117 @@ func TestFormat(t *testing.T) {
 }
 ```
 
-## Interfaces & Fakes
+## Unit Test Dependency Injection
 
-- Design code to accept interfaces for easy testing
-- Use simple fakes/stubs over heavy mocking frameworks
-- Keep fakes minimal and explicit:
+Unit tests use **internal dependency injection** to avoid real system dependencies:
+
+### Pattern: Internal Function with Injected Dependencies
+
+1. Create an internal (unexported) function that accepts fake implementations via function parameters
+2. The exported function delegates to the internal function, passing real implementations
+3. Tests call the internal function with fakes
+
+Example from `pkg/entrypoint/masterlisten.go`:
 
 ```go
-type fakeConn struct {
-    readData  []byte
-    writeData []byte
-    closed    bool
+// Exported function - uses real dependencies
+func MasterListen(ctx context.Context, cfg *config.Shared, mCfg *config.Master) error {
+    return masterListen(ctx, cfg, mCfg, func(...) (serverInterface, error) {
+        return server.New(ctx, cfg, handle)  // Real server
+    }, makeMasterHandler)
 }
 
-func (f *fakeConn) Read(p []byte) (n int, err error) {
-    n = copy(p, f.readData)
-    f.readData = f.readData[n:]
-    if len(f.readData) == 0 {
-        err = io.EOF
-    }
-    return
+// Internal function - accepts injected dependencies for testing
+func masterListen(
+    ctx context.Context,
+    cfg *config.Shared,
+    mCfg *config.Master,
+    newServer serverFactory,  // Injected dependency
+    makeHandler func(...) func(net.Conn) error,
+) error {
+    s, err := newServer(ctx, cfg, makeHandler(ctx, cfg, mCfg))
+    // ... rest of implementation
+}
+```
+
+### Creating Fakes for Unit Tests
+
+Keep fakes minimal and in test files:
+
+```go
+// In *_test.go file
+type fakeServer struct {
+    serveErr error
+    closed   bool
 }
 
-func (f *fakeConn) Write(p []byte) (n int, err error) {
-    f.writeData = append(f.writeData, p...)
-    return len(p), nil
+func (f *fakeServer) Serve() error {
+    return f.serveErr
 }
 
-func (f *fakeConn) Close() error {
+func (f *fakeServer) Close() error {
     f.closed = true
     return nil
 }
+
+func TestMasterListen_Success(t *testing.T) {
+    fs := &fakeServer{}
+    newServer := func(ctx, cfg, handle) (serverInterface, error) {
+        return fs, nil
+    }
+    
+    err := masterListen(ctx, cfg, mCfg, newServer, makeHandler)
+    // ... assertions
+}
 ```
 
-## Dependency Injection & Mocks
+**Important**: Unit tests do NOT use mocks from the `mocks/` package.
 
-The project uses dependency injection to support testing without real system resources. Most functions that interact with external systems (network, filesystem, command execution) accept an optional `*config.Dependencies` parameter.
+## Integration Test Mocks
+
+Integration tests use the `mocks/` package to avoid real system resources while testing complete workflows:
 
 ### Mock Infrastructure
 
-The `mocks/` package provides mock implementations:
+The `mocks/` package provides:
 - **MockTCPNetwork**: In-memory TCP network using `net.Pipe()`
 - **MockStdio**: Simulated stdin/stdout with buffers
-- **MockExec**: Simulated command execution without spawning processes
+- **MockExec**: Simulated command execution
 
-### Using Mocks in Unit Tests
+### Using Mocks in Integration Tests
 
-When writing unit tests, prefer mocks over real system resources:
+Integration tests pass mocks via `config.Dependencies`:
 
 ```go
-func TestClient_Connect(t *testing.T) {
-    // Create mock network
+func TestMasterSlaveFlow(t *testing.T) {
     mockNet := mocks.NewMockTCPNetwork()
-    deps := &config.Dependencies{
-        TCPDialer:   mockNet.DialTCP,
-        TCPListener: mockNet.ListenTCP,
+    masterStdio := mocks.NewMockStdio()
+    
+    cfg := &config.Shared{
+        Protocol: config.ProtoTCP,
+        Deps: &config.Dependencies{
+            TCPDialer:   mockNet.DialTCP,
+            TCPListener: mockNet.ListenTCP,
+            Stdin:  func() io.Reader { return masterStdio.GetStdin() },
+            Stdout: func() io.Writer { return masterStdio.GetStdout() },
+        },
     }
-
-    // Create a listener on mock network
-    tcpAddr, _ := net.ResolveTCPAddr("tcp", "127.0.0.1:12345")
-    listener, _ := mockNet.ListenTCP("tcp", tcpAddr)
-    defer listener.Close()
-
-    // Test dialing with mock network
-    dialer, _ := tcp.NewDialer("127.0.0.1:12345", deps)
-    conn, err := dialer.Dial()
-    if err != nil {
-        t.Fatalf("Dial() error = %v", err)
-    }
-    defer conn.Close()
+    
+    // Use entrypoint functions with mocked dependencies
+    go entrypoint.MasterListen(ctx, cfg, masterCfg)
+    // ... test complete workflow
 }
 ```
 
-### Using MockExec for Command Testing
+### Benefits of Integration Test Mocks
 
-```go
-func TestRunCommand(t *testing.T) {
-    mockExec := mocks.NewMockExec()
-    deps := &config.Dependencies{
-        ExecCommand: mockExec.Command,
-    }
-
-    conn := newFakeConn()
-    conn.readBuf.WriteString("echo hello\n")
-    conn.readBuf.WriteString("exit\n")
-
-    err := exec.Run(ctx, conn, "/bin/sh", deps)
-    if err != nil {
-        t.Fatalf("Run() error = %v", err)
-    }
-
-    output := conn.writeBuf.String()
-    if !strings.Contains(output, "hello") {
-        t.Errorf("output = %q, want to contain 'hello'", output)
-    }
-}
-```
-
-### Benefits of Mocks
-
-- **Fast**: No network latency or process spawning
+- **Fast**: No network latency or process spawning (~2 seconds for full suite)
 - **Reliable**: No port conflicts or race conditions
 - **Isolated**: Tests don't affect or depend on system state
-- **CI-friendly**: No special privileges or resources needed
+- **CI-friendly**: No special privileges or Docker required
 - **Deterministic**: Predictable behavior without timing issues
 
-### When to Use Real Resources
-
-Avoid mocks for:
-- Integration tests validating complete workflows
-- E2E tests in `test/e2e/` using Docker
-- Tests specifically validating real system behavior
-
-See `test/integration/README.md` for integration testing with mocks.
+See `test/integration/README.md` for more details on integration testing.
 
 ## Benchmarks
 
@@ -411,35 +436,40 @@ See existing tests for examples:
 - `cmd/shared/parsers_test.go` - table-driven tests with error cases
 - More examples will be added as we expand test coverage
 
-## Integration Tests
+## Detailed Testing Strategies
 
-Integration tests in `test/integration/` validate complete workflows using mocked dependencies. These tests:
-- Use mocked network connections (`mocks/mocktcp.go`) and stdio (`mocks/mockstdio.go`)
-- Test the four operation modes via entrypoint functions in `pkg/entrypoint/`
-- Validate bidirectional data flow without real network or terminal I/O
-- Run fast (~2 seconds) and are fully deterministic
+### Unit Tests (in package directories)
 
-### Writing Integration Tests
+**Purpose**: Test individual functions in isolation  
+**Location**: `*_test.go` files next to source code  
+**Mocking**: Internal dependency injection with fakes defined in test files  
+**Pattern**: Create internal functions accepting injected dependencies
 
-1. **Setup mocks**: Use helpers from `test/helpers/` to create mock dependencies
-2. **Configure**: Create `config.Shared` and mode-specific configs (e.g., `config.Master`)
-3. **Use entrypoints**: Call `entrypoint.MasterListen()`, `entrypoint.SlaveConnect()`, etc.
-4. **Validate**: Check that data flows correctly through mocked stdio
+Example from `pkg/entrypoint/`:
+- Exported `MasterListen()` calls internal `masterListen()` with real dependencies
+- Tests call `masterListen()` with fake server factories
+- Fakes are simple structs in test files implementing required interfaces
+
+### Integration Tests (in test/integration/)
+
+**Purpose**: Validate complete tool workflows  
+**Location**: `test/integration/` directory  
+**Mocking**: Use `mocks/` package (MockTCPNetwork, MockStdio, MockExec)  
+**Pattern**: Pass mocks via `config.Dependencies` to entrypoint functions
 
 Example structure:
 ```go
-func TestMyFlow(t *testing.T) {
+func TestMasterSlaveFlow(t *testing.T) {
     mockNet := mocks.NewMockTCPNetwork()
     masterStdio := mocks.NewMockStdio()
-    slaveSt dio := mocks.NewMockStdio()
+    slaveStdio := mocks.NewMockStdio()
     
-    // Setup configs with mocked dependencies
     masterCfg := &config.Shared{
         Protocol: config.ProtoTCP,
         Deps: &config.Dependencies{
-            TCPDialer: mockNet.DialTCP,
+            TCPDialer:   mockNet.DialTCP,
             TCPListener: mockNet.ListenTCP,
-            Stdin: func() io.Reader { return masterStdio.GetStdin() },
+            Stdin:  func() io.Reader { return masterStdio.GetStdin() },
             Stdout: func() io.Writer { return masterStdio.GetStdout() },
         },
     }
@@ -448,13 +478,35 @@ func TestMyFlow(t *testing.T) {
     go entrypoint.MasterListen(ctx, masterCfg, masterModeCfg)
     go entrypoint.SlaveConnect(ctx, slaveCfg)
     
-    // Write to master stdin, verify appears on slave stdout
-    masterStdio.WriteToStdin([]byte("test"))
+    // Test bidirectional data flow through mocked I/O
+    masterStdio.WriteToStdin([]byte("test\n"))
     output := slaveStdio.ReadFromStdout()
+    // Assert output matches expected
 }
 ```
 
-**Important**: Integration tests must remain passing. They validate the complete tool behavior.
+**Key Points**:
+- Integration tests validate tool workflows without touching real system resources
+- They test at the entrypoint level (highest level before CLI)
+- Must remain passing - they verify complete tool behavior
+- See `test/integration/README.md` for more details
+
+### E2E Tests (in test/e2e/)
+
+**Purpose**: Validate real compiled binaries  
+**Location**: `test/e2e/` directory  
+**Environment**: Docker containers with Alpine Linux and expect scripts  
+**No mocking**: Uses actual compiled binaries with real network
+
+**Run E2E tests**:
+```bash
+make test              # All tests (unit + E2E)
+make test-integration  # Only E2E tests
+```
+
+**Requirements**: Docker and Docker Compose  
+**Duration**: ~2-3 minutes  
+**Scenarios**: Bind shell and reverse shell with all transport protocols (tcp, ws, wss)
 
 ## Summary
 
