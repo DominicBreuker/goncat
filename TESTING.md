@@ -258,6 +258,36 @@ func (c *Client) connect(deps *dependencies) error {
 }
 ```
 
+Example from `pkg/server/server.go`:
+
+```go
+// dependencies holds the injectable dependencies for testing.
+type dependencies struct {
+    newTCPListener func(string, *config.Dependencies) (transport.Listener, error)
+    newWSListener  func(context.Context, string, bool) (transport.Listener, error)
+    certGenerator  func(string) (*x509.CertPool, tls.Certificate, error)
+}
+
+// New creates a new Server (exported function - uses real dependencies)
+func New(ctx context.Context, cfg *config.Shared, handle transport.Handler) (*Server, error) {
+    deps := &dependencies{
+        newTCPListener: func(addr string, deps *config.Dependencies) (transport.Listener, error) {
+            return tcp.NewListener(addr, deps)
+        },
+        newWSListener: func(ctx context.Context, addr string, secure bool) (transport.Listener, error) {
+            return ws.NewListener(ctx, addr, secure)
+        },
+        certGenerator: crypto.GenerateCertificates,
+    }
+    return newServer(ctx, cfg, handle, deps)
+}
+
+// newServer is the internal implementation that accepts injected dependencies for testing
+func newServer(ctx context.Context, cfg *config.Shared, handle transport.Handler, deps *dependencies) (*Server, error) {
+    // ... implementation using deps.newTCPListener, deps.newWSListener, deps.certGenerator
+}
+```
+
 ### Creating Fakes for Unit Tests
 
 Keep fakes minimal and in test files:
@@ -492,6 +522,7 @@ See existing tests for examples:
 - `cmd/shared/parsers_test.go` - table-driven tests with error cases
 - `pkg/entrypoint/*_test.go` - dependency injection with function parameters
 - `pkg/client/client_test.go` - dependency injection with grouped dependencies struct
+- `pkg/server/server_test.go` - dependency injection with grouped dependencies struct
 
 ## Detailed Testing Strategies
 
