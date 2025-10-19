@@ -3,6 +3,7 @@ package entrypoint
 import (
 	"context"
 	"dominicbreuker/goncat/pkg/config"
+	"dominicbreuker/goncat/pkg/log"
 	"fmt"
 	"sync"
 )
@@ -33,6 +34,11 @@ func masterConnect(
 		<-ctx.Done()
 		closeOnce.Do(func() { _ = c.Close() })
 	}()
+
+	// let user know we established a new connection successfully
+	remoteAddr := c.GetConnection().RemoteAddr().String()
+	log.InfoMsg("New connection from %s\n", remoteAddr)
+	defer log.InfoMsg("Connection to %s closed\n", remoteAddr)
 
 	h, err := newMaster(ctx, cfg, mCfg, c.GetConnection())
 	if err != nil {
