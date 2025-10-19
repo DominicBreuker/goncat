@@ -28,18 +28,20 @@ services:
     stdin_open: true # docker run -i
     tty: true        # docker run -t
     hostname: the_slave
-    command: sh -c '/opt/dist/goncat.elf slave listen $TRANSPORT://:8081 --ssl'
+    command: sh -c '/opt/dist/goncat.elf slave listen $TRANSPORT://:8080 --ssl'
     volumes:
       - ../../dist:/opt/dist:ro
     healthcheck:
-      test: ["CMD-SHELL", "netstat -an | grep 8081 | grep LISTEN"] 
+      test: ["CMD-SHELL", "netstat -an | grep 8080 | grep LISTEN"] 
       interval: 5s
       timeout: 3s
       retries: 3
       start_period: 3s
     networks:
-      - common
-      - slave_private
+      common:
+        aliases:
+          - slave-tls
+      slave_private:
 
   slave-mtls:
     image: local/tests
@@ -49,18 +51,20 @@ services:
     stdin_open: true # docker run -i
     tty: true        # docker run -t
     hostname: the_slave
-    command: sh -c '/opt/dist/goncat.elf slave listen $TRANSPORT://:8082 --ssl --key testsecret'
+    command: sh -c '/opt/dist/goncat.elf slave listen $TRANSPORT://:8080 --ssl --key testsecret'
     volumes:
       - ../../dist:/opt/dist:ro
     healthcheck:
-      test: ["CMD-SHELL", "netstat -an | grep 8082 | grep LISTEN"] 
+      test: ["CMD-SHELL", "netstat -an | grep 8080 | grep LISTEN"] 
       interval: 5s
       timeout: 3s
       retries: 3
       start_period: 3s
     networks:
-      - common
-      - slave_private
+      common:
+        aliases:
+          - slave-mtls
+      slave_private:
 
   slave-companion:
     image: local/tests

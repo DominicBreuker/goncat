@@ -26,15 +26,15 @@ catch {close}
 catch {wait}
 
 # Test 2: TLS client -> TLS server (should succeed)
-puts "\n=== Test 2: TLS client -> TLS server (port 8081) ==="
-spawn /opt/dist/goncat.elf master connect $transport://slave:8081 --ssl --timeout 2000
+puts "\n=== Test 2: TLS client -> TLS server (port 8080) ==="
+spawn /opt/dist/goncat.elf master connect $transport://slave-tls:8080 --ssl --timeout 2000
 Expect::server_connected
 Expect::close_and_wait
 puts "✓ Test 2 passed: TLS connection established\n"
 
 # Test 3: TLS client -> mTLS server (should fail with certificate error)
-puts "\n=== Test 3: TLS client -> mTLS server (port 8082) ==="
-spawn /opt/dist/goncat.elf master connect $transport://slave:8082 --ssl --timeout 2000
+puts "\n=== Test 3: TLS client -> mTLS server (port 8080) ==="
+spawn /opt/dist/goncat.elf master connect $transport://slave-mtls:8080 --ssl --timeout 2000
 set timeout 5
 expect {
     "Error: Run: connecting: upgrade to tls: tls handshake: verify certificate:" {

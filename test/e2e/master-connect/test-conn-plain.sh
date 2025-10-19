@@ -14,8 +14,8 @@ Expect::close_and_wait
 puts "✓ Test 1 passed: Plain connection established\n"
 
 # Test 2: Plain client -> TLS server (should fail with timeout/EOF)
-puts "\n=== Test 2: Plain client -> TLS server (port 8081) ==="
-spawn /opt/dist/goncat.elf master connect $transport://slave:8081 --timeout 2000
+puts "\n=== Test 2: Plain client -> TLS server (port 8080) ==="
+spawn /opt/dist/goncat.elf master connect $transport://slave-tls:8080 --timeout 2000
 set timeout 5
 expect {
     "Error: Run: connecting:" {
@@ -33,8 +33,8 @@ catch {close}
 catch {wait}
 
 # Test 3: Plain client -> mTLS server (should fail with timeout/EOF)
-puts "\n=== Test 3: Plain client -> mTLS server (port 8082) ==="
-spawn /opt/dist/goncat.elf master connect $transport://slave:8082 --timeout 2000
+puts "\n=== Test 3: Plain client -> mTLS server (port 8080) ==="
+spawn /opt/dist/goncat.elf master connect $transport://slave-mtls:8080 --timeout 2000
 set timeout 5
 expect {
     "Error: Run: connecting:" {
