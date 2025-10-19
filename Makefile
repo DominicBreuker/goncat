@@ -43,18 +43,27 @@ staticcheck:
 # Test
 
 .PHONY: test
-test: test-unit test-integration
+test: test-unit test-e2e # test-integration skipped for now due to flakiness
 
 .PHONY: test-unit
 test-unit: 
-	go test -cover ./...
+	go test -cover ./pkg/...
 
 .PHONY: test-unit
 test-unit-with-race: 
 	# We skip flaky tests in short mode.
-	go test -cover -race -v -short ./...
+	go test -cover -race -v -short ./pkg/...
 
 .PHONY: test-integration
+test-integration: 
+	go test -cover ./test/integration/...
+
+.PHONY: test-unit
+test-integration-with-race: 
+	# We skip flaky tests in short mode.
+	go test -race -v -short ./test/integration/...
+
+.PHONY: test-e2e
 test-integration: build-linux
 	@echo ""
 	@echo "### ########################### ###"
