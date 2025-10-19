@@ -9,46 +9,95 @@ set timeout 10
 # Test 1: Plain server -> Plain client (should succeed)
 puts "\n=== Test 1: Plain server -> Plain client (port 8080) ==="
 spawn /opt/dist/goncat.elf master listen $transport://:8080 --timeout 2000
-Expect::client_connected
-Expect::close_and_wait
-puts "✓ Test 1 passed: Plain connection established\n"
 
-# Test 2: Plain server -> TLS client (should fail with handshake error on server side)
-puts "\n=== Test 2: Plain server -> TLS client (port 8081) ==="
-# The slave will be trying to connect with TLS to our plain server
-# We should see an error, no session message
-spawn /opt/dist/goncat.elf master listen $transport://:8081 --timeout 2000
-set timeout 8
+# Wait for session establishment message
 expect {
+    -re "Session with .* established \\(slave\\[" {
+        # Good - session established
+    }
     -re "Error:" {
-        puts "✓ Test 2 passed: Plain server rejected TLS client\n"
+        puts "✗ Test 1 FAILED: Got error instead of session establishment\n"
+        exit 1
     }
     timeout {
-        puts "✓ Test 2 passed: Plain server did not accept TLS client\n"
+        puts "✗ Test 1 FAILED: Timeout waiting for session establishment\n"
+        exit 1
+    }
+}
+
+puts "✓ Test 1 passed: Plain connection established (session message seen)\n"
+Expect::close_and_wait
+
+# Test 2: Plain server -> TLS client (should fail - no session, has error)
+puts "\n=== Test 2: Plain server -> TLS client (port 8081) ==="
+spawn /opt/dist/goncat.elf master listen $transport://:8081 --timeout 2000
+set test2_session_seen 0
+set test2_error_seen 0
+set timeout 8
+
+expect {
+    -re "Session with .* established" {
+        set test2_session_seen 1
+        exp_continue
+    }
+    -re "Error:" {
+        set test2_error_seen 1
+        exp_continue
+    }
+    timeout {
+        # Timeout is acceptable
     }
     eof {
-        puts "✓ Test 2 passed: Connection closed\n"
+        # EOF is acceptable
     }
 }
 catch {close}
 catch {wait}
 
-# Test 3: Plain server -> mTLS client (should fail with handshake error on server side)
+if {$test2_session_seen == 1} {
+    puts "✗ Test 2 FAILED: Session establishment message should not appear\n"
+    exit 1
+}
+if {$test2_error_seen == 0} {
+    puts "✗ Test 2 FAILED: Error message should appear\n"
+    exit 1
+}
+puts "✓ Test 2 passed: Plain server rejected TLS client (no session, has error)\n"
+
+# Test 3: Plain server -> mTLS client (should fail - no session, has error)
 puts "\n=== Test 3: Plain server -> mTLS client (port 8082) ==="
 spawn /opt/dist/goncat.elf master listen $transport://:8082 --timeout 2000
+set test3_session_seen 0
+set test3_error_seen 0
 set timeout 8
+
 expect {
+    -re "Session with .* established" {
+        set test3_session_seen 1
+        exp_continue
+    }
     -re "Error:" {
-        puts "✓ Test 3 passed: Plain server rejected mTLS client\n"
+        set test3_error_seen 1
+        exp_continue
     }
     timeout {
-        puts "✓ Test 3 passed: Plain server did not accept mTLS client\n"
+        # Timeout is acceptable
     }
     eof {
-        puts "✓ Test 3 passed: Connection closed\n"
+        # EOF is acceptable
     }
 }
 catch {close}
 catch {wait}
+
+if {$test3_session_seen == 1} {
+    puts "✗ Test 3 FAILED: Session establishment message should not appear\n"
+    exit 1
+}
+if {$test3_error_seen == 0} {
+    puts "✗ Test 3 FAILED: Error message should appear\n"
+    exit 1
+}
+puts "✓ Test 3 passed: Plain server rejected mTLS client (no session, has error)\n"
 
 puts "\n✓ All plain connection tests passed!"
