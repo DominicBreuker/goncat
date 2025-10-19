@@ -49,7 +49,6 @@ func (c *Client) Close() error {
 		return nil
 	}
 
-	// RemoteAddr can panic if conn is closed concurrently; guard it.
 	var remote string
 	if addr := c.conn.RemoteAddr(); addr != nil {
 		remote = addr.String()
@@ -94,19 +93,19 @@ func (c *Client) connect(deps *dependencies) error {
 	default:
 		d, err = deps.newTCPDialer(addr, c.cfg.Deps)
 		if err != nil {
-			return fmt.Errorf("NewDialer: %s", err)
+			return fmt.Errorf("create dialer: %w", err)
 		}
 	}
 
 	c.conn, err = d.Dial(c.ctx)
 	if err != nil {
-		return fmt.Errorf("Dial(): %s", err)
+		return fmt.Errorf("dial: %w", err)
 	}
 
 	if c.cfg.SSL {
 		c.conn, err = deps.tlsUpgrader(c.conn, c.cfg.GetKey(), c.cfg.Timeout)
 		if err != nil {
-			return fmt.Errorf("upgradeToTLS: %s", err)
+			return fmt.Errorf("upgrade to tls: %w", err)
 		}
 	}
 
