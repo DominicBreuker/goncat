@@ -156,8 +156,8 @@ func TestServe_TCPListenerCreationError(t *testing.T) {
 	if err == nil {
 		t.Fatal("Serve() error = nil, want error")
 	}
-	if !errors.Is(err, expectedErr) && err.Error() != "tcp.New(localhost:8080): listener creation failed" {
-		t.Errorf("Serve() error = %v, want wrapped listener creation error", err)
+	if !errors.Is(err, expectedErr) {
+		t.Errorf("Serve() error = %v, want error containing listener creation error", err)
 	}
 }
 
@@ -317,8 +317,8 @@ func TestServe_WSListenerCreationError(t *testing.T) {
 	if err == nil {
 		t.Fatal("Serve() error = nil, want error")
 	}
-	if !errors.Is(err, expectedErr) && err.Error() != "tcp.New(example.com:8080): websocket listener creation failed" {
-		t.Errorf("Serve() error = %v, want wrapped listener creation error", err)
+	if !errors.Is(err, expectedErr) {
+		t.Errorf("Serve() error = %v, want error containing listener creation error", err)
 	}
 }
 
@@ -486,7 +486,7 @@ func TestCustomVerifier_InvalidCertCount(t *testing.T) {
 		},
 		{
 			name:     "multiple certificates",
-			rawCerts: [][]byte{{}, {}},
+			rawCerts: [][]byte{{0x30, 0x82}, {0x30, 0x82}}, // DER-encoded cert prefixes
 			wantErr:  true,
 		},
 	}

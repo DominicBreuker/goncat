@@ -127,7 +127,7 @@ func (s *Server) Serve() error {
 		l, err = s.deps.newTCPListener(addr, s.cfg.Deps)
 	}
 	if err != nil {
-		return fmt.Errorf("tcp.New(%s): %s", addr, err)
+		return fmt.Errorf("creating listener: %w", err)
 	}
 
 	s.mu.Lock()
