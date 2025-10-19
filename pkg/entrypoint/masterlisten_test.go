@@ -21,28 +21,24 @@ func TestMasterListen_Success(t *testing.T) {
 	mCfg := &config.Master{}
 
 	fs := &fakeServer{serveCh: make(chan struct{})}
+	fm := &fakeMaster{}
+
 	newServer := func(context.Context, *config.Shared, transport.Handler) (serverInterface, error) {
 		return fs, nil
 	}
 
-	handlerCalled := false
-	makeHandler := func(context.Context, *config.Shared, *config.Master) func(net.Conn) error {
-		handlerCalled = true
-		return func(net.Conn) error { return nil }
+	newMaster := func(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (handlerInterface, error) {
+		return fm, nil
 	}
 
 	errCh := runAsync(func() error {
-		return masterListen(ctx, cfg, mCfg, newServer, makeHandler)
+		return masterListen(ctx, cfg, mCfg, newServer, newMaster)
 	})
 
-	time.Sleep(50 * time.Millisecond) // Give time to set up
-	close(fs.serveCh)                 // Signal serve to return
+	close(fs.serveCh) // Signal serve to return
 
 	assertNoError(t, waitForError(t, errCh, time.Second), "masterListen()")
 
-	if !handlerCalled {
-		t.Error("makeHandler was not called")
-	}
 	if !fs.closed {
 		t.Error("server was not closed")
 	}
@@ -56,11 +52,11 @@ func TestMasterListen_ServerNewError(t *testing.T) {
 	newServer := func(context.Context, *config.Shared, transport.Handler) (serverInterface, error) {
 		return nil, expectedErr
 	}
-	makeHandler := func(context.Context, *config.Shared, *config.Master) func(net.Conn) error {
-		return func(net.Conn) error { return nil }
+	newMaster := func(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (handlerInterface, error) {
+		return nil, nil
 	}
 
-	err := masterListen(context.Background(), testConfig(), &config.Master{}, newServer, makeHandler)
+	err := masterListen(context.Background(), testConfig(), &config.Master{}, newServer, newMaster)
 	assertError(t, err, "masterListen() with server creation error")
 }
 
@@ -72,11 +68,11 @@ func TestMasterListen_ServeError(t *testing.T) {
 	newServer := func(context.Context, *config.Shared, transport.Handler) (serverInterface, error) {
 		return fs, nil
 	}
-	makeHandler := func(context.Context, *config.Shared, *config.Master) func(net.Conn) error {
-		return func(net.Conn) error { return nil }
+	newMaster := func(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (handlerInterface, error) {
+		return nil, nil
 	}
 
-	err := masterListen(context.Background(), testConfig(), &config.Master{}, newServer, makeHandler)
+	err := masterListen(context.Background(), testConfig(), &config.Master{}, newServer, newMaster)
 	assertError(t, err, "masterListen() with serve error")
 
 	if !fs.closed {
@@ -104,21 +100,15 @@ func TestMasterListen_ContextCancellation(t *testing.T) {
 	newServer := func(ctx context.Context, cfg *config.Shared, handle transport.Handler) (serverInterface, error) {
 		return fs, nil
 	}
-
-	makeHandler := func(ctx context.Context, cfg *config.Shared, mCfg *config.Master) func(net.Conn) error {
-		return func(conn net.Conn) error {
-			return nil
-		}
+	newMaster := func(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (handlerInterface, error) {
+		return nil, nil
 	}
 
 	// Run masterListen in a goroutine
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- masterListen(ctx, cfg, mCfg, newServer, makeHandler)
+		errCh <- masterListen(ctx, cfg, mCfg, newServer, newMaster)
 	}()
-
-	// Give it time to set up
-	time.Sleep(50 * time.Millisecond)
 
 	// Cancel context
 	cancel()
@@ -169,20 +159,15 @@ func TestMasterListen_CloseIsIdempotent(t *testing.T) {
 		return fs, nil
 	}
 
-	makeHandler := func(ctx context.Context, cfg *config.Shared, mCfg *config.Master) func(net.Conn) error {
-		return func(conn net.Conn) error {
-			return nil
-		}
+	newMaster := func(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (handlerInterface, error) {
+		return nil, nil
 	}
 
 	// Run masterListen in a goroutine
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- masterListen(ctx, cfg, mCfg, newServer, makeHandler)
+		errCh <- masterListen(ctx, cfg, mCfg, newServer, newMaster)
 	}()
-
-	// Give it time to set up
-	time.Sleep(50 * time.Millisecond)
 
 	// Signal serve to return
 	close(fs.fakeServer.serveCh)
@@ -207,7 +192,13 @@ func TestMakeMasterHandler_Success(t *testing.T) {
 	}
 	mCfg := &config.Master{}
 
-	handler := makeMasterHandler(ctx, cfg, mCfg)
+	fm := &fakeMaster{}
+
+	newMaster := func(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (handlerInterface, error) {
+		return fm, nil
+	}
+
+	handler := makeMasterHandler(ctx, cfg, mCfg, newMaster)
 	if handler == nil {
 		t.Fatal("makeMasterHandler returned nil")
 	}
@@ -215,16 +206,11 @@ func TestMakeMasterHandler_Success(t *testing.T) {
 	// Create a fake connection
 	conn := &fakeConn{}
 
-	// Note: This will fail because master.New requires a real mux session
-	// We're just testing that the handler can be called
 	err := handler(conn)
-
-	// We expect an error because we don't have a real mux session
-	if err == nil {
-		t.Error("handler() error = nil, expected error due to missing mux session")
+	if err != nil {
+		t.Error("handler returned error:", err)
 	}
 
-	// Connection should be closed even on error
 	if !conn.closed {
 		t.Error("connection was not closed")
 	}
@@ -240,19 +226,20 @@ func TestMakeMasterHandler_ContextCancellation(t *testing.T) {
 	}
 	mCfg := &config.Master{}
 
-	handler := makeMasterHandler(ctx, cfg, mCfg)
+	fm := &fakeMaster{}
+
+	newMaster := func(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (handlerInterface, error) {
+		return fm, nil
+	}
+
+	handler := makeMasterHandler(ctx, cfg, mCfg, newMaster)
 
 	conn := &fakeConn{
 		closeCh: make(chan struct{}),
 	}
 
-	// Start handler in goroutine
 	go handler(conn)
 
-	// Give it time to start
-	time.Sleep(50 * time.Millisecond)
-
-	// Cancel context
 	cancel()
 
 	// Connection should be closed

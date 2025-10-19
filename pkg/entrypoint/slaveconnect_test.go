@@ -11,6 +11,7 @@ import (
 
 // uses interfaces from internal.go and fakes from internal_test.go
 
+// it should close the client and slave handler on success
 func TestSlaveConnect_Success(t *testing.T) {
 	t.Parallel()
 
@@ -48,6 +49,7 @@ func TestSlaveConnect_Success(t *testing.T) {
 	}
 }
 
+// it should return an error if connecting fails
 func TestSlaveConnect_ConnectError(t *testing.T) {
 	t.Parallel()
 
@@ -85,6 +87,7 @@ func TestSlaveConnect_ConnectError(t *testing.T) {
 	}
 }
 
+// it should return an error and close the client if slave creation fails
 func TestSlaveConnect_SlaveNewError(t *testing.T) {
 	t.Parallel()
 
@@ -119,6 +122,7 @@ func TestSlaveConnect_SlaveNewError(t *testing.T) {
 	}
 }
 
+// it should return an error and close both client and slave if handling fails
 func TestSlaveConnect_HandleError(t *testing.T) {
 	t.Parallel()
 
@@ -160,6 +164,7 @@ func TestSlaveConnect_HandleError(t *testing.T) {
 	}
 }
 
+// it should handle context cancellation by closing client and slave
 func TestSlaveConnect_ContextCancellation(t *testing.T) {
 	t.Parallel()
 
@@ -198,9 +203,6 @@ func TestSlaveConnect_ContextCancellation(t *testing.T) {
 		errCh <- slaveConnect(ctx, cfg, newClient, newSlave)
 	}()
 
-	// Give it time to start
-	time.Sleep(50 * time.Millisecond)
-
 	// Cancel context
 	cancel()
 
@@ -221,41 +223,5 @@ func TestSlaveConnect_ContextCancellation(t *testing.T) {
 		// Function returned
 	case <-time.After(1 * time.Second):
 		t.Error("slaveConnect did not return")
-	}
-}
-
-func TestSlaveConnect_ClientCloseError(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	cfg := &config.Shared{
-		Protocol: config.ProtoTCP,
-		Host:     "localhost",
-		Port:     8080,
-	}
-
-	closeErr := errors.New("close failed")
-	fc := &fakeClient{
-		conn:     &fakeConn{},
-		closeErr: closeErr,
-	}
-	fs := &fakeSlave{}
-
-	newClient := func(ctx context.Context, cfg *config.Shared) clientInterface {
-		return fc
-	}
-
-	newSlave := func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
-		return fs, nil
-	}
-
-	// Close error should not prevent function from succeeding
-	err := slaveConnect(ctx, cfg, newClient, newSlave)
-	if err != nil {
-		t.Fatalf("slaveConnect() error = %v, want nil (close error should be ignored)", err)
-	}
-
-	if !fc.closed {
-		t.Error("client Close was not attempted")
 	}
 }

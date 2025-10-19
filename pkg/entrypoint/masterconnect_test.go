@@ -208,9 +208,6 @@ func TestMasterConnect_ContextCancellation(t *testing.T) {
 		errCh <- masterConnect(ctx, cfg, mCfg, newClient, newMaster)
 	}()
 
-	// Give it time to start
-	time.Sleep(50 * time.Millisecond)
-
 	// Cancel context
 	cancel()
 

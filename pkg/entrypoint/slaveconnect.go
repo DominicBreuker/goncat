@@ -4,6 +4,7 @@ import (
 	"context"
 	"dominicbreuker/goncat/pkg/config"
 	"fmt"
+	"sync"
 )
 
 // uses interfaces/factories from internal.go (DI for testing)
@@ -22,24 +23,24 @@ func slaveConnect(
 ) error {
 	c := newClient(ctx, cfg)
 	if err := c.Connect(); err != nil {
-		return fmt.Errorf("connecting: %s", err)
+		return fmt.Errorf("connecting: %w", err)
 	}
-	defer c.Close()
+	var closeOnce sync.Once
+	defer closeOnce.Do(func() { _ = c.Close() })
 
-	// Ensure client connection is closed when the parent context is cancelled.
 	go func() {
 		<-ctx.Done()
-		_ = c.Close()
+		closeOnce.Do(func() { _ = c.Close() })
 	}()
 
 	h, err := newSlave(ctx, cfg, c.GetConnection())
 	if err != nil {
-		return fmt.Errorf("slave.New(): %s", err)
+		return fmt.Errorf("creating slave: %w", err)
 	}
 	defer h.Close()
 
 	if err := h.Handle(); err != nil {
-		return fmt.Errorf("handling: %s", err)
+		return fmt.Errorf("handling: %w", err)
 	}
 
 	return nil

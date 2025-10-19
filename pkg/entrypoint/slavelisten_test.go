@@ -12,6 +12,7 @@ import (
 
 // uses interfaces from internal.go and fakes from internal_test.go
 
+// it should start the server and handle connections successfully
 func TestSlaveListen_Success(t *testing.T) {
 	t.Parallel()
 
@@ -25,27 +26,21 @@ func TestSlaveListen_Success(t *testing.T) {
 	fs := &fakeServer{
 		serveCh: make(chan struct{}),
 	}
+	fsl := &fakeSlave{}
 
 	newServer := func(ctx context.Context, cfg *config.Shared, handle transport.Handler) (serverInterface, error) {
 		return fs, nil
 	}
 
-	handlerCalled := false
-	makeHandler := func(ctx context.Context, cfg *config.Shared) func(net.Conn) error {
-		handlerCalled = true
-		return func(conn net.Conn) error {
-			return nil
-		}
+	newSlave := func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
+		return fsl, nil
 	}
 
 	// Run slaveListen in a goroutine
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- slaveListen(ctx, cfg, newServer, makeHandler)
+		errCh <- slaveListen(ctx, cfg, newServer, newSlave)
 	}()
-
-	// Give it time to set up
-	time.Sleep(50 * time.Millisecond)
 
 	// Signal serve to return
 	close(fs.serveCh)
@@ -56,15 +51,12 @@ func TestSlaveListen_Success(t *testing.T) {
 		t.Fatalf("slaveListen() error = %v, want nil", err)
 	}
 
-	if !handlerCalled {
-		t.Error("makeHandler was not called")
-	}
-
 	if !fs.closed {
 		t.Error("server was not closed")
 	}
 }
 
+// it should return an error if server creation fails
 func TestSlaveListen_ServerNewError(t *testing.T) {
 	t.Parallel()
 
@@ -80,13 +72,11 @@ func TestSlaveListen_ServerNewError(t *testing.T) {
 		return nil, expectedErr
 	}
 
-	makeHandler := func(ctx context.Context, cfg *config.Shared) func(net.Conn) error {
-		return func(conn net.Conn) error {
-			return nil
-		}
+	newSlave := func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
+		return nil, nil
 	}
 
-	err := slaveListen(ctx, cfg, newServer, makeHandler)
+	err := slaveListen(ctx, cfg, newServer, newSlave)
 	if err == nil {
 		t.Fatal("slaveListen() error = nil, want error")
 	}
@@ -95,6 +85,7 @@ func TestSlaveListen_ServerNewError(t *testing.T) {
 	}
 }
 
+// it should return an error if serving fails
 func TestSlaveListen_ServeError(t *testing.T) {
 	t.Parallel()
 
@@ -114,13 +105,11 @@ func TestSlaveListen_ServeError(t *testing.T) {
 		return fs, nil
 	}
 
-	makeHandler := func(ctx context.Context, cfg *config.Shared) func(net.Conn) error {
-		return func(conn net.Conn) error {
-			return nil
-		}
+	newSlave := func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
+		return nil, nil
 	}
 
-	err := slaveListen(ctx, cfg, newServer, makeHandler)
+	err := slaveListen(ctx, cfg, newServer, newSlave)
 	if err == nil {
 		t.Fatal("slaveListen() error = nil, want error")
 	}
@@ -130,6 +119,7 @@ func TestSlaveListen_ServeError(t *testing.T) {
 	}
 }
 
+// it should handle context cancellation by closing the server
 func TestSlaveListen_ContextCancellation(t *testing.T) {
 	t.Parallel()
 
@@ -149,20 +139,15 @@ func TestSlaveListen_ContextCancellation(t *testing.T) {
 		return fs, nil
 	}
 
-	makeHandler := func(ctx context.Context, cfg *config.Shared) func(net.Conn) error {
-		return func(conn net.Conn) error {
-			return nil
-		}
+	newSlave := func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
+		return nil, nil
 	}
 
 	// Run slaveListen in a goroutine
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- slaveListen(ctx, cfg, newServer, makeHandler)
+		errCh <- slaveListen(ctx, cfg, newServer, newSlave)
 	}()
-
-	// Give it time to set up
-	time.Sleep(50 * time.Millisecond)
 
 	// Cancel context
 	cancel()
@@ -191,6 +176,7 @@ func TestSlaveListen_ContextCancellation(t *testing.T) {
 	}
 }
 
+// it should ensure Close is idempotent
 func TestSlaveListen_CloseIsIdempotent(t *testing.T) {
 	t.Parallel()
 
@@ -211,20 +197,15 @@ func TestSlaveListen_CloseIsIdempotent(t *testing.T) {
 		return fs, nil
 	}
 
-	makeHandler := func(ctx context.Context, cfg *config.Shared) func(net.Conn) error {
-		return func(conn net.Conn) error {
-			return nil
-		}
+	newSlave := func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
+		return nil, nil
 	}
 
 	// Run slaveListen in a goroutine
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- slaveListen(ctx, cfg, newServer, makeHandler)
+		errCh <- slaveListen(ctx, cfg, newServer, newSlave)
 	}()
-
-	// Give it time to set up
-	time.Sleep(50 * time.Millisecond)
 
 	// Signal serve to return
 	close(fs.fakeServer.serveCh)
@@ -239,6 +220,7 @@ func TestSlaveListen_CloseIsIdempotent(t *testing.T) {
 	}
 }
 
+// it should create a handler that manages connection lifecycle correctly
 func TestMakeSlaveHandler_Success(t *testing.T) {
 	t.Parallel()
 
@@ -247,7 +229,13 @@ func TestMakeSlaveHandler_Success(t *testing.T) {
 		Protocol: config.ProtoTCP,
 	}
 
-	handler := makeSlaveHandler(ctx, cfg)
+	fsl := &fakeSlave{}
+
+	newSlave := func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
+		return fsl, nil
+	}
+
+	handler := makeSlaveHandler(ctx, cfg, newSlave)
 	if handler == nil {
 		t.Fatal("makeSlaveHandler returned nil")
 	}
@@ -255,13 +243,9 @@ func TestMakeSlaveHandler_Success(t *testing.T) {
 	// Create a fake connection
 	conn := &fakeConn{}
 
-	// Note: This will fail because slave.New requires a real mux session
-	// We're just testing that the handler can be called
 	err := handler(conn)
-
-	// We expect an error because we don't have a real mux session
-	if err == nil {
-		t.Error("handler() error = nil, expected error due to missing mux session")
+	if err != nil {
+		t.Error("handler returned error:", err)
 	}
 
 	// Connection should be closed even on error
@@ -270,6 +254,7 @@ func TestMakeSlaveHandler_Success(t *testing.T) {
 	}
 }
 
+// it should close the connection on context cancellation
 func TestMakeSlaveHandler_ContextCancellation(t *testing.T) {
 	t.Parallel()
 
@@ -278,7 +263,13 @@ func TestMakeSlaveHandler_ContextCancellation(t *testing.T) {
 		Protocol: config.ProtoTCP,
 	}
 
-	handler := makeSlaveHandler(ctx, cfg)
+	fsl := &fakeSlave{}
+
+	newSlave := func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
+		return fsl, nil
+	}
+
+	handler := makeSlaveHandler(ctx, cfg, newSlave)
 
 	conn := &fakeConn{
 		closeCh: make(chan struct{}),
@@ -286,9 +277,6 @@ func TestMakeSlaveHandler_ContextCancellation(t *testing.T) {
 
 	// Start handler in goroutine
 	go handler(conn)
-
-	// Give it time to start
-	time.Sleep(50 * time.Millisecond)
 
 	// Cancel context
 	cancel()
