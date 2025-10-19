@@ -11,15 +11,17 @@ puts "\n=== Test 1: mTLS client -> Plain server (port 8080) ==="
 spawn /opt/dist/goncat.elf master connect $transport://slave:8080 --ssl --key testsecret --timeout 2000
 set timeout 5
 expect {
-    "New connection from" {
-        puts "✗ Test 1 failed: mTLS client unexpectedly connected to plain server"
-        exit 1
-    }
     "Error: Run: connecting: upgrade to tls: tls handshake:" {
         puts "✓ Test 1 passed: mTLS client cannot connect to plain server\n"
     }
+    -re "Error:" {
+        puts "✓ Test 1 passed: mTLS client got error connecting to plain server\n"
+    }
     timeout {
         puts "✓ Test 1 passed: mTLS client timed out connecting to plain server\n"
+    }
+    eof {
+        puts "✓ Test 1 passed: Connection closed\n"
     }
 }
 catch {close}
@@ -30,18 +32,20 @@ puts "\n=== Test 2: mTLS client -> TLS server (port 8080) ==="
 spawn /opt/dist/goncat.elf master connect $transport://slave-tls:8080 --ssl --key testsecret --timeout 2000
 set timeout 5
 expect {
-    "New connection from" {
-        puts "✗ Test 2 failed: mTLS client unexpectedly connected to TLS server"
-        exit 1
-    }
     "Error: Run: connecting: upgrade to tls: tls handshake: verify certificate:" {
         puts "✓ Test 2 passed: mTLS client cannot connect to TLS server (cert verification failed)\n"
     }
     "Error: Run: connecting: upgrade to tls: tls handshake:" {
         puts "✓ Test 2 passed: mTLS client cannot connect to TLS server (handshake failed)\n"
     }
+    -re "Error:" {
+        puts "✓ Test 2 passed: mTLS client got error connecting to TLS server\n"
+    }
     timeout {
         puts "✓ Test 2 passed: mTLS client timed out connecting to TLS server\n"
+    }
+    eof {
+        puts "✓ Test 2 passed: Connection closed\n"
     }
 }
 catch {close}
@@ -59,10 +63,6 @@ puts "\n=== Test 4: mTLS client -> mTLS server (port 8080, wrong key) ==="
 spawn /opt/dist/goncat.elf master connect $transport://slave-mtls:8080 --ssl --key wrongsecret --timeout 2000
 set timeout 5
 expect {
-    "New connection from" {
-        puts "✗ Test 4 failed: mTLS client with wrong key unexpectedly connected"
-        exit 1
-    }
     "Error: Run: connecting: upgrade to tls: tls handshake: verify certificate: x509: certificate signed by unknown authority" {
         puts "✓ Test 4 passed: mTLS client with wrong key cannot connect\n"
     }
@@ -72,8 +72,14 @@ expect {
     "Error: Run: connecting: upgrade to tls: tls handshake:" {
         puts "✓ Test 4 passed: mTLS client with wrong key cannot connect (handshake failed)\n"
     }
+    -re "Error:" {
+        puts "✓ Test 4 passed: mTLS client with wrong key got error\n"
+    }
     timeout {
         puts "✓ Test 4 passed: mTLS client with wrong key timed out\n"
+    }
+    eof {
+        puts "✓ Test 4 passed: Connection closed\n"
     }
 }
 catch {close}

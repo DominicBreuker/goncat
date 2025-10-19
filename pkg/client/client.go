@@ -50,11 +50,6 @@ func (c *Client) Close() error {
 		return nil
 	}
 
-	var remote string
-	if addr := c.conn.RemoteAddr(); addr != nil {
-		remote = addr.String()
-	}
-
 	return c.conn.Close()
 }
 
