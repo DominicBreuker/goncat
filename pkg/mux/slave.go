@@ -68,6 +68,10 @@ func (s *SlaveSession) AcceptNewChannelContext(ctx context.Context) (net.Conn, e
 		return nil, fmt.Errorf("no mux session")
 	}
 
+	// enforce timeout while accepting control channels
+	ctx, cancel := context.WithDeadline(ctx, time.Now().Add(s.timeout))
+	defer cancel()
+
 	stream, err := s.sess.mux.AcceptStreamWithContext(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("AcceptStreamWithContext(): %s", err)
