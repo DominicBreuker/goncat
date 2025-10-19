@@ -58,6 +58,7 @@ if {$test2_session_seen == 1} {
     puts "✗ Test 2 FAILED: Session establishment message should not appear\n"
     exit 1
 }
+# For plain server with TLS client, errors typically appear quickly
 if {$test2_error_seen == 0} {
     puts "✗ Test 2 FAILED: Error message should appear\n"
     exit 1
@@ -94,6 +95,7 @@ if {$test3_session_seen == 1} {
     puts "✗ Test 3 FAILED: Session establishment message should not appear\n"
     exit 1
 }
+# For plain server with mTLS client, errors typically appear quickly
 if {$test3_error_seen == 0} {
     puts "✗ Test 3 FAILED: Error message should appear\n"
     exit 1
