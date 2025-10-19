@@ -203,6 +203,7 @@ Unit tests use **internal dependency injection** to avoid real system dependenci
 1. Create an internal (unexported) function that accepts fake implementations via function parameters
 2. The exported function delegates to the internal function, passing real implementations
 3. Tests call the internal function with fakes
+4. When there are many dependencies, group them into a struct for better maintainability
 
 Example from `pkg/entrypoint/masterlisten.go`:
 
@@ -224,6 +225,36 @@ func masterListen(
 ) error {
     s, err := newServer(ctx, cfg, makeHandler(ctx, cfg, mCfg))
     // ... rest of implementation
+}
+```
+
+Example with grouped dependencies from `pkg/client/client.go`:
+
+```go
+// dependencies holds the injectable dependencies for testing.
+type dependencies struct {
+    newTCPDialer func(string, *config.Dependencies) (transport.Dialer, error)
+    newWSDialer  func(context.Context, string, config.Protocol) transport.Dialer
+    tlsUpgrader  func(net.Conn, string, time.Duration) (net.Conn, error)
+}
+
+// Connect establishes a connection (exported function - uses real dependencies)
+func (c *Client) Connect() error {
+    deps := &dependencies{
+        newTCPDialer: func(addr string, deps *config.Dependencies) (transport.Dialer, error) {
+            return tcp.NewDialer(addr, deps)
+        },
+        newWSDialer: func(ctx context.Context, addr string, proto config.Protocol) transport.Dialer {
+            return ws.NewDialer(ctx, addr, proto)
+        },
+        tlsUpgrader: upgradeToTLS,
+    }
+    return c.connect(deps)
+}
+
+// connect is the internal implementation that accepts injected dependencies for testing
+func (c *Client) connect(deps *dependencies) error {
+    // ... implementation using deps.newTCPDialer, deps.newWSDialer, deps.tlsUpgrader
 }
 ```
 
@@ -459,7 +490,8 @@ Tests serve as documentation:
 
 See existing tests for examples:
 - `cmd/shared/parsers_test.go` - table-driven tests with error cases
-- More examples will be added as we expand test coverage
+- `pkg/entrypoint/*_test.go` - dependency injection with function parameters
+- `pkg/client/client_test.go` - dependency injection with grouped dependencies struct
 
 ## Detailed Testing Strategies
 

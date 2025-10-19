@@ -6,6 +6,10 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
+	"net"
+	"time"
+
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/crypto"
 	"dominicbreuker/goncat/pkg/format"
@@ -13,10 +17,14 @@ import (
 	"dominicbreuker/goncat/pkg/transport"
 	"dominicbreuker/goncat/pkg/transport/tcp"
 	"dominicbreuker/goncat/pkg/transport/ws"
-	"fmt"
-	"net"
-	"time"
 )
+
+// dependencies holds the injectable dependencies for testing.
+type dependencies struct {
+	newTCPDialer func(string, *config.Dependencies) (transport.Dialer, error)
+	newWSDialer  func(context.Context, string, config.Protocol) transport.Dialer
+	tlsUpgrader  func(net.Conn, string, time.Duration) (net.Conn, error)
+}
 
 // Client manages a network connection with support for multiple transport protocols
 // and optional TLS encryption with mutual authentication.
@@ -42,7 +50,6 @@ func (c *Client) Close() error {
 		return nil
 	}
 
-	// RemoteAddr can panic if conn is closed concurrently; guard it.
 	var remote string
 	if addr := c.conn.RemoteAddr(); addr != nil {
 		remote = addr.String()
@@ -61,6 +68,20 @@ func (c *Client) GetConnection() net.Conn {
 // It supports TCP and WebSocket protocols, and optionally upgrades to TLS.
 // The connection is stored in the Client and can be retrieved via GetConnection.
 func (c *Client) Connect() error {
+	deps := &dependencies{
+		newTCPDialer: func(addr string, deps *config.Dependencies) (transport.Dialer, error) {
+			return tcp.NewDialer(addr, deps)
+		},
+		newWSDialer: func(ctx context.Context, addr string, proto config.Protocol) transport.Dialer {
+			return ws.NewDialer(ctx, addr, proto)
+		},
+		tlsUpgrader: upgradeToTLS,
+	}
+	return c.connect(deps)
+}
+
+// connect is the internal implementation that accepts injected dependencies for testing.
+func (c *Client) connect(deps *dependencies) error {
 	addr := format.Addr(c.cfg.Host, c.cfg.Port)
 
 	log.InfoMsg("Connecting to %s\n", addr)
@@ -69,23 +90,23 @@ func (c *Client) Connect() error {
 	var err error
 	switch c.cfg.Protocol {
 	case config.ProtoWS, config.ProtoWSS:
-		d, err = ws.NewDialer(c.ctx, addr, c.cfg.Protocol), nil
+		d = deps.newWSDialer(c.ctx, addr, c.cfg.Protocol)
 	default:
-		d, err = tcp.NewDialer(addr, c.cfg.Deps)
-	}
-	if err != nil {
-		return fmt.Errorf("NewDialer: %s", err)
+		d, err = deps.newTCPDialer(addr, c.cfg.Deps)
+		if err != nil {
+			return fmt.Errorf("create dialer: %w", err)
+		}
 	}
 
 	c.conn, err = d.Dial(c.ctx)
 	if err != nil {
-		return fmt.Errorf("Dial(): %s", err)
+		return fmt.Errorf("dial: %w", err)
 	}
 
 	if c.cfg.SSL {
-		c.conn, err = upgradeToTLS(c.conn, c.cfg.GetKey(), c.cfg.Timeout)
+		c.conn, err = deps.tlsUpgrader(c.conn, c.cfg.GetKey(), c.cfg.Timeout)
 		if err != nil {
-			return fmt.Errorf("upgradeToTLS: %s", err)
+			return fmt.Errorf("upgrade to tls: %w", err)
 		}
 	}
 
@@ -94,15 +115,8 @@ func (c *Client) Connect() error {
 
 // upgradeToTLS wraps the given connection with TLS encryption.
 // If a key is provided, it enables mutual authentication using generated certificates.
-// The function configures TLS 1.3 as the minimum version and sets up TCP keep-alive.
+// The function configures TLS 1.3 as the minimum version.
 func upgradeToTLS(conn net.Conn, key string, timeout time.Duration) (net.Conn, error) {
-	// enable TCP keep-alive directly on the underlying connection if possible
-	if tcpConn, ok := conn.(*net.TCPConn); ok {
-		if err := tcpConn.SetKeepAlive(true); err != nil {
-			return nil, fmt.Errorf("conn.SetKeepAlive(true): %s", err)
-		}
-	}
-
 	cfg := &tls.Config{
 		MinVersion: tls.VersionTLS13,
 	}
@@ -111,7 +125,7 @@ func upgradeToTLS(conn net.Conn, key string, timeout time.Duration) (net.Conn, e
 	if key != "" {
 		caCert, cert, err := crypto.GenerateCertificates(key)
 		if err != nil {
-			return nil, fmt.Errorf("crypto.GenerateCertificates(%s): %s", key, err)
+			return nil, fmt.Errorf("generate certificates: %w", err)
 		}
 
 		cfg.Certificates = []tls.Certificate{cert} // client Cert
@@ -126,7 +140,7 @@ func upgradeToTLS(conn net.Conn, key string, timeout time.Duration) (net.Conn, e
 	_ = tlsConn.SetDeadline(time.Now().Add(timeout))
 	if err := tlsConn.Handshake(); err != nil {
 		_ = tlsConn.Close()
-		return nil, fmt.Errorf("tls handshake: %s", err)
+		return nil, fmt.Errorf("tls handshake: %w", err)
 	}
 	// clear deadline after handshake
 	_ = tlsConn.SetDeadline(time.Time{})
@@ -137,18 +151,18 @@ func upgradeToTLS(conn net.Conn, key string, timeout time.Duration) (net.Conn, e
 // customVerifier verifies the certificate but cares only about the root certificate, not SANs
 func customVerifier(caCert *x509.CertPool, rawCerts [][]byte) error {
 	if len(rawCerts) != 1 {
-		return fmt.Errorf("unexpected number of rawCerts: %d", len(rawCerts))
+		return fmt.Errorf("unexpected number of raw certs: %d", len(rawCerts))
 	}
 
 	cert, err := x509.ParseCertificate(rawCerts[0])
 	if err != nil {
-		return fmt.Errorf("x509.ParseCertificate(rawCert): %s", err)
+		return fmt.Errorf("parse certificate: %w", err)
 	}
 
 	if _, err := cert.Verify(x509.VerifyOptions{
 		Roots: caCert,
 	}); err != nil {
-		return fmt.Errorf("cert.Verify(caCert): %s", err)
+		return fmt.Errorf("verify certificate: %w", err)
 	}
 
 	return nil
