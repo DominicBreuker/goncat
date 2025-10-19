@@ -3,48 +3,67 @@ package entrypoint
 import (
 	"context"
 	"dominicbreuker/goncat/pkg/config"
-	"dominicbreuker/goncat/pkg/handler/slave"
 	"dominicbreuker/goncat/pkg/log"
-	"dominicbreuker/goncat/pkg/server"
 	"fmt"
 	"net"
+	"sync"
 )
+
+// uses interfaces/factories from internal.go (DI for testing)
 
 // SlaveListen starts a server that listens for incoming master connections
 // and follows their instructions as a slave.
 func SlaveListen(ctx context.Context, cfg *config.Shared) error {
-	s, err := server.New(ctx, cfg, makeSlaveHandler(ctx, cfg))
+	return slaveListen(ctx, cfg, realServerFactory(), realSlaveFactory())
+}
+
+// slaveListen is the internal implementation that accepts injected dependencies for testing.
+func slaveListen(
+	ctx context.Context,
+	cfg *config.Shared,
+	newServer serverFactory,
+	newSlave slaveFactory,
+) error {
+	s, err := newServer(ctx, cfg, makeSlaveHandler(ctx, cfg, newSlave))
 	if err != nil {
-		return fmt.Errorf("server.New(): %s", err)
+		return fmt.Errorf("creating server: %w", err)
 	}
 
+	var closeOnce sync.Once
+	defer closeOnce.Do(func() { _ = s.Close() })
+
+	go func() {
+		<-ctx.Done()
+		closeOnce.Do(func() { _ = s.Close() })
+	}()
+
 	if err := s.Serve(); err != nil {
-		return fmt.Errorf("serving: %s", err)
+		return fmt.Errorf("serving: %w", err)
 	}
 
 	return nil
 }
 
-func makeSlaveHandler(ctx context.Context, cfg *config.Shared) func(conn net.Conn) error {
+func makeSlaveHandler(ctx context.Context, cfg *config.Shared, newSlave slaveFactory) func(conn net.Conn) error {
 	return func(conn net.Conn) error {
 		defer log.InfoMsg("Connection to %s closed\n", conn.RemoteAddr())
-		defer conn.Close()
 
-		// Close the active connection when the parent context is cancelled so
-		// per-connection handlers (which may block on reads) can exit promptly.
+		var connOnce sync.Once
+		defer connOnce.Do(func() { _ = conn.Close() })
+
 		go func() {
 			<-ctx.Done()
-			conn.Close()
+			connOnce.Do(func() { _ = conn.Close() })
 		}()
 
-		slv, err := slave.New(ctx, cfg, conn)
+		slv, err := newSlave(ctx, cfg, conn)
 		if err != nil {
 			return fmt.Errorf("slave.New(): %s", err)
 		}
 		defer slv.Close()
 
 		if err := slv.Handle(); err != nil {
-			return fmt.Errorf("handle: %s", err)
+			return fmt.Errorf("handling: %w", err)
 		}
 
 		return nil

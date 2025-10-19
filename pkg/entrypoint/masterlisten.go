@@ -6,62 +6,68 @@ package entrypoint
 import (
 	"context"
 	"dominicbreuker/goncat/pkg/config"
-	"dominicbreuker/goncat/pkg/handler/master"
 	"dominicbreuker/goncat/pkg/log"
-	"dominicbreuker/goncat/pkg/server"
 	"fmt"
 	"net"
+	"sync"
 )
+
+// uses interfaces/factories from internal.go (DI for testing)
 
 // MasterListen starts a server that listens for incoming slave connections
 // and controls them as a master.
 func MasterListen(ctx context.Context, cfg *config.Shared, mCfg *config.Master) error {
-	s, err := server.New(ctx, cfg, makeMasterHandler(ctx, cfg, mCfg))
+	return masterListen(ctx, cfg, mCfg, realServerFactory(), realMasterFactory())
+}
+
+// masterListen is the internal implementation that accepts injected dependencies for testing.
+func masterListen(
+	ctx context.Context,
+	cfg *config.Shared,
+	mCfg *config.Master,
+	newServer serverFactory,
+	newMaster masterFactory,
+) error {
+	s, err := newServer(ctx, cfg, makeMasterHandler(ctx, cfg, mCfg, newMaster))
 	if err != nil {
-		return fmt.Errorf("server.New(): %s", err)
+		return fmt.Errorf("creating server: %w", err)
 	}
 
-	// Always close the server when this function returns.
-	defer func() {
-		_ = s.Close()
-	}()
+	var closeOnce sync.Once
+	defer closeOnce.Do(func() { _ = s.Close() })
 
-	// Ensure the server is closed when the context is cancelled so Serve() can return.
 	go func() {
 		<-ctx.Done()
-		// best-effort close to unblock Accept/Serve; log any error for diagnostics
-		if err := s.Close(); err != nil {
-			log.InfoMsg("master entrypoint: error closing server on context done: %s", err)
-		}
+		closeOnce.Do(func() { _ = s.Close() })
 	}()
 
 	if err := s.Serve(); err != nil {
-		return fmt.Errorf("serving: %s", err)
+		return fmt.Errorf("serving: %w", err)
 	}
 
 	return nil
 }
 
-func makeMasterHandler(ctx context.Context, cfg *config.Shared, mCfg *config.Master) func(conn net.Conn) error {
+func makeMasterHandler(ctx context.Context, cfg *config.Shared, mCfg *config.Master, newMaster masterFactory) func(conn net.Conn) error {
 	return func(conn net.Conn) error {
 		defer log.InfoMsg("Connection to %s closed\n", conn.RemoteAddr())
-		defer conn.Close()
 
-		// Close the active connection when the parent context is cancelled so
-		// per-connection handlers (which may block on reads) can exit promptly.
+		var connOnce sync.Once
+		defer connOnce.Do(func() { _ = conn.Close() })
+
 		go func() {
 			<-ctx.Done()
-			conn.Close()
+			connOnce.Do(func() { _ = conn.Close() })
 		}()
 
-		mst, err := master.New(ctx, cfg, mCfg, conn)
+		mst, err := newMaster(ctx, cfg, mCfg, conn)
 		if err != nil {
 			return fmt.Errorf("master.New(): %s", err)
 		}
 		defer mst.Close()
 
 		if err := mst.Handle(); err != nil {
-			return fmt.Errorf("handle: %s", err)
+			return fmt.Errorf("handling: %w", err)
 		}
 
 		return nil
