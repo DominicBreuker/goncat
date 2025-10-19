@@ -6,6 +6,10 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"fmt"
+	"net"
+	"time"
+
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/crypto"
 	"dominicbreuker/goncat/pkg/format"
@@ -13,9 +17,6 @@ import (
 	"dominicbreuker/goncat/pkg/transport"
 	"dominicbreuker/goncat/pkg/transport/tcp"
 	"dominicbreuker/goncat/pkg/transport/ws"
-	"fmt"
-	"net"
-	"time"
 )
 
 // dependencies holds the injectable dependencies for testing.
@@ -124,7 +125,7 @@ func upgradeToTLS(conn net.Conn, key string, timeout time.Duration) (net.Conn, e
 	if key != "" {
 		caCert, cert, err := crypto.GenerateCertificates(key)
 		if err != nil {
-			return nil, fmt.Errorf("crypto.GenerateCertificates(%s): %s", key, err)
+			return nil, fmt.Errorf("generate certificates: %w", err)
 		}
 
 		cfg.Certificates = []tls.Certificate{cert} // client Cert
@@ -139,7 +140,7 @@ func upgradeToTLS(conn net.Conn, key string, timeout time.Duration) (net.Conn, e
 	_ = tlsConn.SetDeadline(time.Now().Add(timeout))
 	if err := tlsConn.Handshake(); err != nil {
 		_ = tlsConn.Close()
-		return nil, fmt.Errorf("tls handshake: %s", err)
+		return nil, fmt.Errorf("tls handshake: %w", err)
 	}
 	// clear deadline after handshake
 	_ = tlsConn.SetDeadline(time.Time{})
@@ -150,18 +151,18 @@ func upgradeToTLS(conn net.Conn, key string, timeout time.Duration) (net.Conn, e
 // customVerifier verifies the certificate but cares only about the root certificate, not SANs
 func customVerifier(caCert *x509.CertPool, rawCerts [][]byte) error {
 	if len(rawCerts) != 1 {
-		return fmt.Errorf("unexpected number of rawCerts: %d", len(rawCerts))
+		return fmt.Errorf("unexpected number of raw certs: %d", len(rawCerts))
 	}
 
 	cert, err := x509.ParseCertificate(rawCerts[0])
 	if err != nil {
-		return fmt.Errorf("x509.ParseCertificate(rawCert): %s", err)
+		return fmt.Errorf("parse certificate: %w", err)
 	}
 
 	if _, err := cert.Verify(x509.VerifyOptions{
 		Roots: caCert,
 	}); err != nil {
-		return fmt.Errorf("cert.Verify(caCert): %s", err)
+		return fmt.Errorf("verify certificate: %w", err)
 	}
 
 	return nil
