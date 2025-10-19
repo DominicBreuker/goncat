@@ -44,6 +44,7 @@ func GetCommand() *cli.Command {
 			}
 
 			cfg := &config.Shared{
+				ID:       fmt.Sprintf("slave[%s]", config.GenerateId()),
 				Protocol: proto,
 				Host:     host,
 				Port:     port,

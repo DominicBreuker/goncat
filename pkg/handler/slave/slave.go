@@ -22,6 +22,7 @@ type Slave struct {
 	cfg *config.Shared
 
 	remoteAddr string
+	remoteID   string
 
 	sess *mux.SlaveSession
 }
@@ -35,8 +36,6 @@ func New(ctx context.Context, cfg *config.Shared, conn net.Conn) (*Slave, error)
 	}
 
 	remoteAddr := conn.RemoteAddr().String()
-	// let user know about connection status
-	log.InfoMsg("Session with %s established\n", remoteAddr)
 
 	return &Slave{
 		ctx:        ctx,
@@ -55,10 +54,20 @@ func (slv *Slave) Close() error {
 // the appropriate handlers. It blocks until the connection is closed or an error occurs.
 func (slv *Slave) Handle() error {
 	// let user know about connection status
-	defer log.InfoMsg("Session with %s closed\n", slv.remoteAddr)
+	defer func() {
+		if slv.remoteID != "" {
+			log.InfoMsg("Session with %s closed (%s)\n", slv.remoteAddr, slv.remoteID)
+		}
+	}()
 
 	ctx, cancel := context.WithCancel(slv.ctx)
 	defer cancel()
+
+	if err := slv.sess.SendContext(ctx, msg.Hello{
+		ID: slv.cfg.ID,
+	}); err != nil {
+		log.ErrorMsg("sending hello to master: %s\n", err)
+	}
 
 	for {
 		m, err := slv.sess.ReceiveContext(slv.ctx)
@@ -79,6 +88,10 @@ func (slv *Slave) Handle() error {
 		}
 
 		switch message := m.(type) {
+		case msg.Hello:
+			// let user know about connection status
+			slv.remoteID = message.ID
+			log.InfoMsg("Session with %s established (%s)\n", slv.remoteAddr, slv.remoteID)
 		case msg.Foreground:
 			slv.handleForegroundAsync(ctx, message)
 		case msg.Connect:

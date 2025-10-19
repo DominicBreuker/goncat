@@ -24,6 +24,7 @@ type Master struct {
 	mCfg *config.Master
 
 	remoteAddr string
+	remoteID   string
 
 	sess *mux.MasterSession
 }
@@ -37,8 +38,6 @@ func New(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.
 	}
 
 	remoteAddr := conn.RemoteAddr().String()
-	// let user know about connection status
-	log.InfoMsg("Session with %s established\n", remoteAddr)
 
 	return &Master{
 		ctx:        ctx,
@@ -58,7 +57,11 @@ func (mst *Master) Close() error {
 // and processes incoming messages from the slave. It blocks until all operations complete.
 func (mst *Master) Handle() error {
 	// let user know about connection status
-	defer log.InfoMsg("Session with %s closed\n", mst.remoteAddr)
+	defer func() {
+		if mst.remoteID != "" {
+			log.InfoMsg("Session with %s closed (%s)\n", mst.remoteAddr, mst.remoteID)
+		}
+	}()
 
 	var wg sync.WaitGroup
 
@@ -78,6 +81,12 @@ func (mst *Master) Handle() error {
 	}
 
 	mst.startForegroundJob(ctx, &wg, cancel) // foreground job must cancel when it terminates
+
+	if err := mst.sess.SendContext(ctx, msg.Hello{
+		ID: mst.cfg.ID,
+	}); err != nil {
+		log.ErrorMsg("sending hello to slave: %s\n", err)
+	}
 
 	go func() {
 		for {
@@ -103,6 +112,10 @@ func (mst *Master) Handle() error {
 			}
 
 			switch message := m.(type) {
+			case msg.Hello:
+				// let user know about connection status
+				mst.remoteID = message.ID
+				log.InfoMsg("Session with %s established (%s)\n", mst.remoteAddr, mst.remoteID)
 			case msg.Connect:
 				// validate messages from slave to ensure we only forward to destintions specified in master configuration
 				if !mst.mCfg.IsAllowedRemotePortForwardingDestination(message.RemoteHost, message.RemotePort) {

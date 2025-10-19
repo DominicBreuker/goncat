@@ -5,12 +5,14 @@ package config
 
 import (
 	"fmt"
+	mrand "math/rand"
 	"time"
 )
 
 // Shared contains configuration settings common to both master and slave modes,
 // including network protocol, connection details, and security settings.
 type Shared struct {
+	ID       string
 	Protocol Protocol
 	Host     string
 	Port     int
@@ -74,4 +76,21 @@ func (c *Shared) GetKey() string {
 	}
 
 	return KeySalt + c.Key
+}
+
+// GenerateId returns a pseudo-random 12-character alphanumeric string for
+// non-security uses (e.g., logging). It never returns an error.
+func GenerateId() string {
+	const letters = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+	const length = 12
+
+	src := mrand.NewSource(time.Now().UnixNano())
+	r := mrand.New(src)
+
+	buf := make([]byte, length)
+	for i := 0; i < length; i++ {
+		buf[i] = letters[r.Intn(len(letters))]
+	}
+
+	return string(buf)
 }

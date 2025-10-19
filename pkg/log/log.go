@@ -4,6 +4,7 @@ package log
 
 import (
 	"os"
+	"strings"
 
 	"github.com/fatih/color"
 )
@@ -13,10 +14,16 @@ var blue = color.New(color.FgBlue).FprintfFunc()
 
 // ErrorMsg prints an error message to stderr in red color.
 func ErrorMsg(format string, a ...interface{}) {
+	if !strings.HasSuffix(format, "\n") {
+		format = format + "\n"
+	}
 	red(os.Stderr, "[!] Error: "+format, a...)
 }
 
 // InfoMsg prints an informational message to stderr in blue color.
 func InfoMsg(format string, a ...interface{}) {
+	if !strings.HasSuffix(format, "\n") {
+		format = format + "\n"
+	}
 	blue(os.Stderr, "[+] "+format, a...)
 }

@@ -32,6 +32,7 @@ func GetCommand() *cli.Command {
 			}
 
 			cfg := &config.Shared{
+				ID:       fmt.Sprintf("master[%s]", config.GenerateId()),
 				Protocol: proto,
 				Host:     host,
 				Port:     port,
