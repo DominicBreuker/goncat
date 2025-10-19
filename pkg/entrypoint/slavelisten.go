@@ -46,7 +46,10 @@ func slaveListen(
 
 func makeSlaveHandler(ctx context.Context, cfg *config.Shared, newSlave slaveFactory) func(conn net.Conn) error {
 	return func(conn net.Conn) error {
-		defer log.InfoMsg("Connection to %s closed\n", conn.RemoteAddr())
+		// let user know about connection status
+		remoteAddr := conn.RemoteAddr().String()
+		log.InfoMsg("New connection from %s\n", remoteAddr)
+		defer log.InfoMsg("Connection to %s closed\n", remoteAddr)
 
 		var connOnce sync.Once
 		defer connOnce.Do(func() { _ = conn.Close() })

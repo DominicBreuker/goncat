@@ -84,8 +84,6 @@ func (l *Listener) Serve(handle transport.Handler) error {
 				l.mu.Unlock()
 			}()
 
-			log.InfoMsg("New TCP connection from %s\n", c.RemoteAddr())
-
 			if err := handle(c); err != nil {
 				log.ErrorMsg("Handling connection: %s\n", err)
 			}
