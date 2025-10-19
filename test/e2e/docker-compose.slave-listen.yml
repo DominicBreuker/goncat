@@ -7,11 +7,11 @@ services:
     stdin_open: true # docker run -i
     tty: true        # docker run -t
     hostname: the_slave
-    command: sh -c '/opt/dist/goncat.elf slave listen $TRANSPORT://:8080'
+    command: sh -c '/opt/dist/goncat.elf slave listen $TRANSPORT://:8080 & /opt/dist/goncat.elf slave listen $TRANSPORT://:8081 --ssl & /opt/dist/goncat.elf slave listen $TRANSPORT://:8082 --ssl --key testsecret & wait'
     volumes:
       - ../../dist:/opt/dist:ro
     healthcheck:
-      test: ["CMD-SHELL", "netstat -an | grep 8080 | grep LISTEN"] 
+      test: ["CMD-SHELL", "netstat -an | grep 8080 | grep LISTEN && netstat -an | grep 8081 | grep LISTEN && netstat -an | grep 8082 | grep LISTEN"] 
       interval: 5s
       timeout: 3s
       retries: 3

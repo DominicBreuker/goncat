@@ -11,12 +11,6 @@ services:
     volumes:
       - ../../dist:/opt/dist:ro
       - .:/opt/tests:ro
-    healthcheck:
-      test: ["CMD-SHELL", "netstat -an | grep 8080 | grep LISTEN"] 
-      interval: 5s
-      timeout: 3s
-      retries: 3
-      start_period: 3s
     networks:
       - common
       - master_private
@@ -47,8 +41,6 @@ services:
     stdin_open: true # docker run -i
     tty: true        # docker run -t
     depends_on:
-      master:
-        condition: service_healthy
       master-companion:
         condition: service_healthy
       slave-companion:
@@ -56,7 +48,7 @@ services:
     volumes:
       - ../../dist:/opt/dist:ro
     hostname: the_slave
-    command: sh -c 'while true; do sleep 1; /opt/dist/goncat.elf slave connect $TRANSPORT://master:8080; done'
+    command: sh -c 'while true; do sleep 2; (/opt/dist/goncat.elf slave connect $TRANSPORT://master:8080 || true) & (/opt/dist/goncat.elf slave connect $TRANSPORT://master:8081 --ssl || true) & (/opt/dist/goncat.elf slave connect $TRANSPORT://master:8082 --ssl --key testsecret || true) & wait; done'
     networks:
       - common
       - slave_private
