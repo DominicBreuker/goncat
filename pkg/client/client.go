@@ -18,6 +18,13 @@ import (
 	"time"
 )
 
+// dependencies holds the injectable dependencies for testing.
+type dependencies struct {
+	newTCPDialer func(string, *config.Dependencies) (transport.Dialer, error)
+	newWSDialer  func(context.Context, string, config.Protocol) transport.Dialer
+	tlsUpgrader  func(net.Conn, string, time.Duration) (net.Conn, error)
+}
+
 // Client manages a network connection with support for multiple transport protocols
 // and optional TLS encryption with mutual authentication.
 type Client struct {
@@ -61,6 +68,20 @@ func (c *Client) GetConnection() net.Conn {
 // It supports TCP and WebSocket protocols, and optionally upgrades to TLS.
 // The connection is stored in the Client and can be retrieved via GetConnection.
 func (c *Client) Connect() error {
+	deps := &dependencies{
+		newTCPDialer: func(addr string, deps *config.Dependencies) (transport.Dialer, error) {
+			return tcp.NewDialer(addr, deps)
+		},
+		newWSDialer: func(ctx context.Context, addr string, proto config.Protocol) transport.Dialer {
+			return ws.NewDialer(ctx, addr, proto)
+		},
+		tlsUpgrader: upgradeToTLS,
+	}
+	return c.connect(deps)
+}
+
+// connect is the internal implementation that accepts injected dependencies for testing.
+func (c *Client) connect(deps *dependencies) error {
 	addr := format.Addr(c.cfg.Host, c.cfg.Port)
 
 	log.InfoMsg("Connecting to %s\n", addr)
@@ -69,12 +90,12 @@ func (c *Client) Connect() error {
 	var err error
 	switch c.cfg.Protocol {
 	case config.ProtoWS, config.ProtoWSS:
-		d, err = ws.NewDialer(c.ctx, addr, c.cfg.Protocol), nil
+		d = deps.newWSDialer(c.ctx, addr, c.cfg.Protocol)
 	default:
-		d, err = tcp.NewDialer(addr, c.cfg.Deps)
-	}
-	if err != nil {
-		return fmt.Errorf("NewDialer: %s", err)
+		d, err = deps.newTCPDialer(addr, c.cfg.Deps)
+		if err != nil {
+			return fmt.Errorf("NewDialer: %s", err)
+		}
 	}
 
 	c.conn, err = d.Dial(c.ctx)
@@ -83,7 +104,7 @@ func (c *Client) Connect() error {
 	}
 
 	if c.cfg.SSL {
-		c.conn, err = upgradeToTLS(c.conn, c.cfg.GetKey(), c.cfg.Timeout)
+		c.conn, err = deps.tlsUpgrader(c.conn, c.cfg.GetKey(), c.cfg.Timeout)
 		if err != nil {
 			return fmt.Errorf("upgradeToTLS: %s", err)
 		}
@@ -94,15 +115,8 @@ func (c *Client) Connect() error {
 
 // upgradeToTLS wraps the given connection with TLS encryption.
 // If a key is provided, it enables mutual authentication using generated certificates.
-// The function configures TLS 1.3 as the minimum version and sets up TCP keep-alive.
+// The function configures TLS 1.3 as the minimum version.
 func upgradeToTLS(conn net.Conn, key string, timeout time.Duration) (net.Conn, error) {
-	// enable TCP keep-alive directly on the underlying connection if possible
-	if tcpConn, ok := conn.(*net.TCPConn); ok {
-		if err := tcpConn.SetKeepAlive(true); err != nil {
-			return nil, fmt.Errorf("conn.SetKeepAlive(true): %s", err)
-		}
-	}
-
 	cfg := &tls.Config{
 		MinVersion: tls.VersionTLS13,
 	}
