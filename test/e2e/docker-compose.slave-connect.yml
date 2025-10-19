@@ -48,7 +48,47 @@ services:
     volumes:
       - ../../dist:/opt/dist:ro
     hostname: the_slave
-    command: sh -c 'while true; do sleep 2; (/opt/dist/goncat.elf slave connect $TRANSPORT://master:8080 || true) & (/opt/dist/goncat.elf slave connect $TRANSPORT://master:8081 --ssl || true) & (/opt/dist/goncat.elf slave connect $TRANSPORT://master:8082 --ssl --key testsecret || true) & wait; done'
+    command: sh -c 'while true; do sleep 2; /opt/dist/goncat.elf slave connect $TRANSPORT://master:8080 || true; done'
+    networks:
+      - common
+      - slave_private
+
+  slave-tls:
+    image: local/tests
+    build:
+      context: .
+      dockerfile: Dockerfile
+    stdin_open: true # docker run -i
+    tty: true        # docker run -t
+    depends_on:
+      master-companion:
+        condition: service_healthy
+      slave-companion:
+        condition: service_healthy
+    volumes:
+      - ../../dist:/opt/dist:ro
+    hostname: the_slave
+    command: sh -c 'while true; do sleep 2; /opt/dist/goncat.elf slave connect $TRANSPORT://master:8081 --ssl || true; done'
+    networks:
+      - common
+      - slave_private
+
+  slave-mtls:
+    image: local/tests
+    build:
+      context: .
+      dockerfile: Dockerfile
+    stdin_open: true # docker run -i
+    tty: true        # docker run -t
+    depends_on:
+      master-companion:
+        condition: service_healthy
+      slave-companion:
+        condition: service_healthy
+    volumes:
+      - ../../dist:/opt/dist:ro
+    hostname: the_slave
+    command: sh -c 'while true; do sleep 2; /opt/dist/goncat.elf slave connect $TRANSPORT://master:8082 --ssl --key testsecret || true; done'
     networks:
       - common
       - slave_private
