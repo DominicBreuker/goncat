@@ -54,7 +54,6 @@ func (c *Client) Close() error {
 	if addr := c.conn.RemoteAddr(); addr != nil {
 		remote = addr.String()
 	}
-	log.InfoMsg("Connection to %s closed\n", remote)
 
 	return c.conn.Close()
 }

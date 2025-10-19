@@ -6,7 +6,6 @@ package entrypoint
 import (
 	"context"
 	"dominicbreuker/goncat/pkg/config"
-	"dominicbreuker/goncat/pkg/log"
 	"fmt"
 	"net"
 	"sync"
@@ -63,11 +62,6 @@ func makeMasterHandler(ctx context.Context, cfg *config.Shared, mCfg *config.Mas
 			return fmt.Errorf("master.New(): %s", err)
 		}
 		defer mst.Close()
-
-		// let user know about connection status
-		remoteAddr := conn.RemoteAddr().String()
-		log.InfoMsg("New connection from %s\n", remoteAddr)
-		defer log.InfoMsg("Connection to %s closed\n", remoteAddr)
 
 		if err := mst.Handle(); err != nil {
 			return fmt.Errorf("handling: %w", err)

@@ -23,6 +23,8 @@ type Master struct {
 	cfg  *config.Shared
 	mCfg *config.Master
 
+	remoteAddr string
+
 	sess *mux.MasterSession
 }
 
@@ -34,11 +36,16 @@ func New(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.
 		return nil, fmt.Errorf("mux.OpenSession(conn): %s", err)
 	}
 
+	remoteAddr := conn.RemoteAddr().String()
+	// let user know about connection status
+	log.InfoMsg("Session with %s established\n", remoteAddr)
+
 	return &Master{
-		ctx:  ctx,
-		cfg:  cfg,
-		mCfg: mCfg,
-		sess: sess,
+		ctx:        ctx,
+		cfg:        cfg,
+		mCfg:       mCfg,
+		remoteAddr: remoteAddr,
+		sess:       sess,
 	}, nil
 }
 
@@ -50,6 +57,9 @@ func (mst *Master) Close() error {
 // Handle starts all configured master operations (port forwarding, SOCKS, foreground task)
 // and processes incoming messages from the slave. It blocks until all operations complete.
 func (mst *Master) Handle() error {
+	// let user know about connection status
+	defer log.InfoMsg("Session with %s closed\n", mst.remoteAddr)
+
 	var wg sync.WaitGroup
 
 	ctx, cancel := context.WithCancel(mst.ctx)

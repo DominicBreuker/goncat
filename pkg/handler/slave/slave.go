@@ -21,6 +21,8 @@ type Slave struct {
 	ctx context.Context
 	cfg *config.Shared
 
+	remoteAddr string
+
 	sess *mux.SlaveSession
 }
 
@@ -32,10 +34,15 @@ func New(ctx context.Context, cfg *config.Shared, conn net.Conn) (*Slave, error)
 		return nil, fmt.Errorf("mux.AcceptSession(conn): %s", err)
 	}
 
+	remoteAddr := conn.RemoteAddr().String()
+	// let user know about connection status
+	log.InfoMsg("Session with %s established\n", remoteAddr)
+
 	return &Slave{
-		ctx:  ctx,
-		cfg:  cfg,
-		sess: sess,
+		ctx:        ctx,
+		cfg:        cfg,
+		remoteAddr: remoteAddr,
+		sess:       sess,
 	}, nil
 }
 
@@ -47,6 +54,9 @@ func (slv *Slave) Close() error {
 // Handle processes incoming messages from the master and dispatches them to
 // the appropriate handlers. It blocks until the connection is closed or an error occurs.
 func (slv *Slave) Handle() error {
+	// let user know about connection status
+	defer log.InfoMsg("Session with %s closed\n", slv.remoteAddr)
+
 	ctx, cancel := context.WithCancel(slv.ctx)
 	defer cancel()
 
