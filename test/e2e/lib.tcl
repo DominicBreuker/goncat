@@ -7,7 +7,7 @@ namespace eval Expect {
     }
 
     proc client_connected {} {
-        Utils::wait_for "New * connection from"
+        Utils::wait_for "New connection from"
     }
 
     proc shell_access_works {} {

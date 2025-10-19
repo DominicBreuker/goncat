@@ -11,16 +11,13 @@ puts "\n=== Test 1: mTLS server -> Plain client (port 8080) ==="
 spawn /opt/dist/goncat.elf master listen $transport://:8080 --ssl --key testsecret --timeout 2000
 set timeout 8
 expect {
-    -re "New.*connection from" {
-        # We might see a connection attempt but it should fail quickly
-        expect {
-            "Error:" {
-                puts "✓ Test 1 passed: mTLS server rejected plain client\n"
-            }
-            timeout {
-                puts "✓ Test 1 passed: No clean connection established\n"
-            }
-        }
+    "New connection from" {
+        # Connection message should NOT appear for failed TLS handshakes
+        puts "✗ Test 1 failed: mTLS server accepted plain client connection\n"
+        exit 1
+    }
+    "Error:" {
+        puts "✓ Test 1 passed: mTLS server rejected plain client\n"
     }
     timeout {
         puts "✓ Test 1 passed: mTLS server did not accept plain client\n"
@@ -34,16 +31,13 @@ puts "\n=== Test 2: mTLS server -> TLS client (port 8081) ==="
 spawn /opt/dist/goncat.elf master listen $transport://:8081 --ssl --key testsecret --timeout 2000
 set timeout 8
 expect {
-    -re "New.*connection from" {
-        # We might see a connection attempt but it should fail quickly
-        expect {
-            "Error:" {
-                puts "✓ Test 2 passed: mTLS server rejected TLS client\n"
-            }
-            timeout {
-                puts "✓ Test 2 passed: No clean connection established\n"
-            }
-        }
+    "New connection from" {
+        # Connection message should NOT appear for failed TLS handshakes
+        puts "✗ Test 2 failed: mTLS server accepted TLS client connection\n"
+        exit 1
+    }
+    "Error:" {
+        puts "✓ Test 2 passed: mTLS server rejected TLS client\n"
     }
     timeout {
         puts "✓ Test 2 passed: mTLS server did not accept TLS client\n"
@@ -66,16 +60,13 @@ puts "\n=== Test 4: mTLS server -> mTLS client (port 8082, wrong key) ==="
 spawn /opt/dist/goncat.elf master listen $transport://:8082 --ssl --key wrongsecret --timeout 2000
 set timeout 8
 expect {
-    -re "New.*connection from" {
-        # We might see a connection attempt but it should fail quickly
-        expect {
-            "Error:" {
-                puts "✓ Test 4 passed: mTLS server rejected client with wrong key\n"
-            }
-            timeout {
-                puts "✓ Test 4 passed: No clean connection established\n"
-            }
-        }
+    "New connection from" {
+        # Connection message should NOT appear for failed TLS handshakes
+        puts "✗ Test 4 failed: mTLS server accepted client with wrong key\n"
+        exit 1
+    }
+    "Error:" {
+        puts "✓ Test 4 passed: mTLS server rejected client with wrong key\n"
     }
     timeout {
         puts "✓ Test 4 passed: mTLS server did not accept client with wrong key\n"

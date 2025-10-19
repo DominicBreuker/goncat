@@ -11,15 +11,15 @@ puts "\n=== Test 1: TLS client -> Plain server (port 8080) ==="
 spawn /opt/dist/goncat.elf master connect $transport://slave:8080 --ssl --timeout 2000
 set timeout 5
 expect {
+    "New connection from" {
+        puts "✗ Test 1 failed: TLS client unexpectedly connected to plain server"
+        exit 1
+    }
     "Error: Run: connecting: upgrade to tls: tls handshake:" {
         puts "✓ Test 1 passed: TLS client cannot connect to plain server\n"
     }
     timeout {
         puts "✓ Test 1 passed: TLS client timed out connecting to plain server\n"
-    }
-    -re "New.*connection" {
-        puts "✗ Test 1 failed: TLS client unexpectedly connected to plain server"
-        exit 1
     }
 }
 catch {close}
@@ -37,6 +37,10 @@ puts "\n=== Test 3: TLS client -> mTLS server (port 8080) ==="
 spawn /opt/dist/goncat.elf master connect $transport://slave-mtls:8080 --ssl --timeout 2000
 set timeout 5
 expect {
+    "New connection from" {
+        puts "✗ Test 3 failed: TLS client unexpectedly connected to mTLS server"
+        exit 1
+    }
     "Error: Run: connecting: upgrade to tls: tls handshake: verify certificate:" {
         puts "✓ Test 3 passed: TLS client cannot connect to mTLS server (cert verification failed)\n"
     }
@@ -45,10 +49,6 @@ expect {
     }
     timeout {
         puts "✓ Test 3 passed: TLS client timed out connecting to mTLS server\n"
-    }
-    -re "New.*connection" {
-        puts "✗ Test 3 failed: TLS client unexpectedly connected to mTLS server"
-        exit 1
     }
 }
 catch {close}

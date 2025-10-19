@@ -18,15 +18,15 @@ puts "\n=== Test 2: Plain client -> TLS server (port 8080) ==="
 spawn /opt/dist/goncat.elf master connect $transport://slave-tls:8080 --timeout 2000
 set timeout 5
 expect {
+    "New connection from" {
+        puts "✗ Test 2 failed: Plain client unexpectedly connected to TLS server"
+        exit 1
+    }
     "Error: Run: connecting:" {
         puts "✓ Test 2 passed: Plain client cannot connect to TLS server\n"
     }
     timeout {
         puts "✓ Test 2 passed: Plain client timed out connecting to TLS server\n"
-    }
-    -re "New.*connection" {
-        puts "✗ Test 2 failed: Plain client unexpectedly connected to TLS server"
-        exit 1
     }
 }
 catch {close}
@@ -37,15 +37,15 @@ puts "\n=== Test 3: Plain client -> mTLS server (port 8080) ==="
 spawn /opt/dist/goncat.elf master connect $transport://slave-mtls:8080 --timeout 2000
 set timeout 5
 expect {
+    "New connection from" {
+        puts "✗ Test 3 failed: Plain client unexpectedly connected to mTLS server"
+        exit 1
+    }
     "Error: Run: connecting:" {
         puts "✓ Test 3 passed: Plain client cannot connect to mTLS server\n"
     }
     timeout {
         puts "✓ Test 3 passed: Plain client timed out connecting to mTLS server\n"
-    }
-    -re "New.*connection" {
-        puts "✗ Test 3 failed: Plain client unexpectedly connected to mTLS server"
-        exit 1
     }
 }
 catch {close}

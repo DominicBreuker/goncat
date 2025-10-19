@@ -50,11 +50,6 @@ func masterListen(
 
 func makeMasterHandler(ctx context.Context, cfg *config.Shared, mCfg *config.Master, newMaster masterFactory) func(conn net.Conn) error {
 	return func(conn net.Conn) error {
-		// let user know about connection status
-		remoteAddr := conn.RemoteAddr().String()
-		log.InfoMsg("New connection from %s\n", remoteAddr)
-		defer log.InfoMsg("Connection to %s closed\n", remoteAddr)
-
 		var connOnce sync.Once
 		defer connOnce.Do(func() { _ = conn.Close() })
 
@@ -68,6 +63,11 @@ func makeMasterHandler(ctx context.Context, cfg *config.Shared, mCfg *config.Mas
 			return fmt.Errorf("master.New(): %s", err)
 		}
 		defer mst.Close()
+
+		// let user know about connection status
+		remoteAddr := conn.RemoteAddr().String()
+		log.InfoMsg("New connection from %s\n", remoteAddr)
+		defer log.InfoMsg("Connection to %s closed\n", remoteAddr)
 
 		if err := mst.Handle(); err != nil {
 			return fmt.Errorf("handling: %w", err)
