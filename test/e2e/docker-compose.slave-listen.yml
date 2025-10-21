@@ -106,7 +106,7 @@ services:
       - ../../dist:/opt/dist:ro
       - .:/opt/tests:ro
     hostname: the_master
-    command: sh -c '/opt/tests/test-runner.sh "$TRANSPORT" /opt/tests/$TEST_SET/test-*.sh'
+    command: sh -c '/opt/tests/test-runner.sh "$TRANSPORT" /opt/tests/$TEST_SET/test-*.sh /opt/tests/$TEST_SET/test-*.py'
     networks:
       - common
       - master_private

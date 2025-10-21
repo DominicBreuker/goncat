@@ -56,10 +56,10 @@ func GetCommand() *cli.Command {
 				mCfg.Socks = config.NewSocksCfg(socksSpec)
 			}
 
-			if errors := config.Validate(cfg, mCfg); len(errors) > 0 {
-				log.ErrorMsg("Argument validation errors:\n")
-				for _, err := range errors {
-					log.ErrorMsg(" - %s\n", err)
+			if errs := config.Validate(cfg, mCfg); len(errs) > 0 {
+				log.ErrorMsg("Argument validation errors:")
+				for _, err := range errs {
+					log.ErrorMsg(" - %s", err)
 				}
 				return fmt.Errorf("exiting")
 			}

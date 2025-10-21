@@ -59,7 +59,7 @@ func makeMasterHandler(ctx context.Context, cfg *config.Shared, mCfg *config.Mas
 
 		mst, err := newMaster(ctx, cfg, mCfg, conn)
 		if err != nil {
-			return fmt.Errorf("master.New(): %s", err)
+			return fmt.Errorf("master.New(): %w", err)
 		}
 		defer mst.Close()
 
