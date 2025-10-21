@@ -64,7 +64,7 @@ test-integration-with-race:
 	go test -race -v -short ./test/integration/...
 
 .PHONY: test-e2e
-test-integration: build-linux
+test-e2e: build-linux
 	@echo ""
 	@echo "### ########################### ###"
 	@echo "### Testing bind shell features ###"

@@ -63,19 +63,53 @@ func (slv *Slave) Handle() error {
 	ctx, cancel := context.WithCancel(slv.ctx)
 	defer cancel()
 
-	if err := slv.sess.SendContext(ctx, msg.Hello{
-		ID: slv.cfg.ID,
-	}); err != nil {
-		log.ErrorMsg("sending hello to master: %s\n", err)
+	// 1) Send Hello
+	if err := slv.sess.SendContext(ctx, msg.Hello{ID: slv.cfg.ID}); err != nil {
+		// treat as terminal; session likely unusable
+		return fmt.Errorf("sending hello to master: %w", err)
 	}
 
+	// 2) Handshake barrier: wait for master's Hello within timeout
+	helloCtx, helloCancel := context.WithTimeout(ctx, slv.cfg.Timeout)
+	defer helloCancel()
+
 	for {
-		m, err := slv.sess.ReceiveContext(slv.ctx)
+		m, err := slv.sess.ReceiveContext(helloCtx)
 		if err != nil {
 			if err == io.EOF {
+				return fmt.Errorf("handshake: peer closed")
+			}
+			if helloCtx.Err() != nil || ctx.Err() != nil {
+				// timed out or cancelled while waiting for hello
+				return fmt.Errorf("handshake: %w", helloCtx.Err())
+			}
+			// Ignore polling-related timeouts; keep waiting within helloCtx
+			if err == context.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
+				continue
+			}
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				continue
+			}
+			// Any other error: fail handshake
+			return fmt.Errorf("handshake receive: %w", err)
+		}
+
+		if h, ok := m.(msg.Hello); ok {
+			slv.remoteID = h.ID
+			log.InfoMsg("Session with %s established (%s)\n", slv.remoteAddr, slv.remoteID)
+			break
+		}
+		// Ignore any other message types until Hello is seen (shouldn’t happen).
+	}
+
+	// 3) Main loop: process commands
+	for {
+		m, err := slv.sess.ReceiveContext(ctx)
+		if err != nil {
+			if err == io.EOF || ctx.Err() != nil {
 				return nil
 			}
-			// Ignore deadline/timeout errors caused by context/deadline checks.
+			// Ignore deadline/timeout errors caused by polling checks.
 			if err == context.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
 				continue
 			}
@@ -89,9 +123,7 @@ func (slv *Slave) Handle() error {
 
 		switch message := m.(type) {
 		case msg.Hello:
-			// let user know about connection status
-			slv.remoteID = message.ID
-			log.InfoMsg("Session with %s established (%s)\n", slv.remoteAddr, slv.remoteID)
+			// Duplicate Hello after barrier: harmless; ignore.
 		case msg.Foreground:
 			slv.handleForegroundAsync(ctx, message)
 		case msg.Connect:

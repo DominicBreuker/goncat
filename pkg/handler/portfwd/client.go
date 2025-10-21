@@ -43,7 +43,7 @@ func NewClient(ctx context.Context, m msg.Connect, sessCtl ClientControlSession,
 func (h *Client) Handle() error {
 	connRemote, err := h.sessCtl.GetOneChannelContext(h.ctx)
 	if err != nil {
-		return fmt.Errorf("AcceptNewChannel(): %s", err)
+		return fmt.Errorf("AcceptNewChannel(): %w", err)
 	}
 	defer connRemote.Close()
 
@@ -51,12 +51,12 @@ func (h *Client) Handle() error {
 
 	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %s", addr, err)
+		return fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %w", addr, err)
 	}
 
 	connLocal, err := h.dialerFn(h.ctx, "tcp", nil, tcpAddr)
 	if err != nil {
-		return fmt.Errorf("net.Dial(tcp, %s): %s", addr, err)
+		return fmt.Errorf("net.Dial(tcp, %s): %w", addr, err)
 	}
 	defer connLocal.Close()
 
@@ -66,7 +66,7 @@ func (h *Client) Handle() error {
 	}
 
 	pipeio.Pipe(h.ctx, connRemote, connLocal, func(err error) {
-		log.ErrorMsg("Handling connect to %s: %s\n", addr, err)
+		log.ErrorMsg("Handling connect to %s: %w", addr, err)
 	})
 
 	return nil

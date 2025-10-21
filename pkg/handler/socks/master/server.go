@@ -71,6 +71,7 @@ func (srv *Server) Serve() error {
 			}
 
 			srv.LogError("Accept(): %s\n", err)
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 

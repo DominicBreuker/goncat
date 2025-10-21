@@ -119,7 +119,7 @@ func TestLocalPortForwarding(t *testing.T) {
 	}
 
 	// required, the piping through the relay is not immediate
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(100 * time.Millisecond)
 
 	resp, err := client.ReadLine()
 	if err != nil {
