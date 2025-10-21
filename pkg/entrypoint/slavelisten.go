@@ -3,6 +3,7 @@ package entrypoint
 import (
 	"context"
 	"dominicbreuker/goncat/pkg/config"
+	"errors"
 	"fmt"
 	"net"
 	"sync"
@@ -10,59 +11,87 @@ import (
 
 // uses interfaces/factories from internal.go (DI for testing)
 
-// SlaveListen starts a server that listens for incoming master connections
-// and follows their instructions as a slave.
 func SlaveListen(ctx context.Context, cfg *config.Shared) error {
 	return slaveListen(ctx, cfg, realServerFactory(), realSlaveFactory())
 }
 
-// slaveListen is the internal implementation that accepts injected dependencies for testing.
 func slaveListen(
-	ctx context.Context,
+	parent context.Context,
 	cfg *config.Shared,
 	newServer serverFactory,
 	newSlave slaveFactory,
 ) error {
+	// child context we can cancel on return
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+
 	s, err := newServer(ctx, cfg, makeSlaveHandler(ctx, cfg, newSlave))
 	if err != nil {
 		return fmt.Errorf("creating server: %w", err)
 	}
-
 	var closeOnce sync.Once
-	defer closeOnce.Do(func() { _ = s.Close() })
+	closeServer := func() { closeOnce.Do(func() { _ = s.Close() }) }
+	defer closeServer()
 
-	go func() {
-		<-ctx.Done()
-		closeOnce.Do(func() { _ = s.Close() })
-	}()
+	// run Serve in a goroutine and wait deterministically
+	errCh := make(chan error, 1)
+	go func() { errCh <- s.Serve() }()
 
-	if err := s.Serve(); err != nil {
+	select {
+	case <-ctx.Done():
+		closeServer()
+		err := <-errCh
+		if err == nil || isServerClosed(err) || errors.Is(err, context.Canceled) {
+			return nil
+		}
+		return fmt.Errorf("serving after cancel: %w", err)
+
+	case err := <-errCh:
+		if err == nil || isServerClosed(err) {
+			return nil
+		}
 		return fmt.Errorf("serving: %w", err)
 	}
-
-	return nil
 }
 
-func makeSlaveHandler(ctx context.Context, cfg *config.Shared, newSlave slaveFactory) func(conn net.Conn) error {
+func makeSlaveHandler(
+	parent context.Context,
+	cfg *config.Shared,
+	newSlave slaveFactory,
+) func(conn net.Conn) error {
 	return func(conn net.Conn) error {
-		var connOnce sync.Once
-		defer connOnce.Do(func() { _ = conn.Close() })
+		// per-connection context
+		ctx, cancel := context.WithCancel(parent)
+		defer cancel()
 
-		go func() {
-			<-ctx.Done()
-			connOnce.Do(func() { _ = conn.Close() })
-		}()
+		var connOnce sync.Once
+		closeConn := func() { connOnce.Do(func() { _ = conn.Close() }) }
+		defer closeConn()
 
 		slv, err := newSlave(ctx, cfg, conn)
 		if err != nil {
-			return fmt.Errorf("slave.New(): %s", err)
+			return fmt.Errorf("slave.New(): %w", err)
 		}
 		defer slv.Close()
 
-		if err := slv.Handle(); err != nil {
+		// run Handle and race against ctx
+		errCh := make(chan error, 1)
+		go func() { errCh <- slv.Handle() }()
+
+		select {
+		case <-ctx.Done():
+			closeConn()
+			err := <-errCh
+			if err == nil || errors.Is(err, context.Canceled) /* || errors.Is(err, net.ErrClosed) */ {
+				return nil
+			}
+			return fmt.Errorf("handling after cancel: %w", err)
+
+		case err := <-errCh:
+			if err == nil /* || errors.Is(err, net.ErrClosed) */ {
+				return nil
+			}
 			return fmt.Errorf("handling: %w", err)
 		}
-
-		return nil
 	}
 }

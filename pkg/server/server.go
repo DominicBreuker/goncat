@@ -1,10 +1,12 @@
-// Package server provides a network server implementation with support for
-// multiple transport protocols (TCP, WebSocket) and optional TLS encryption.
 package server
 
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
+	"net"
+	"time"
+
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/crypto"
 	"dominicbreuker/goncat/pkg/format"
@@ -12,34 +14,22 @@ import (
 	"dominicbreuker/goncat/pkg/transport"
 	"dominicbreuker/goncat/pkg/transport/tcp"
 	"dominicbreuker/goncat/pkg/transport/ws"
-	"fmt"
-	"net"
-	"time"
 )
 
-// Server manages a network listener and handles incoming connections
-// with optional TLS encryption and mutual authentication.
 type Server struct {
-	ctx context.Context
-	cfg *config.Shared
-
+	ctx    context.Context
+	cfg    *config.Shared
 	l      transport.Listener
 	handle transport.Handler
 }
 
-// New creates a new Server with the given context, configuration, and connection handler.
-// If SSL is enabled in the configuration, connections are wrapped with TLS using generated certificates.
-// If a key is configured, mutual TLS authentication is required.
 func New(ctx context.Context, cfg *config.Shared, handle transport.Handler) (*Server, error) {
-	s := &Server{
-		ctx: ctx,
-		cfg: cfg,
-	}
+	s := &Server{ctx: ctx, cfg: cfg}
 
 	if cfg.SSL {
-		caCert, cert, err := crypto.GenerateCertificates(s.cfg.GetKey())
+		caCert, cert, err := crypto.GenerateCertificates(cfg.GetKey())
 		if err != nil {
-			return nil, fmt.Errorf("crypto.GenerateCertificates(%s): %s", s.cfg.GetKey(), err)
+			return nil, fmt.Errorf("generate certificates: %w", err)
 		}
 
 		tlsCfg := &tls.Config{
@@ -53,17 +43,14 @@ func New(ctx context.Context, cfg *config.Shared, handle transport.Handler) (*Se
 
 		s.handle = func(conn net.Conn) error {
 			tlsConn := tls.Server(conn, tlsCfg)
-
-			// set a handshake deadline to avoid blocking forever
-			_ = tlsConn.SetDeadline(time.Now().Add(cfg.Timeout))
-			if err := tlsConn.Handshake(); err != nil {
-				// ensure connection closed on handshake failure
-				_ = tlsConn.Close()
-				return fmt.Errorf("tls handshake: %s", err)
+			if cfg.Timeout > 0 {
+				_ = tlsConn.SetDeadline(time.Now().Add(cfg.Timeout))
+				defer func() { _ = tlsConn.SetDeadline(time.Time{}) }()
 			}
-			// clear deadline after handshake
-			_ = tlsConn.SetDeadline(time.Time{})
-
+			if err := tlsConn.Handshake(); err != nil {
+				_ = tlsConn.Close()
+				return fmt.Errorf("tls handshake: %w", err)
+			}
 			return handle(tlsConn)
 		}
 	} else {
@@ -73,7 +60,6 @@ func New(ctx context.Context, cfg *config.Shared, handle transport.Handler) (*Se
 	return s, nil
 }
 
-// Close stops the server's listener if it's running.
 func (s *Server) Close() error {
 	if s.l != nil {
 		return s.l.Close()
@@ -81,24 +67,24 @@ func (s *Server) Close() error {
 	return nil
 }
 
-// Serve starts the server and begins accepting connections.
-// The server listens on the configured address using the configured transport protocol.
-// This function blocks until an error occurs or the server is closed.
 func (s *Server) Serve() error {
 	addr := format.Addr(s.cfg.Host, s.cfg.Port)
 
-	var err error
+	var (
+		l   transport.Listener
+		err error
+	)
 	switch s.cfg.Protocol {
 	case config.ProtoWS, config.ProtoWSS:
-		s.l, err = ws.NewListener(s.ctx, addr, s.cfg.Protocol == config.ProtoWSS)
+		l, err = ws.NewListener(s.ctx, addr, s.cfg.Protocol == config.ProtoWSS)
 	default:
-		s.l, err = tcp.NewListener(addr, s.cfg.Deps)
+		l, err = tcp.NewListener(addr, s.cfg.Deps)
 	}
 	if err != nil {
-		return fmt.Errorf("tcp.New(%s): %s", addr, err)
+		return fmt.Errorf("new listener %s (%s): %w", addr, s.cfg.Protocol, err)
 	}
+	s.l = l
 
 	log.InfoMsg("Listening on %s\n", addr)
-
 	return s.l.Serve(s.handle)
 }

@@ -7,10 +7,10 @@ import (
 	"dominicbreuker/goncat/pkg/crypto"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/transport"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/coder/websocket"
@@ -18,130 +18,118 @@ import (
 
 // Listener implements the transport.Listener interface for WebSocket connections.
 // It wraps an HTTP server that upgrades incoming requests to WebSocket connections.
-// Only one connection is handled at a time; additional connections receive HTTP 500 errors.
+// Only one connection is handled at a time; additional connections receive HTTP 503.
 type Listener struct {
 	ctx context.Context
+	nl  net.Listener
 
-	nl net.Listener
-
-	rdy bool
-	mu  sync.Mutex
+	// semaphore (cap=1) to allow exactly one active connection
+	sem chan struct{}
 }
 
 // NewListener creates a new WebSocket listener on the specified address.
-// If tls is true, the listener will use TLS with an ephemeral self-signed certificate.
-func NewListener(ctx context.Context, addr string, tls bool) (*Listener, error) {
+// If useTLS is true, the listener will use TLS with an ephemeral self-signed certificate.
+func NewListener(ctx context.Context, addr string, useTLS bool) (*Listener, error) {
 	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
-		return nil, fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %s", addr, err)
+		return nil, fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %w", addr, err)
 	}
 
+	// Use the generic net.Listener interface (not *net.TCPListener)
 	var nl net.Listener
 	nl, err = net.ListenTCP("tcp", tcpAddr)
 	if err != nil {
-		return nil, fmt.Errorf("net.ListenTCP(tcp, %s): %s", tcpAddr.String(), err)
+		return nil, fmt.Errorf("net.ListenTCP(tcp, %s): %w", tcpAddr.String(), err)
 	}
 
-	if tls {
+	if useTLS {
 		nl, err = getTLSListener(nl)
 		if err != nil {
-			return nil, fmt.Errorf("getTLSListener(): %s", err)
+			return nil, fmt.Errorf("getTLSListener(): %w", err)
 		}
 	}
 
-	return &Listener{
+	l := &Listener{
 		ctx: ctx,
 		nl:  nl,
-		rdy: true,
-	}, nil
+		sem: make(chan struct{}, 1),
+	}
+	// initially allow one active connection
+	l.sem <- struct{}{}
+	return l, nil
 }
 
 func getTLSListener(nl net.Listener) (net.Listener, error) {
-	key := rand.Text() // new random certificate on each launch, client will ignore anyways
-
+	// Ephemeral cert per process; clients skip-verify anyway.
+	// (If you need mTLS/pinning, you’re already doing TLS-in-TLS at the app layer.)
+	key := rand.Text()
 	_, cert, err := crypto.GenerateCertificates(key)
 	if err != nil {
-		return nil, fmt.Errorf("crypto.GenerateCertificates(%s): %s", key, err)
+		return nil, fmt.Errorf("crypto.GenerateCertificates(%s): %w", key, err)
 	}
-
 	tlsCfg := &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS13,
 	}
-
 	return tls.NewListener(nl, tlsCfg), nil
 }
 
 // Serve starts the HTTP server and handles incoming WebSocket upgrade requests.
-// Each connection is passed to the provided handler after the WebSocket upgrade completes.
 func (l *Listener) Serve(handle transport.Handler) error {
 	s := &http.Server{
-		Handler: newHandler(handle, l),
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Try to acquire the single slot. If busy, reject.
+			select {
+			case <-l.sem:
+				// release on return
+				defer func() { l.sem <- struct{}{} }()
 
-		ReadTimeout:  time.Second * 15,
-		WriteTimeout: time.Second * 15,
+				c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+					Subprotocols: []string{"bin"},
+				})
+				if err != nil {
+					log.ErrorMsg("websocket.Accept(): %s\n", err)
+					// If upgrade fails, sem is already released by defer; nothing else to do.
+					return
+				}
+
+				conn := websocket.NetConn(l.ctx, c, websocket.MessageBinary)
+				log.InfoMsg("New WS connection from %s\n", conn.RemoteAddr())
+
+				// Make sure the connection is always closed, and don’t leak the handler slot on panic.
+				defer func() { _ = conn.Close() }()
+				defer func() {
+					if r := recover(); r != nil {
+						log.ErrorMsg("Handler panic: %v\n", r)
+					}
+				}()
+
+				if err := handle(conn); err != nil {
+					log.ErrorMsg("handle websocket.NetConn: %s\n", err)
+				}
+
+			default:
+				// Busy: reject extra connections politely
+				http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+				return
+			}
+		}),
+
+		// For long-lived tunnels, keep these generous; avoid spuriously killing idle conns.
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       0,                // unlimited reads after headers
+		WriteTimeout:      0,                // don't kill slow writers; app layer handles deadlines if needed
+		IdleTimeout:       60 * time.Second, // typical default
 	}
 
-	err := s.Serve(l.nl)
-	if err != nil {
-		return fmt.Errorf("s.Serve(): %s", err)
+	// Serve will unblock when the underlying net.Listener is closed via Close().
+	if err := s.Serve(l.nl); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("http.Server.Serve(): %w", err)
 	}
-
 	return nil
 }
 
-type handler struct {
-	handle transport.Handler
-	l      *Listener
-}
-
-func newHandler(handle transport.Handler, l *Listener) handler {
-	return handler{
-		handle: handle,
-		l:      l,
-	}
-}
-
-func (h handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// reject with 500 unless we are ready
-
-	h.l.mu.Lock()
-	if !h.l.rdy {
-		w.WriteHeader(500)
-		h.l.mu.Unlock()
-		return
-	}
-	h.l.rdy = false
-	h.l.mu.Unlock()
-
-	// get ready again eventually
-
-	defer func() {
-		h.l.mu.Lock()
-		h.l.rdy = true
-		h.l.mu.Unlock()
-	}()
-
-	// now handle the request
-
-	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-		Subprotocols: []string{"bin"},
-	})
-	if err != nil {
-		log.ErrorMsg("websocket.Accept(): %s\n", err)
-		return
-	}
-
-	conn := websocket.NetConn(h.l.ctx, c, websocket.MessageBinary)
-	log.InfoMsg("New WS connection from %s\n", conn.RemoteAddr())
-
-	if err := h.handle(conn); err != nil {
-		log.ErrorMsg("handle websocket.NetConn: %s\n", err)
-		return
-	}
-}
-
-// Close stops the listener.
+// Close stops the listener (this unblocks Serve()).
 func (l *Listener) Close() error {
 	return l.nl.Close()
 }
