@@ -7,12 +7,13 @@ import (
 	"sync"
 
 	"dominicbreuker/goncat/pkg/config"
+	"dominicbreuker/goncat/pkg/handler/master"
 )
 
 // uses interfaces/factories from internal.go (DI for testing)
 
 func MasterConnect(ctx context.Context, cfg *config.Shared, mCfg *config.Master) error {
-	return masterConnect(ctx, cfg, mCfg, realClientFactory(), realMasterFactory())
+	return masterConnect(ctx, cfg, mCfg, realClientFactory(), master.Handle)
 }
 
 func masterConnect(
@@ -20,7 +21,7 @@ func masterConnect(
 	cfg *config.Shared,
 	mCfg *config.Master,
 	newClient clientFactory,
-	newMaster masterFactory,
+	handle masterHandler,
 ) error {
 	// Optional: child context to signal normal-return cancellation downstream.
 	ctx, cancel := context.WithCancel(parent)
@@ -35,17 +36,10 @@ func masterConnect(
 	closeClient := func() { closeOnce.Do(func() { _ = c.Close() }) }
 	defer closeClient()
 
-	// Create master handler bound to the connected conn.
-	h, err := newMaster(ctx, cfg, mCfg, c.GetConnection())
-	if err != nil {
-		return fmt.Errorf("creating master: %w", err)
-	}
-	defer h.Close()
-
-	// Run Handle and race it against context cancellation.
+	// Run the master handler (newMaster now runs the handler directly and returns its final error).
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- h.Handle()
+		errCh <- handle(ctx, cfg, mCfg, c.GetConnection())
 	}()
 
 	select {

@@ -15,9 +15,8 @@ import (
 	"net"
 )
 
-// Slave manages the slave side of a multiplexed connection, responding to
-// commands from the master for execution, port forwarding, and proxying.
-type Slave struct {
+// slave is the package-local state for a slave handler.
+type slave struct {
 	ctx context.Context
 	cfg *config.Shared
 
@@ -27,32 +26,15 @@ type Slave struct {
 	sess *mux.SlaveSession
 }
 
-// New creates a new Slave handler over the given connection.
-// It accepts a multiplexed session for handling commands from the master.
-func New(ctx context.Context, cfg *config.Shared, conn net.Conn) (*Slave, error) {
-	sess, err := mux.AcceptSessionContext(ctx, conn, cfg.Timeout)
-	if err != nil {
-		return nil, fmt.Errorf("mux.AcceptSession(conn): %s", err)
-	}
-
-	remoteAddr := conn.RemoteAddr().String()
-
-	return &Slave{
+// Handle creates a slave handler over the given connection and runs it until completion.
+func Handle(ctx context.Context, cfg *config.Shared, conn net.Conn) error {
+	slv := &slave{
 		ctx:        ctx,
 		cfg:        cfg,
-		remoteAddr: remoteAddr,
-		sess:       sess,
-	}, nil
-}
+		remoteAddr: conn.RemoteAddr().String(),
+		sess:       nil,
+	}
 
-// Close closes the slave's multiplexed session and all associated resources.
-func (slv *Slave) Close() error {
-	return slv.sess.Close()
-}
-
-// Handle processes incoming messages from the master and dispatches them to
-// the appropriate handlers. It blocks until the connection is closed or an error occurs.
-func (slv *Slave) Handle() error {
 	// let user know about connection status
 	defer func() {
 		if slv.remoteID != "" {
@@ -60,6 +42,26 @@ func (slv *Slave) Handle() error {
 		}
 	}()
 
+	var err error
+	slv.sess, err = mux.AcceptSessionContext(ctx, conn, cfg.Timeout)
+	if err != nil {
+		return fmt.Errorf("mux.AcceptSession(conn): %s", err)
+	}
+	defer func() { _ = slv.sess.Close() }()
+
+	return slv.run()
+}
+
+// Close closes the slave's multiplexed session and all associated resources.
+func (slv *slave) Close() error {
+	if slv.sess == nil {
+		return nil
+	}
+	return slv.sess.Close()
+}
+
+// run contains the former Slave.Handle implementation and runs on an already-initialized slave.
+func (slv *slave) run() error {
 	ctx, cancel := context.WithCancel(slv.ctx)
 	defer cancel()
 

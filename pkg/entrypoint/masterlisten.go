@@ -6,6 +6,7 @@ package entrypoint
 import (
 	"context"
 	"dominicbreuker/goncat/pkg/config"
+	"dominicbreuker/goncat/pkg/handler/master"
 	"errors"
 	"fmt"
 	"net"
@@ -17,7 +18,7 @@ import (
 // MasterListen starts a server that listens for incoming slave connections
 // and controls them as a master.
 func MasterListen(ctx context.Context, cfg *config.Shared, mCfg *config.Master) error {
-	return masterListen(ctx, cfg, mCfg, realServerFactory(), realMasterFactory())
+	return masterListen(ctx, cfg, mCfg, realServerFactory(), master.Handle)
 }
 
 // masterListen is the internal implementation that accepts injected dependencies for testing.
@@ -26,13 +27,13 @@ func masterListen(
 	cfg *config.Shared,
 	mCfg *config.Master,
 	newServer serverFactory,
-	newMaster masterFactory,
+	handle masterHandler,
 ) error {
 	// child ctx we will cancel on return
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 
-	s, err := newServer(ctx, cfg, makeMasterHandler(ctx, cfg, mCfg, newMaster))
+	s, err := newServer(ctx, cfg, makeMasterHandler(ctx, cfg, mCfg, handle))
 	if err != nil {
 		return fmt.Errorf("creating server: %w", err)
 	}
@@ -76,7 +77,7 @@ func makeMasterHandler(
 	parent context.Context,
 	cfg *config.Shared,
 	mCfg *config.Master,
-	newMaster masterFactory,
+	handle masterHandler,
 ) func(conn net.Conn) error {
 	return func(conn net.Conn) error {
 		// own context per connection (optional but nice)
@@ -87,14 +88,9 @@ func makeMasterHandler(
 		closeConn := func() { connOnce.Do(func() { _ = conn.Close() }) }
 		defer closeConn()
 
-		mst, err := newMaster(ctx, cfg, mCfg, conn)
-		if err != nil {
-			return fmt.Errorf("master.New(): %w", err)
-		}
-		defer mst.Close()
-
+		// newMaster now runs the handler directly and returns its final error.
 		errCh := make(chan error, 1)
-		go func() { errCh <- mst.Handle() }()
+		go func() { errCh <- handle(ctx, cfg, mCfg, conn) }()
 
 		select {
 		case <-ctx.Done():
@@ -108,7 +104,7 @@ func makeMasterHandler(
 			return fmt.Errorf("handling after cancel: %w", err)
 
 		case err := <-errCh:
-			// Handle exited on its own
+			// Handler exited on its own
 			if err == nil || errors.Is(err, net.ErrClosed) {
 				return nil
 			}

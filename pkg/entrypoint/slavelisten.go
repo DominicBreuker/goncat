@@ -3,6 +3,7 @@ package entrypoint
 import (
 	"context"
 	"dominicbreuker/goncat/pkg/config"
+	"dominicbreuker/goncat/pkg/handler/slave"
 	"errors"
 	"fmt"
 	"net"
@@ -12,20 +13,20 @@ import (
 // uses interfaces/factories from internal.go (DI for testing)
 
 func SlaveListen(ctx context.Context, cfg *config.Shared) error {
-	return slaveListen(ctx, cfg, realServerFactory(), realSlaveFactory())
+	return slaveListen(ctx, cfg, realServerFactory(), slave.Handle)
 }
 
 func slaveListen(
 	parent context.Context,
 	cfg *config.Shared,
 	newServer serverFactory,
-	newSlave slaveFactory,
+	handle slaveHandler,
 ) error {
 	// child context we can cancel on return
 	ctx, cancel := context.WithCancel(parent)
 	defer cancel()
 
-	s, err := newServer(ctx, cfg, makeSlaveHandler(ctx, cfg, newSlave))
+	s, err := newServer(ctx, cfg, makeSlaveHandler(ctx, cfg, handle))
 	if err != nil {
 		return fmt.Errorf("creating server: %w", err)
 	}
@@ -57,7 +58,7 @@ func slaveListen(
 func makeSlaveHandler(
 	parent context.Context,
 	cfg *config.Shared,
-	newSlave slaveFactory,
+	handle slaveHandler,
 ) func(conn net.Conn) error {
 	return func(conn net.Conn) error {
 		// per-connection context
@@ -68,15 +69,9 @@ func makeSlaveHandler(
 		closeConn := func() { connOnce.Do(func() { _ = conn.Close() }) }
 		defer closeConn()
 
-		slv, err := newSlave(ctx, cfg, conn)
-		if err != nil {
-			return fmt.Errorf("slave.New(): %w", err)
-		}
-		defer slv.Close()
-
-		// run Handle and race against ctx
+		// run the handler directly; it will manage the connection lifecycle
 		errCh := make(chan error, 1)
-		go func() { errCh <- slv.Handle() }()
+		go func() { errCh <- handle(ctx, cfg, conn) }()
 
 		select {
 		case <-ctx.Done():

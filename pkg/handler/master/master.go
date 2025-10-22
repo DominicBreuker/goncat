@@ -18,7 +18,8 @@ import (
 
 // Master manages the master side of a multiplexed connection, coordinating
 // port forwarding, SOCKS proxies, and command execution on the slave.
-type Master struct {
+// master is the package-local state for a master handler.
+type master struct {
 	ctx  context.Context
 	cfg  *config.Shared
 	mCfg *config.Master
@@ -29,39 +30,29 @@ type Master struct {
 	sess *mux.MasterSession
 }
 
-// New creates a new Master handler over the given connection.
-// It opens a multiplexed session for managing multiple concurrent operations.
-func New(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (*Master, error) {
-	sess, err := mux.OpenSessionContext(ctx, conn, cfg.Timeout)
-	if err != nil {
-		return nil, fmt.Errorf("mux.OpenSession(conn): %s", err)
-	}
-
-	remoteAddr := conn.RemoteAddr().String()
-
-	return &Master{
+// Handle creates a master handler over the given connection and runs it until completion.
+func Handle(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) error {
+	mst := &master{
 		ctx:        ctx,
 		cfg:        cfg,
 		mCfg:       mCfg,
-		remoteAddr: remoteAddr,
-		sess:       sess,
-	}, nil
-}
+		remoteAddr: conn.RemoteAddr().String(),
+		sess:       nil,
+	}
+	var err error
 
-// Close closes the master's multiplexed session and all associated resources.
-func (mst *Master) Close() error {
-	return mst.sess.Close()
-}
-
-// Handle starts all configured master operations (port forwarding, SOCKS, foreground task)
-// and processes incoming messages from the slave. It blocks until all operations complete.
-func (mst *Master) Handle() error {
 	// let user know about connection status
 	defer func() {
 		if mst.remoteID != "" {
 			log.InfoMsg("Session with %s closed (%s)\n", mst.remoteAddr, mst.remoteID)
 		}
 	}()
+
+	mst.sess, err = mux.OpenSessionContext(ctx, conn, cfg.Timeout)
+	if err != nil {
+		return fmt.Errorf("mux.OpenSession(conn): %s", err)
+	}
+	defer func() { _ = mst.sess.Close() }()
 
 	var wg sync.WaitGroup
 	ctx, cancel := context.WithCancel(mst.ctx)

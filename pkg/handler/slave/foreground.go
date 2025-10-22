@@ -11,7 +11,7 @@ import (
 
 // handleForegroundAsync handles a foreground task request from the master asynchronously.
 // When the foreground handler completes, it closes the slave connection to terminate the session.
-func (slv *Slave) handleForegroundAsync(ctx context.Context, m msg.Foreground) {
+func (slv *slave) handleForegroundAsync(ctx context.Context, m msg.Foreground) {
 	go func() {
 		if err := slv.handleForeground(ctx, m); err != nil {
 			log.ErrorMsg("Running foreground job: %s", err)
@@ -22,7 +22,7 @@ func (slv *Slave) handleForegroundAsync(ctx context.Context, m msg.Foreground) {
 
 // handleForeground processes a foreground task request, either starting an interactive
 // shell or executing a command with or without PTY support.
-func (slv *Slave) handleForeground(ctx context.Context, m msg.Foreground) error {
+func (slv *slave) handleForeground(ctx context.Context, m msg.Foreground) error {
 	conn, err := slv.sess.AcceptNewChannelContext(ctx)
 	if err != nil {
 		return fmt.Errorf("AcceptNewChannel(): %s", err)

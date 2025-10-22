@@ -1,6 +1,7 @@
 package entrypoint
 
 import (
+	"context"
 	"dominicbreuker/goncat/pkg/config"
 	"errors"
 	"net"
@@ -109,28 +110,6 @@ func (f *fakeClient) GetConnection() net.Conn {
 	return f.conn
 }
 
-// fakeMaster implements a fake master handler for testing.
-type fakeMaster struct {
-	handleErr  error
-	handleFunc func() error
-	closed     bool
-	mu         sync.Mutex
-}
-
-func (f *fakeMaster) Close() error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.closed = true
-	return nil
-}
-
-func (f *fakeMaster) Handle() error {
-	if f.handleFunc != nil {
-		return f.handleFunc()
-	}
-	return f.handleErr
-}
-
 // fakeSlave implements a fake slave handler for testing.
 type fakeSlave struct {
 	handleErr  error
@@ -218,4 +197,22 @@ type fakeServerWithCloseCount struct {
 func (f *fakeServerWithCloseCount) Close() error {
 	f.closeCount++
 	return f.fakeServer.Close()
+}
+
+func newFakeMasterHandle(err error, cb func()) masterHandler {
+	return func(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) error {
+		if cb != nil {
+			cb()
+		}
+		return err
+	}
+}
+
+func newFakeSlaveHandle(err error, cb func()) slaveHandler {
+	return func(context.Context, *config.Shared, net.Conn) error {
+		if cb != nil {
+			cb()
+		}
+		return err
+	}
 }

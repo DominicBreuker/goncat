@@ -7,19 +7,20 @@ import (
 	"sync"
 
 	"dominicbreuker/goncat/pkg/config"
+	"dominicbreuker/goncat/pkg/handler/slave"
 )
 
 // uses interfaces/factories from internal.go (DI for testing)
 
 func SlaveConnect(ctx context.Context, cfg *config.Shared) error {
-	return slaveConnect(ctx, cfg, realClientFactory(), realSlaveFactory())
+	return slaveConnect(ctx, cfg, realClientFactory(), slave.Handle)
 }
 
 func slaveConnect(
 	parent context.Context,
 	cfg *config.Shared,
 	newClient clientFactory,
-	newSlave slaveFactory,
+	handle slaveHandler,
 ) error {
 	// Optional: child context so we can cancel descendants on normal return
 	ctx, cancel := context.WithCancel(parent)
@@ -34,16 +35,9 @@ func slaveConnect(
 	closeClient := func() { closeOnce.Do(func() { _ = c.Close() }) }
 	defer closeClient()
 
-	// Create slave handler bound to the connected conn
-	h, err := newSlave(ctx, cfg, c.GetConnection())
-	if err != nil {
-		return fmt.Errorf("creating slave: %w", err)
-	}
-	defer h.Close()
-
-	// Run Handle and race against context cancellation
+	// Run the slave handler directly (it accepts the conn and runs until finished).
 	errCh := make(chan error, 1)
-	go func() { errCh <- h.Handle() }()
+	go func() { errCh <- handle(ctx, cfg, c.GetConnection()) }()
 
 	select {
 	case <-ctx.Done():

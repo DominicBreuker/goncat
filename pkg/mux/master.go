@@ -27,6 +27,9 @@ type MasterSession struct {
 
 // Close closes the session.
 func (s *MasterSession) Close() error {
+	if s.sess == nil {
+		return nil
+	}
 	return s.sess.Close()
 }
 

@@ -5,7 +5,6 @@ import (
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/transport"
 	"errors"
-	"net"
 	"testing"
 	"time"
 )
@@ -26,20 +25,15 @@ func TestSlaveListen_Success(t *testing.T) {
 	fs := &fakeServer{
 		serveCh: make(chan struct{}),
 	}
-	fsl := &fakeSlave{}
 
 	newServer := func(ctx context.Context, cfg *config.Shared, handle transport.Handler) (serverInterface, error) {
 		return fs, nil
 	}
 
-	newSlave := func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
-		return fsl, nil
-	}
-
 	// Run slaveListen in a goroutine
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- slaveListen(ctx, cfg, newServer, newSlave)
+		errCh <- slaveListen(ctx, cfg, newServer, newFakeSlaveHandle(nil, nil))
 	}()
 
 	// Signal serve to return
@@ -72,11 +66,7 @@ func TestSlaveListen_ServerNewError(t *testing.T) {
 		return nil, expectedErr
 	}
 
-	newSlave := func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
-		return nil, nil
-	}
-
-	err := slaveListen(ctx, cfg, newServer, newSlave)
+	err := slaveListen(ctx, cfg, newServer, newFakeSlaveHandle(nil, nil))
 	if err == nil {
 		t.Fatal("slaveListen() error = nil, want error")
 	}
@@ -105,11 +95,7 @@ func TestSlaveListen_ServeError(t *testing.T) {
 		return fs, nil
 	}
 
-	newSlave := func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
-		return nil, nil
-	}
-
-	err := slaveListen(ctx, cfg, newServer, newSlave)
+	err := slaveListen(ctx, cfg, newServer, newFakeSlaveHandle(nil, nil))
 	if err == nil {
 		t.Fatal("slaveListen() error = nil, want error")
 	}
@@ -138,15 +124,10 @@ func TestSlaveListen_ContextCancellation(t *testing.T) {
 	newServer := func(ctx context.Context, cfg *config.Shared, handle transport.Handler) (serverInterface, error) {
 		return fs, nil
 	}
-
-	newSlave := func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
-		return nil, nil
-	}
-
 	// Run slaveListen in a goroutine
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- slaveListen(ctx, cfg, newServer, newSlave)
+		errCh <- slaveListen(ctx, cfg, newServer, newFakeSlaveHandle(nil, nil))
 	}()
 
 	// Cancel context
@@ -197,14 +178,10 @@ func TestSlaveListen_CloseIsIdempotent(t *testing.T) {
 		return fs, nil
 	}
 
-	newSlave := func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
-		return nil, nil
-	}
-
 	// Run slaveListen in a goroutine
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- slaveListen(ctx, cfg, newServer, newSlave)
+		errCh <- slaveListen(ctx, cfg, newServer, newFakeSlaveHandle(nil, nil))
 	}()
 
 	// Signal serve to return
@@ -229,13 +206,7 @@ func TestMakeSlaveHandler_Success(t *testing.T) {
 		Protocol: config.ProtoTCP,
 	}
 
-	fsl := &fakeSlave{}
-
-	newSlave := func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
-		return fsl, nil
-	}
-
-	handler := makeSlaveHandler(ctx, cfg, newSlave)
+	handler := makeSlaveHandler(ctx, cfg, newFakeSlaveHandle(nil, nil))
 	if handler == nil {
 		t.Fatal("makeSlaveHandler returned nil")
 	}
@@ -263,13 +234,7 @@ func TestMakeSlaveHandler_ContextCancellation(t *testing.T) {
 		Protocol: config.ProtoTCP,
 	}
 
-	fsl := &fakeSlave{}
-
-	newSlave := func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
-		return fsl, nil
-	}
-
-	handler := makeSlaveHandler(ctx, cfg, newSlave)
+	handler := makeSlaveHandler(ctx, cfg, newFakeSlaveHandle(nil, nil))
 
 	conn := &fakeConn{
 		closeCh: make(chan struct{}),
