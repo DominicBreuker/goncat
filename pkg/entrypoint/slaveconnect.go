@@ -2,46 +2,59 @@ package entrypoint
 
 import (
 	"context"
-	"dominicbreuker/goncat/pkg/config"
+	"errors"
 	"fmt"
 	"sync"
+
+	"dominicbreuker/goncat/pkg/config"
+	"dominicbreuker/goncat/pkg/handler/slave"
 )
 
 // uses interfaces/factories from internal.go (DI for testing)
 
-// SlaveConnect connects to a remote master and follows its instructions as a slave.
 func SlaveConnect(ctx context.Context, cfg *config.Shared) error {
-	return slaveConnect(ctx, cfg, realClientFactory(), realSlaveFactory())
+	return slaveConnect(ctx, cfg, realClientFactory(), slave.Handle)
 }
 
-// slaveConnect is the internal implementation that accepts injected dependencies for testing.
 func slaveConnect(
-	ctx context.Context,
+	parent context.Context,
 	cfg *config.Shared,
 	newClient clientFactory,
-	newSlave slaveFactory,
+	handle slaveHandler,
 ) error {
+	// Optional: child context so we can cancel descendants on normal return
+	ctx, cancel := context.WithCancel(parent)
+	defer cancel()
+
+	// Build client and connect
 	c := newClient(ctx, cfg)
 	if err := c.Connect(); err != nil {
 		return fmt.Errorf("connecting: %w", err)
 	}
 	var closeOnce sync.Once
-	defer closeOnce.Do(func() { _ = c.Close() })
+	closeClient := func() { closeOnce.Do(func() { _ = c.Close() }) }
+	defer closeClient()
 
-	go func() {
-		<-ctx.Done()
-		closeOnce.Do(func() { _ = c.Close() })
-	}()
+	// Run the slave handler directly (it accepts the conn and runs until finished).
+	errCh := make(chan error, 1)
+	go func() { errCh <- handle(ctx, cfg, c.GetConnection()) }()
 
-	h, err := newSlave(ctx, cfg, c.GetConnection())
-	if err != nil {
-		return fmt.Errorf("creating slave: %w", err)
-	}
-	defer h.Close()
+	select {
+	case <-ctx.Done():
+		// Cancellation: close and wait for Handle to exit
+		closeClient()
+		err := <-errCh
+		// Treat cancel/close as benign
+		if err == nil || errors.Is(err, context.Canceled) /* || errors.Is(err, net.ErrClosed) */ {
+			return nil
+		}
+		return fmt.Errorf("handling after cancel: %w", err)
 
-	if err := h.Handle(); err != nil {
+	case err := <-errCh:
+		// Handle completed on its own
+		if err == nil /* || errors.Is(err, net.ErrClosed) */ {
+			return nil
+		}
 		return fmt.Errorf("handling: %w", err)
 	}
-
-	return nil
 }

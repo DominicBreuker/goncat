@@ -20,7 +20,7 @@ const KeyFlag = "key"
 const VerboseFlag = "verbose"
 
 // TimeoutFlag is the name of the flag to specify operation timeout in milliseconds.
-const TimeoutFlag = "timeout"
+const TimeoutFlag = "timeout" // TODO for future: consider changing to time.Duration type, cmd.Duration(...)
 
 // GetBaseDescription returns the base description text for transport
 // specifications used in CLI commands.

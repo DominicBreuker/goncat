@@ -27,6 +27,9 @@ type MasterSession struct {
 
 // Close closes the session.
 func (s *MasterSession) Close() error {
+	if s.sess == nil {
+		return nil
+	}
 	return s.sess.Close()
 }
 
@@ -41,18 +44,18 @@ func OpenSessionContext(ctx context.Context, conn net.Conn, timeout time.Duratio
 
 	out.sess.mux, err = yamux.Client(conn, config())
 	if err != nil {
-		return nil, fmt.Errorf("yamux.Client(conn): %s", err)
+		return nil, fmt.Errorf("yamux.Client(conn): %w", err)
 	}
 
 	out.sess.ctlClientToServer, err = out.GetOneChannelContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("out.GetOneChannelContext() for ctlClientToServer: %s", err)
+		return nil, fmt.Errorf("out.GetOneChannelContext() for ctlClientToServer: %w", err)
 	}
 	out.enc = gob.NewEncoder(out.sess.ctlClientToServer)
 
 	out.sess.ctlServerToClient, err = out.GetOneChannelContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("out.GetOneChannelContext() for ctlServerToClient: %s", err)
+		return nil, fmt.Errorf("out.GetOneChannelContext() for ctlServerToClient: %w", err)
 	}
 	out.dec = gob.NewDecoder(out.sess.ctlServerToClient)
 
@@ -67,12 +70,12 @@ func (s *MasterSession) SendAndGetOneChannelContext(ctx context.Context, m msg.M
 	defer s.mu.Unlock()
 
 	if err := s.sendLocked(m, time.Time{}); err != nil {
-		return nil, fmt.Errorf("send(m): %s", err)
+		return nil, fmt.Errorf("send(m): %w", err)
 	}
 
 	conn, err := s.GetOneChannelContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("openNewChannel(): %s", err)
+		return nil, fmt.Errorf("openNewChannel(): %w", err)
 	}
 
 	return conn, nil
@@ -85,35 +88,36 @@ func (s *MasterSession) SendAndGetTwoChannelsContext(ctx context.Context, m msg.
 	defer s.mu.Unlock()
 
 	if err := s.sendLocked(m, time.Time{}); err != nil {
-		return nil, nil, fmt.Errorf("send(m): %s", err)
+		return nil, nil, fmt.Errorf("send(m): %w", err)
 	}
 
 	conn1, err := s.GetOneChannelContext(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("GetOneChannelContext() for conn1: %s", err)
+		return nil, nil, fmt.Errorf("GetOneChannelContext() for conn1: %w", err)
 	}
 
 	conn2, err := s.GetOneChannelContext(ctx)
 	if err != nil {
 		conn1.Close()
-		return nil, nil, fmt.Errorf("GetOneChannelContext() for conn2: %s", err)
+		return nil, nil, fmt.Errorf("GetOneChannelContext() for conn2: %w", err)
 	}
 
 	return conn1, conn2, nil
 }
 
-// GetOneChannelContext opens a yamux stream; if yamux lacks a context-aware
-// API we run Open() in a goroutine and return on ctx.Done().
+// GetOneChannelContext opens a yamux stream with ctx cancellation and a default timeout.
 func (s *MasterSession) GetOneChannelContext(ctx context.Context) (net.Conn, error) {
 	if s.sess == nil || s.sess.mux == nil {
 		return nil, fmt.Errorf("no mux session")
 	}
 
-	// Run blocking Open() in a goroutine and select on ctx.Done(). This is
-	// the portable approach because the yamux package does not provide a
-	// context-aware Open on the Session API. Using a goroutine + buffered
-	// result channel lets us respect the caller's context while avoiding
-	// goroutine leaks when the caller cancels early.
+	// If the caller provided no deadline, derive one from s.timeout.
+	if _, has := ctx.Deadline(); !has && s.timeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, s.timeout)
+		defer cancel()
+	}
+
 	type result struct {
 		c   net.Conn
 		err error
@@ -121,6 +125,7 @@ func (s *MasterSession) GetOneChannelContext(ctx context.Context) (net.Conn, err
 	resCh := make(chan result, 1)
 	go func() {
 		out, err := s.sess.mux.Open()
+		// Buffered channel means this goroutine never blocks even if the caller returns early.
 		resCh <- result{out, err}
 	}()
 
@@ -129,7 +134,7 @@ func (s *MasterSession) GetOneChannelContext(ctx context.Context) (net.Conn, err
 		return nil, ctx.Err()
 	case r := <-resCh:
 		if r.err != nil {
-			return nil, fmt.Errorf("session.Open(), ctl: %s", r.err)
+			return nil, fmt.Errorf("session.Open(), ctl: %w", r.err)
 		}
 		return r.c, nil
 	}
@@ -167,7 +172,7 @@ func (s *MasterSession) sendLocked(m msg.Message, deadline time.Time) error {
 	}
 
 	if err := s.enc.Encode(&m); err != nil {
-		return fmt.Errorf("sending msg: %s", err)
+		return fmt.Errorf("sending msg: %w", err)
 	}
 
 	return nil

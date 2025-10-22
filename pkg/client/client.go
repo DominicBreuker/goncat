@@ -46,17 +46,11 @@ func New(ctx context.Context, cfg *config.Shared) *Client {
 // Close closes the client's network connection and logs the closure.
 func (c *Client) Close() error {
 	if c.conn == nil {
-		log.InfoMsg("Connection closed (no active connection)\n")
 		return nil
 	}
-
-	var remote string
-	if addr := c.conn.RemoteAddr(); addr != nil {
-		remote = addr.String()
-	}
-	log.InfoMsg("Connection to %s closed\n", remote)
-
-	return c.conn.Close()
+	err := c.conn.Close()
+	c.conn = nil
+	return err
 }
 
 // GetConnection returns the underlying network connection.
@@ -118,9 +112,9 @@ func (c *Client) connect(deps *dependencies) error {
 // The function configures TLS 1.3 as the minimum version.
 func upgradeToTLS(conn net.Conn, key string, timeout time.Duration) (net.Conn, error) {
 	cfg := &tls.Config{
-		MinVersion: tls.VersionTLS13,
+		MinVersion:         tls.VersionTLS13,
+		InsecureSkipVerify: true, // custom verification below
 	}
-	cfg.InsecureSkipVerify = true // we implement ourselves to skip hostname validation
 
 	if key != "" {
 		caCert, cert, err := crypto.GenerateCertificates(key)
@@ -137,13 +131,14 @@ func upgradeToTLS(conn net.Conn, key string, timeout time.Duration) (net.Conn, e
 	tlsConn := tls.Client(conn, cfg)
 
 	// set a handshake deadline to avoid blocking indefinitely
-	_ = tlsConn.SetDeadline(time.Now().Add(timeout))
+	if timeout > 0 {
+		_ = tlsConn.SetDeadline(time.Now().Add(timeout))
+		defer func() { _ = tlsConn.SetDeadline(time.Time{}) }()
+	}
 	if err := tlsConn.Handshake(); err != nil {
 		_ = tlsConn.Close()
 		return nil, fmt.Errorf("tls handshake: %w", err)
 	}
-	// clear deadline after handshake
-	_ = tlsConn.SetDeadline(time.Time{})
 
 	return tlsConn, nil
 }

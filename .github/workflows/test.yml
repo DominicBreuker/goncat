@@ -31,7 +31,13 @@ jobs:
         ls -lh ./dist
 
     - name: run unit tests with race detection
+      timeout-minutes: 5
       run: make test-unit-with-race
+    
+    - name: run integration tests with race detection
+      timeout-minutes: 5
+      run: make test-integration-with-race
 
-    - name: run integration tests
-      run: make test-integration
+    - name: run e2e tests
+      timeout-minutes: 10
+      run: make test-e2e

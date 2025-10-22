@@ -10,8 +10,11 @@ import (
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"dominicbreuker/goncat/pkg/pipeio"
+	"errors"
 	"fmt"
 	"net"
+	"strings"
+	"time"
 )
 
 // Server handles incoming connections on a local port and forwards them
@@ -62,12 +65,12 @@ func (srv *Server) Handle() error {
 
 	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
-		return fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %s", addr, err)
+		return fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %w", addr, err)
 	}
 
 	l, err := srv.listenerFn("tcp", tcpAddr)
 	if err != nil {
-		return fmt.Errorf("listen(tcp, %s): %s", addr, err)
+		return fmt.Errorf("listen(tcp, %s): %w", addr, err)
 	}
 
 	go func() {
@@ -82,15 +85,29 @@ func (srv *Server) Handle() error {
 				return nil // cancelled
 			}
 
-			log.ErrorMsg("Port forwarding %s: Accept(): %s\n", srv.cfg, err)
+			// If the listener is closed, exit cleanly.
+			if errors.Is(err, net.ErrClosed) || strings.Contains(err.Error(), "use of closed network connection") {
+				return nil
+			}
+
+			log.ErrorMsg("Port forwarding %s: Accept(): %w", srv.cfg, err)
+			time.Sleep(100 * time.Millisecond) // tiny backoff to avoid a tight loop
 			continue
 		}
 
-		go func() {
-			defer conn.Close()
+		if tc, ok := conn.(*net.TCPConn); ok {
+			_ = tc.SetKeepAlive(true)
+		}
 
+		go func() {
+			defer func() {
+				_ = conn.Close()
+				if r := recover(); r != nil {
+					log.ErrorMsg("Port forwarding %s: handler panic: %v\n", srv.cfg, r)
+				}
+			}()
 			if err := srv.handlePortForwardingConn(conn); err != nil {
-				log.ErrorMsg("Port forwarding %s: handling connection: %s", srv.cfg, err)
+				log.ErrorMsg("Port forwarding %s: handling connection: %s\n", srv.cfg, err)
 			}
 		}()
 	}
@@ -106,9 +123,17 @@ func (srv *Server) acceptWithContext(l net.Listener) (net.Conn, error) {
 	}
 
 	ch := make(chan res, 1)
+
 	go func() {
 		c, e := l.Accept()
-		ch <- res{c: c, err: e}
+		// Do not block if the caller already returned due to ctx.Done().
+		select {
+		case ch <- res{c: c, err: e}:
+		case <-srv.ctx.Done():
+			if c != nil {
+				_ = c.Close()
+			}
+		}
 	}()
 
 	select {
@@ -127,12 +152,12 @@ func (srv *Server) handlePortForwardingConn(connLocal net.Conn) error {
 
 	connRemote, err := srv.sessCtl.SendAndGetOneChannelContext(srv.ctx, m)
 	if err != nil {
-		return fmt.Errorf("SendAndGetOneChannel() for conn: %s", err)
+		return fmt.Errorf("SendAndGetOneChannel() for conn: %w", err)
 	}
 	defer connRemote.Close()
 
 	pipeio.Pipe(srv.ctx, connLocal, connRemote, func(err error) {
-		log.ErrorMsg("Pipe(stdio, conn): %s\n", err)
+		log.ErrorMsg("port forwarding %s: pipe error: %s\n", srv.cfg, err)
 	})
 
 	return nil

@@ -4,8 +4,6 @@ import (
 	"context"
 	"dominicbreuker/goncat/pkg/client"
 	"dominicbreuker/goncat/pkg/config"
-	"dominicbreuker/goncat/pkg/handler/master"
-	"dominicbreuker/goncat/pkg/handler/slave"
 	"dominicbreuker/goncat/pkg/server"
 	"dominicbreuker/goncat/pkg/transport"
 	"net"
@@ -44,28 +42,9 @@ func realClientFactory() clientFactory {
 	}
 }
 
-// handlerInterface defines the interface for a handler that can handle connections.
-type handlerInterface interface {
-	Handle() error
-	Close() error
-}
+// masterHandler is the master handler function.
+type masterHandler func(context.Context, *config.Shared, *config.Master, net.Conn) error
 
-// masterFactory is a function type for creating master handlers.
-type masterFactory func(context.Context, *config.Shared, *config.Master, net.Conn) (handlerInterface, error)
-
-// realMasterFactory returns the actual master factory used in production.
-func realMasterFactory() masterFactory {
-	return func(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (handlerInterface, error) {
-		return master.New(ctx, cfg, mCfg, conn)
-	}
-}
-
-// slaveFactory is a function type for creating slave handlers.
-type slaveFactory func(context.Context, *config.Shared, net.Conn) (handlerInterface, error)
-
-// realSlaveFactory returns the actual slave factory used in production.
-func realSlaveFactory() slaveFactory {
-	return func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
-		return slave.New(ctx, cfg, conn)
-	}
-}
+// slaveHandler is the slave handler function signature (runs the handler directly
+// and returns its final error). This mirrors masterHandler.
+type slaveHandler func(context.Context, *config.Shared, net.Conn) error

@@ -15,48 +15,103 @@ import (
 	"net"
 )
 
-// Slave manages the slave side of a multiplexed connection, responding to
-// commands from the master for execution, port forwarding, and proxying.
-type Slave struct {
+// slave is the package-local state for a slave handler.
+type slave struct {
 	ctx context.Context
 	cfg *config.Shared
+
+	remoteAddr string
+	remoteID   string
 
 	sess *mux.SlaveSession
 }
 
-// New creates a new Slave handler over the given connection.
-// It accepts a multiplexed session for handling commands from the master.
-func New(ctx context.Context, cfg *config.Shared, conn net.Conn) (*Slave, error) {
-	sess, err := mux.AcceptSessionContext(ctx, conn, cfg.Timeout)
-	if err != nil {
-		return nil, fmt.Errorf("mux.AcceptSession(conn): %s", err)
+// Handle creates a slave handler over the given connection and runs it until completion.
+func Handle(ctx context.Context, cfg *config.Shared, conn net.Conn) error {
+	slv := &slave{
+		ctx:        ctx,
+		cfg:        cfg,
+		remoteAddr: conn.RemoteAddr().String(),
+		sess:       nil,
 	}
 
-	return &Slave{
-		ctx:  ctx,
-		cfg:  cfg,
-		sess: sess,
-	}, nil
+	// let user know about connection status
+	defer func() {
+		if slv.remoteID != "" {
+			log.InfoMsg("Session with %s closed (%s)\n", slv.remoteAddr, slv.remoteID)
+		}
+	}()
+
+	var err error
+	slv.sess, err = mux.AcceptSessionContext(ctx, conn, cfg.Timeout)
+	if err != nil {
+		return fmt.Errorf("mux.AcceptSession(conn): %s", err)
+	}
+	defer func() { _ = slv.sess.Close() }()
+
+	return slv.run()
 }
 
 // Close closes the slave's multiplexed session and all associated resources.
-func (slv *Slave) Close() error {
+func (slv *slave) Close() error {
+	if slv.sess == nil {
+		return nil
+	}
 	return slv.sess.Close()
 }
 
-// Handle processes incoming messages from the master and dispatches them to
-// the appropriate handlers. It blocks until the connection is closed or an error occurs.
-func (slv *Slave) Handle() error {
+// run contains the former Slave.Handle implementation and runs on an already-initialized slave.
+func (slv *slave) run() error {
 	ctx, cancel := context.WithCancel(slv.ctx)
 	defer cancel()
 
+	// 1) Send Hello
+	if err := slv.sess.SendContext(ctx, msg.Hello{ID: slv.cfg.ID}); err != nil {
+		// treat as terminal; session likely unusable
+		return fmt.Errorf("sending hello to master: %w", err)
+	}
+
+	// 2) Handshake barrier: wait for master's Hello within timeout
+	helloCtx, helloCancel := context.WithTimeout(ctx, slv.cfg.Timeout)
+	defer helloCancel()
+
 	for {
-		m, err := slv.sess.ReceiveContext(slv.ctx)
+		m, err := slv.sess.ReceiveContext(helloCtx)
 		if err != nil {
 			if err == io.EOF {
+				return fmt.Errorf("handshake: peer closed")
+			}
+			if helloCtx.Err() != nil || ctx.Err() != nil {
+				// timed out or cancelled while waiting for hello
+				return fmt.Errorf("handshake: %w", helloCtx.Err())
+			}
+			// Ignore polling-related timeouts; keep waiting within helloCtx
+			if err == context.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
+				continue
+			}
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				continue
+			}
+			// Any other error: fail handshake
+			return fmt.Errorf("handshake receive: %w", err)
+		}
+
+		if h, ok := m.(msg.Hello); ok {
+			slv.remoteID = h.ID
+			log.InfoMsg("Session with %s established (%s)\n", slv.remoteAddr, slv.remoteID)
+			break
+		}
+		// Ignore any other message types until Hello is seen (shouldn’t happen).
+	}
+
+	// 3) Main loop: process commands
+	for {
+		m, err := slv.sess.ReceiveContext(ctx)
+		if err != nil {
+			if err == io.EOF || ctx.Err() != nil {
 				return nil
 			}
-			// Ignore deadline/timeout errors caused by context/deadline checks.
+			// Ignore deadline/timeout errors caused by polling checks.
 			if err == context.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
 				continue
 			}
@@ -69,6 +124,8 @@ func (slv *Slave) Handle() error {
 		}
 
 		switch message := m.(type) {
+		case msg.Hello:
+			// Duplicate Hello after barrier: harmless; ignore.
 		case msg.Foreground:
 			slv.handleForegroundAsync(ctx, message)
 		case msg.Connect:

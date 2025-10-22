@@ -5,7 +5,6 @@ import (
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/transport"
 	"errors"
-	"net"
 	"testing"
 	"time"
 )
@@ -21,18 +20,13 @@ func TestMasterListen_Success(t *testing.T) {
 	mCfg := &config.Master{}
 
 	fs := &fakeServer{serveCh: make(chan struct{})}
-	fm := &fakeMaster{}
 
 	newServer := func(context.Context, *config.Shared, transport.Handler) (serverInterface, error) {
 		return fs, nil
 	}
 
-	newMaster := func(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (handlerInterface, error) {
-		return fm, nil
-	}
-
 	errCh := runAsync(func() error {
-		return masterListen(ctx, cfg, mCfg, newServer, newMaster)
+		return masterListen(ctx, cfg, mCfg, newServer, newFakeMasterHandle(nil, nil))
 	})
 
 	close(fs.serveCh) // Signal serve to return
@@ -52,11 +46,8 @@ func TestMasterListen_ServerNewError(t *testing.T) {
 	newServer := func(context.Context, *config.Shared, transport.Handler) (serverInterface, error) {
 		return nil, expectedErr
 	}
-	newMaster := func(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (handlerInterface, error) {
-		return nil, nil
-	}
 
-	err := masterListen(context.Background(), testConfig(), &config.Master{}, newServer, newMaster)
+	err := masterListen(context.Background(), testConfig(), &config.Master{}, newServer, newFakeMasterHandle(nil, nil))
 	assertError(t, err, "masterListen() with server creation error")
 }
 
@@ -68,11 +59,8 @@ func TestMasterListen_ServeError(t *testing.T) {
 	newServer := func(context.Context, *config.Shared, transport.Handler) (serverInterface, error) {
 		return fs, nil
 	}
-	newMaster := func(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (handlerInterface, error) {
-		return nil, nil
-	}
 
-	err := masterListen(context.Background(), testConfig(), &config.Master{}, newServer, newMaster)
+	err := masterListen(context.Background(), testConfig(), &config.Master{}, newServer, newFakeMasterHandle(nil, nil))
 	assertError(t, err, "masterListen() with serve error")
 
 	if !fs.closed {
@@ -100,14 +88,11 @@ func TestMasterListen_ContextCancellation(t *testing.T) {
 	newServer := func(ctx context.Context, cfg *config.Shared, handle transport.Handler) (serverInterface, error) {
 		return fs, nil
 	}
-	newMaster := func(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (handlerInterface, error) {
-		return nil, nil
-	}
 
 	// Run masterListen in a goroutine
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- masterListen(ctx, cfg, mCfg, newServer, newMaster)
+		errCh <- masterListen(ctx, cfg, mCfg, newServer, newFakeMasterHandle(nil, nil))
 	}()
 
 	// Cancel context
@@ -159,14 +144,10 @@ func TestMasterListen_CloseIsIdempotent(t *testing.T) {
 		return fs, nil
 	}
 
-	newMaster := func(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (handlerInterface, error) {
-		return nil, nil
-	}
-
 	// Run masterListen in a goroutine
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- masterListen(ctx, cfg, mCfg, newServer, newMaster)
+		errCh <- masterListen(ctx, cfg, mCfg, newServer, newFakeMasterHandle(nil, nil))
 	}()
 
 	// Signal serve to return
@@ -192,13 +173,7 @@ func TestMakeMasterHandler_Success(t *testing.T) {
 	}
 	mCfg := &config.Master{}
 
-	fm := &fakeMaster{}
-
-	newMaster := func(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (handlerInterface, error) {
-		return fm, nil
-	}
-
-	handler := makeMasterHandler(ctx, cfg, mCfg, newMaster)
+	handler := makeMasterHandler(ctx, cfg, mCfg, newFakeMasterHandle(nil, nil))
 	if handler == nil {
 		t.Fatal("makeMasterHandler returned nil")
 	}
@@ -226,13 +201,7 @@ func TestMakeMasterHandler_ContextCancellation(t *testing.T) {
 	}
 	mCfg := &config.Master{}
 
-	fm := &fakeMaster{}
-
-	newMaster := func(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (handlerInterface, error) {
-		return fm, nil
-	}
-
-	handler := makeMasterHandler(ctx, cfg, mCfg, newMaster)
+	handler := makeMasterHandler(ctx, cfg, mCfg, newFakeMasterHandle(nil, nil))
 
 	conn := &fakeConn{
 		closeCh: make(chan struct{}),

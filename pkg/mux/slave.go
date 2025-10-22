@@ -43,18 +43,18 @@ func AcceptSessionContext(ctx context.Context, conn net.Conn, timeout time.Durat
 
 	out.sess.mux, err = yamux.Server(conn, config())
 	if err != nil {
-		return nil, fmt.Errorf("yamux.Server(conn): %s", err)
+		return nil, fmt.Errorf("yamux.Server(conn): %w", err)
 	}
 
 	out.sess.ctlClientToServer, err = out.AcceptNewChannelContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("AcceptNewChannel() for ctlClientToServer: %s", err)
+		return nil, fmt.Errorf("AcceptNewChannel() for ctlClientToServer: %w", err)
 	}
 	out.dec = gob.NewDecoder(out.sess.ctlClientToServer)
 
 	out.sess.ctlServerToClient, err = out.AcceptNewChannelContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("AcceptNewChannel() for ctlServerToClient: %s", err)
+		return nil, fmt.Errorf("AcceptNewChannel() for ctlServerToClient: %w", err)
 	}
 	out.enc = gob.NewEncoder(out.sess.ctlServerToClient)
 
@@ -68,9 +68,13 @@ func (s *SlaveSession) AcceptNewChannelContext(ctx context.Context) (net.Conn, e
 		return nil, fmt.Errorf("no mux session")
 	}
 
+	// enforce timeout while accepting control channels
+	ctx, cancel := context.WithDeadline(ctx, time.Now().Add(s.timeout))
+	defer cancel()
+
 	stream, err := s.sess.mux.AcceptStreamWithContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("AcceptStreamWithContext(): %s", err)
+		return nil, fmt.Errorf("AcceptStreamWithContext(): %w", err)
 	}
 	if stream == nil {
 		return nil, fmt.Errorf("AcceptStreamWithContext returned nil stream")
@@ -92,12 +96,12 @@ func (s *SlaveSession) SendAndGetOneChannelContext(ctx context.Context, m msg.Me
 	defer s.mu.Unlock()
 
 	if err := s.sendLocked(m, time.Time{}); err != nil {
-		return nil, fmt.Errorf("send(m): %s", err)
+		return nil, fmt.Errorf("send(m): %w", err)
 	}
 
 	conn, err := s.AcceptNewChannelContext(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("AcceptNewChannel(): %s", err)
+		return nil, fmt.Errorf("AcceptNewChannel(): %w", err)
 	}
 
 	return conn, nil
@@ -167,7 +171,7 @@ func (s *SlaveSession) sendLocked(m msg.Message, deadline time.Time) error {
 	}
 
 	if err := s.enc.Encode(&m); err != nil {
-		return fmt.Errorf("sending msg: %s", err)
+		return fmt.Errorf("sending msg: %w", err)
 	}
 
 	return nil

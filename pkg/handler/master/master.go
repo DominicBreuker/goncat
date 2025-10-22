@@ -18,96 +18,143 @@ import (
 
 // Master manages the master side of a multiplexed connection, coordinating
 // port forwarding, SOCKS proxies, and command execution on the slave.
-type Master struct {
+// master is the package-local state for a master handler.
+type master struct {
 	ctx  context.Context
 	cfg  *config.Shared
 	mCfg *config.Master
 
+	remoteAddr string
+	remoteID   string
+
 	sess *mux.MasterSession
 }
 
-// New creates a new Master handler over the given connection.
-// It opens a multiplexed session for managing multiple concurrent operations.
-func New(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) (*Master, error) {
-	sess, err := mux.OpenSessionContext(context.Background(), conn, cfg.Timeout)
+// Handle creates a master handler over the given connection and runs it until completion.
+func Handle(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn net.Conn) error {
+	mst := &master{
+		ctx:        ctx,
+		cfg:        cfg,
+		mCfg:       mCfg,
+		remoteAddr: conn.RemoteAddr().String(),
+		sess:       nil,
+	}
+	var err error
+
+	// let user know about connection status
+	defer func() {
+		if mst.remoteID != "" {
+			log.InfoMsg("Session with %s closed (%s)\n", mst.remoteAddr, mst.remoteID)
+		}
+	}()
+
+	mst.sess, err = mux.OpenSessionContext(ctx, conn, cfg.Timeout)
 	if err != nil {
-		return nil, fmt.Errorf("mux.OpenSession(conn): %s", err)
+		return fmt.Errorf("mux.OpenSession(conn): %s", err)
+	}
+	defer func() { _ = mst.sess.Close() }()
+
+	var wg sync.WaitGroup
+	ctx, cancel := context.WithCancel(mst.ctx)
+	defer cancel()
+
+	// 1) Perform handshake: send Hello and wait for Hello
+	if err := mst.sess.SendContext(ctx, msg.Hello{ID: mst.cfg.ID}); err != nil {
+		// Treat handshake send failure as terminal
+		return fmt.Errorf("sending hello to slave: %w", err)
 	}
 
-	return &Master{
-		ctx:  ctx,
-		cfg:  cfg,
-		mCfg: mCfg,
-		sess: sess,
-	}, nil
-}
+	// Give the peer a bounded time to respond to Hello
+	helloCtx, helloCancel := context.WithTimeout(ctx, mst.cfg.Timeout)
+	defer helloCancel()
 
-// Close closes the master's multiplexed session and all associated resources.
-func (mst *Master) Close() error {
-	return mst.sess.Close()
-}
+	helloSeen := false
+	for !helloSeen {
+		m, err := mst.sess.ReceiveContext(helloCtx)
+		if err != nil {
+			if err == io.EOF {
+				return fmt.Errorf("handshake: peer closed")
+			}
+			if helloCtx.Err() != nil || ctx.Err() != nil {
+				return fmt.Errorf("handshake: %w", helloCtx.Err())
+			}
+			// Common transient/timeout errors during early handshake; keep waiting within helloCtx
+			if err == context.DeadlineExceeded {
+				return fmt.Errorf("handshake timeout waiting for hello")
+			}
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				// keep waiting until helloCtx expires
+				continue
+			}
+			// Any other error: still fail handshake
+			return fmt.Errorf("handshake receive: %w", err)
+		}
 
-// Handle starts all configured master operations (port forwarding, SOCKS, foreground task)
-// and processes incoming messages from the slave. It blocks until all operations complete.
-func (mst *Master) Handle() error {
-	var wg sync.WaitGroup
+		switch message := m.(type) {
+		case msg.Hello:
+			mst.remoteID = message.ID
+			log.InfoMsg("Session with %s established (%s)\n", mst.remoteAddr, mst.remoteID)
+			helloSeen = true
+		default:
+			// Ignore any other messages until hello is completed.
+			// (In practice slave won’t send others before handshake.)
+		}
+	}
 
-	ctx, cancel := context.WithCancel(mst.ctx)
-
+	// 2) Start jobs AFTER handshake completes
 	for _, lpf := range mst.mCfg.LocalPortForwarding {
 		mst.startLocalPortFwdJob(ctx, &wg, lpf)
 	}
 	for _, rpf := range mst.mCfg.RemotePortForwarding {
 		mst.startRemotePortFwdJob(ctx, &wg, rpf)
 	}
-
 	if mst.mCfg.IsSocksEnabled() {
 		if err := mst.startSocksProxyJob(ctx, &wg); err != nil {
 			log.ErrorMsg("Starting SOCKS proxy: %s", err)
 		}
 	}
 
-	mst.startForegroundJob(ctx, &wg, cancel) // foreground job must cancel when it terminates
+	// Foreground cancels the whole session when it finishes
+	mst.startForegroundJob(ctx, &wg, cancel)
 
+	// 3) Background receive loop for post-handshake messages
 	go func() {
 		for {
 			m, err := mst.sess.ReceiveContext(ctx)
 			if err != nil {
-				if err == io.EOF {
+				if err == io.EOF || ctx.Err() != nil {
 					return
 				}
-				if ctx.Err() != nil {
-					return // cancelled
-				}
-
-				// Ignore expected timeouts/deadlines (frequent when polling).
+				// Ignore polling timeouts/deadlines
 				if err == context.DeadlineExceeded || errors.Is(err, context.DeadlineExceeded) {
 					continue
 				}
 				if ne, ok := err.(net.Error); ok && ne.Timeout() {
 					continue
 				}
-
 				log.ErrorMsg("Receiving next command: %s\n", err)
 				continue
 			}
 
 			switch message := m.(type) {
 			case msg.Connect:
-				// validate messages from slave to ensure we only forward to destintions specified in master configuration
+				// Validate RPF destination
 				if !mst.mCfg.IsAllowedRemotePortForwardingDestination(message.RemoteHost, message.RemotePort) {
-					log.ErrorMsg("Remote port forwarding: slave requested unexpected destination: %s:%d\n", message.RemoteHost, message.RemotePort)
+					log.ErrorMsg("Remote port forwarding: slave requested unexpected destination: %s:%d\n",
+						message.RemoteHost, message.RemotePort)
 					continue
 				}
 				mst.handleConnectAsync(ctx, message)
 
+			case msg.Hello:
+				// Duplicate hello after handshake: harmless; ignore.
 			default:
 				log.ErrorMsg("Received unsupported message type '%s', this is a bug\n", m.MsgType())
 			}
 		}
 	}()
 
+	// 4) Wait for all jobs to finish (foreground will call cancel())
 	wg.Wait()
-
 	return nil
 }

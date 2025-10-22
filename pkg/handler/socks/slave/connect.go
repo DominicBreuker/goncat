@@ -10,6 +10,7 @@ import (
 	"dominicbreuker/goncat/pkg/socks"
 	"fmt"
 	"net"
+	"time"
 )
 
 // TCPRelay handles a SOCKS5 CONNECT request on the slave side,
@@ -87,6 +88,10 @@ func (tr *TCPRelay) Handle() error {
 	}
 	defer conn.Close()
 
+	if c, ok := connRemote.(interface{ SetWriteDeadline(time.Time) error }); ok {
+		_ = c.SetWriteDeadline(time.Now().Add(3 * time.Second))
+		defer c.SetWriteDeadline(time.Time{})
+	}
 	if err := socks.WriteReplySuccessConnect(connRemote, conn.LocalAddr()); err != nil {
 		return fmt.Errorf("socks.WriteReplySuccess(): %s", err)
 	}

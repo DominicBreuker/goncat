@@ -7,16 +7,10 @@ services:
     stdin_open: true # docker run -i
     tty: true        # docker run -t
     hostname: the_master
-    command: sh -c '/opt/tests/test-runner.sh "$TRANSPORT" /opt/tests/$TEST_SET/test-*.sh'
+    command: sh -c '/opt/tests/test-runner.sh "$TRANSPORT" /opt/tests/$TEST_SET/test-*.sh /opt/tests/$TEST_SET/test-*.py'
     volumes:
       - ../../dist:/opt/dist:ro
       - .:/opt/tests:ro
-    healthcheck:
-      test: ["CMD-SHELL", "netstat -an | grep 8080 | grep LISTEN"] 
-      interval: 5s
-      timeout: 3s
-      retries: 3
-      start_period: 3s
     networks:
       - common
       - master_private
@@ -47,8 +41,6 @@ services:
     stdin_open: true # docker run -i
     tty: true        # docker run -t
     depends_on:
-      master:
-        condition: service_healthy
       master-companion:
         condition: service_healthy
       slave-companion:
@@ -56,7 +48,47 @@ services:
     volumes:
       - ../../dist:/opt/dist:ro
     hostname: the_slave
-    command: sh -c 'while true; do sleep 1; /opt/dist/goncat.elf slave connect $TRANSPORT://master:8080; done'
+    command: sh -c 'while true; do /opt/dist/goncat.elf slave connect $TRANSPORT://master:8080 --timeout 1000 || true; sleep 2; done'
+    networks:
+      - common
+      - slave_private
+
+  slave-tls:
+    image: local/tests
+    build:
+      context: .
+      dockerfile: Dockerfile
+    stdin_open: true # docker run -i
+    tty: true        # docker run -t
+    depends_on:
+      master-companion:
+        condition: service_healthy
+      slave-companion:
+        condition: service_healthy
+    volumes:
+      - ../../dist:/opt/dist:ro
+    hostname: the_slave
+    command: sh -c 'while true; do /opt/dist/goncat.elf slave connect $TRANSPORT://master:8081 --ssl --timeout 1000 || true; sleep 2; done'
+    networks:
+      - common
+      - slave_private
+
+  slave-mtls:
+    image: local/tests
+    build:
+      context: .
+      dockerfile: Dockerfile
+    stdin_open: true # docker run -i
+    tty: true        # docker run -t
+    depends_on:
+      master-companion:
+        condition: service_healthy
+      slave-companion:
+        condition: service_healthy
+    volumes:
+      - ../../dist:/opt/dist:ro
+    hostname: the_slave
+    command: sh -c 'while true; do /opt/dist/goncat.elf slave connect $TRANSPORT://master:8082 --ssl --key testsecret --timeout 1000 || true; sleep 2; done'
     networks:
       - common
       - slave_private

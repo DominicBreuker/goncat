@@ -11,7 +11,7 @@ import (
 
 // startForegroundJob launches the foreground task in a goroutine and registers it with the wait group.
 // The cancel function is called when the foreground job completes.
-func (mst *Master) startForegroundJob(ctx context.Context, wg *sync.WaitGroup, cancel func()) {
+func (mst *master) startForegroundJob(ctx context.Context, wg *sync.WaitGroup, cancel func()) {
 	wg.Add(1)
 	go func() {
 		defer cancel()
@@ -25,7 +25,7 @@ func (mst *Master) startForegroundJob(ctx context.Context, wg *sync.WaitGroup, c
 
 // handleForeground manages the foreground connection, dispatching to the appropriate
 // handler based on whether PTY is enabled.
-func (mst *Master) handleForeground(ctx context.Context) error {
+func (mst *master) handleForeground(ctx context.Context) error {
 	if mst.mCfg.Pty {
 		return mst.handleForgroundPty(ctx)
 	}
@@ -35,7 +35,7 @@ func (mst *Master) handleForeground(ctx context.Context) error {
 
 // handleForgroundPlain handles a foreground connection without PTY support,
 // piping data between the session channel and the local terminal.
-func (mst *Master) handleForgroundPlain(ctx context.Context) error {
+func (mst *master) handleForgroundPlain(ctx context.Context) error {
 	m := msg.Foreground{
 		Exec: mst.mCfg.Exec,
 		Pty:  mst.mCfg.Pty,
@@ -62,7 +62,7 @@ func (mst *Master) handleForgroundPlain(ctx context.Context) error {
 
 // handleForgroundPty handles a foreground connection with PTY support,
 // managing both the data channel and PTY control channel.
-func (mst *Master) handleForgroundPty(ctx context.Context) error {
+func (mst *master) handleForgroundPty(ctx context.Context) error {
 	m := msg.Foreground{
 		Exec: mst.mCfg.Exec,
 		Pty:  mst.mCfg.Pty,

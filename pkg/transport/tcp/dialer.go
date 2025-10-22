@@ -42,7 +42,8 @@ func (d *Dialer) Dial(ctx context.Context) (net.Conn, error) {
 
 	// Try to enable keep-alive if it's a TCP connection
 	if tcpConn, ok := conn.(*net.TCPConn); ok {
-		tcpConn.SetKeepAlive(true)
+		_ = tcpConn.SetKeepAlive(true)
+		_ = tcpConn.SetNoDelay(true)
 	}
 	return conn, nil
 }

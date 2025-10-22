@@ -4,7 +4,6 @@ import (
 	"context"
 	"dominicbreuker/goncat/pkg/config"
 	"errors"
-	"net"
 	"testing"
 	"time"
 )
@@ -25,17 +24,12 @@ func TestSlaveConnect_Success(t *testing.T) {
 	fc := &fakeClient{
 		conn: &fakeConn{},
 	}
-	fs := &fakeSlave{}
 
 	newClient := func(ctx context.Context, cfg *config.Shared) clientInterface {
 		return fc
 	}
 
-	newSlave := func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
-		return fs, nil
-	}
-
-	err := slaveConnect(ctx, cfg, newClient, newSlave)
+	err := slaveConnect(ctx, cfg, newClient, newFakeSlaveHandle(nil, nil))
 	if err != nil {
 		t.Fatalf("slaveConnect() error = %v, want nil", err)
 	}
@@ -44,9 +38,8 @@ func TestSlaveConnect_Success(t *testing.T) {
 		t.Error("client was not closed")
 	}
 
-	if !fs.closed {
-		t.Error("slave handler was not closed")
-	}
+	// Note: the entrypoint does not manage handler.Close(); the handler itself
+	// is responsible for cleanup. We only assert client cleanup here.
 }
 
 // it should return an error if connecting fails
@@ -69,12 +62,9 @@ func TestSlaveConnect_ConnectError(t *testing.T) {
 		return fc
 	}
 
-	newSlave := func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
-		t.Error("newSlave should not be called when connect fails")
-		return nil, nil
-	}
-
-	err := slaveConnect(ctx, cfg, newClient, newSlave)
+	err := slaveConnect(ctx, cfg, newClient, newFakeSlaveHandle(nil, func() {
+		t.Error("handler should not be called when connect fails")
+	}))
 	if err == nil {
 		t.Fatal("slaveConnect() error = nil, want error")
 	}
@@ -87,8 +77,8 @@ func TestSlaveConnect_ConnectError(t *testing.T) {
 	}
 }
 
-// it should return an error and close the client if slave creation fails
-func TestSlaveConnect_SlaveNewError(t *testing.T) {
+// it should return an error if slave handling fails
+func TestSlaveConnect_HandleError(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -107,11 +97,8 @@ func TestSlaveConnect_SlaveNewError(t *testing.T) {
 	}
 
 	slaveNewErr := errors.New("slave creation failed")
-	newSlave := func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
-		return nil, slaveNewErr
-	}
 
-	err := slaveConnect(ctx, cfg, newClient, newSlave)
+	err := slaveConnect(ctx, cfg, newClient, newFakeSlaveHandle(slaveNewErr, nil))
 	if err == nil {
 		t.Fatal("slaveConnect() error = nil, want error")
 	}
@@ -119,48 +106,6 @@ func TestSlaveConnect_SlaveNewError(t *testing.T) {
 	// Client should still be closed even when slave creation fails
 	if !fc.closed {
 		t.Error("client was not closed despite slave.New error")
-	}
-}
-
-// it should return an error and close both client and slave if handling fails
-func TestSlaveConnect_HandleError(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	cfg := &config.Shared{
-		Protocol: config.ProtoTCP,
-		Host:     "localhost",
-		Port:     8080,
-	}
-
-	fc := &fakeClient{
-		conn: &fakeConn{},
-	}
-
-	handleErr := errors.New("handle failed")
-	fs := &fakeSlave{
-		handleErr: handleErr,
-	}
-
-	newClient := func(ctx context.Context, cfg *config.Shared) clientInterface {
-		return fc
-	}
-
-	newSlave := func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
-		return fs, nil
-	}
-
-	err := slaveConnect(ctx, cfg, newClient, newSlave)
-	if err == nil {
-		t.Fatal("slaveConnect() error = nil, want error")
-	}
-
-	// Both client and slave should be closed even on handle error
-	if !fc.closed {
-		t.Error("client was not closed despite handle error")
-	}
-	if !fs.closed {
-		t.Error("slave was not closed despite handle error")
 	}
 }
 
@@ -182,25 +127,17 @@ func TestSlaveConnect_ContextCancellation(t *testing.T) {
 
 	// Slave that blocks in Handle
 	handleCh := make(chan struct{})
-	fs := &fakeSlave{
-		handleFunc: func() error {
-			<-handleCh // Block until we signal
-			return nil
-		},
-	}
 
 	newClient := func(ctx context.Context, cfg *config.Shared) clientInterface {
 		return fc
 	}
 
-	newSlave := func(ctx context.Context, cfg *config.Shared, conn net.Conn) (handlerInterface, error) {
-		return fs, nil
-	}
-
 	// Run slaveConnect in a goroutine
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- slaveConnect(ctx, cfg, newClient, newSlave)
+		errCh <- slaveConnect(ctx, cfg, newClient, newFakeSlaveHandle(nil, func() {
+			<-handleCh
+		}))
 	}()
 
 	// Cancel context

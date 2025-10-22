@@ -42,6 +42,7 @@ func GetCommand() *cli.Command {
 			}
 
 			cfg := &config.Shared{
+				ID:       fmt.Sprintf("slave[%s]", config.GenerateId()),
 				Protocol: proto,
 				Host:     host,
 				Port:     port,
@@ -51,10 +52,10 @@ func GetCommand() *cli.Command {
 				Timeout:  time.Duration(cmd.Int(shared.TimeoutFlag)) * time.Millisecond,
 			}
 
-			if errors := config.Validate(cfg); len(errors) > 0 {
-				log.ErrorMsg("Argument validation errors:\n")
-				for _, err := range errors {
-					log.ErrorMsg(" - %s\n", err)
+			if errs := config.Validate(cfg); len(errs) > 0 {
+				log.ErrorMsg("Argument validation errors:")
+				for _, err := range errs {
+					log.ErrorMsg(" - %s", err)
 				}
 				return fmt.Errorf("exiting")
 			}

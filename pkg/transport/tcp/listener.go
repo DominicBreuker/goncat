@@ -8,17 +8,14 @@ import (
 	"fmt"
 	"net"
 	"strings"
-	"sync"
 	"time"
 )
 
 // Listener implements the transport.Listener interface for TCP connections.
-// It ensures only one connection is handled at a time.
+// It ensures only one connection is handled at a time via a semaphore.
 type Listener struct {
-	nl net.Listener
-
-	rdy bool // whether we can handle a new connection
-	mu  sync.Mutex
+	nl  net.Listener
+	sem chan struct{} // capacity 1 -> allows a single active handler
 }
 
 // NewListener creates a new TCP listener on the specified address.
@@ -26,20 +23,23 @@ type Listener struct {
 func NewListener(addr string, deps *config.Dependencies) (*Listener, error) {
 	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
-		return nil, fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %s", addr, err)
+		return nil, fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %w", addr, err)
 	}
 
 	listenerFn := config.GetTCPListenerFunc(deps)
 
 	nl, err := listenerFn("tcp", tcpAddr)
 	if err != nil {
-		return nil, fmt.Errorf("listen(tcp, %s): %s", addr, err)
+		return nil, fmt.Errorf("listen(tcp, %s): %w", addr, err)
 	}
 
-	return &Listener{
+	l := &Listener{
 		nl:  nl,
-		rdy: true,
-	}, nil
+		sem: make(chan struct{}, 1),
+	}
+	// initially allow one active connection
+	l.sem <- struct{}{}
+	return l, nil
 }
 
 // Serve accepts and handles incoming connections using the provided handler.
@@ -49,47 +49,43 @@ func (l *Listener) Serve(handle transport.Handler) error {
 		conn, err := l.nl.Accept()
 		if err != nil {
 			// Treat listener closed as clean shutdown.
-			// Prefer net.ErrClosed detection where possible, but also tolerate
-			// implementations that return the textual "use of closed network connection".
 			if errors.Is(err, net.ErrClosed) || strings.Contains(err.Error(), "use of closed network connection") {
 				return nil
 			}
-
-			// Retry on timeouts with a short backoff. net.Error.Temporary is deprecated,
-			// prefer checking Timeout() to detect deadline/timeout conditions.
+			// Retry on timeouts with a short backoff.
 			if ne, ok := err.(net.Error); ok && ne.Timeout() {
 				time.Sleep(100 * time.Millisecond)
 				continue
 			}
-
-			return fmt.Errorf("Accept(): %s", err)
+			return fmt.Errorf("Accept(): %w", err)
 		}
 
-		// close if we are not ready
+		// Try to acquire the single slot. If busy, drop the new connection.
+		select {
+		case <-l.sem: // acquired
+			go func(c net.Conn) {
+				// Always release the slot and close the connection when done.
+				defer func() {
+					_ = c.Close()
+					l.sem <- struct{}{} // release slot
+				}()
+				// Prevent a panic from leaking the slot.
+				defer func() {
+					if r := recover(); r != nil {
+						log.ErrorMsg("Handler panic: %v\n", r)
+					}
+				}()
 
-		l.mu.Lock()
-		if !l.rdy {
-			conn.Close() // we already handle a connection
-			l.mu.Unlock()
-			continue
+				if err := handle(c); err != nil {
+					log.ErrorMsg("Handling connection: %s\n", err)
+				}
+			}(conn)
+
+		default:
+			// Already handling one: politely close the extra connection.
+			_ = conn.Close()
+			// continue accepting
 		}
-		l.rdy = false
-		l.mu.Unlock()
-
-		go func(c net.Conn) {
-			// get ready again eventually
-			defer func() {
-				l.mu.Lock()
-				l.rdy = true
-				l.mu.Unlock()
-			}()
-
-			log.InfoMsg("New TCP connection from %s\n", c.RemoteAddr())
-
-			if err := handle(c); err != nil {
-				log.ErrorMsg("Handling connection: %s\n", err)
-			}
-		}(conn)
 	}
 }
 
