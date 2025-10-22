@@ -7,7 +7,7 @@ services:
     stdin_open: true # docker run -i
     tty: true        # docker run -t
     hostname: the_master
-    command: sh -c '/opt/tests/test-runner.sh "$TRANSPORT" /opt/tests/$TEST_SET/test-*.sh' # /opt/tests/$TEST_SET/test-*.py
+    command: sh -c '/opt/tests/test-runner.sh "$TRANSPORT" /opt/tests/$TEST_SET/test-*.sh /opt/tests/$TEST_SET/test-*.py'
     volumes:
       - ../../dist:/opt/dist:ro
       - .:/opt/tests:ro
