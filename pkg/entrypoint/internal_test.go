@@ -110,28 +110,6 @@ func (f *fakeClient) GetConnection() net.Conn {
 	return f.conn
 }
 
-// fakeSlave implements a fake slave handler for testing.
-type fakeSlave struct {
-	handleErr  error
-	handleFunc func() error
-	closed     bool
-	mu         sync.Mutex
-}
-
-func (f *fakeSlave) Close() error {
-	f.mu.Lock()
-	defer f.mu.Unlock()
-	f.closed = true
-	return nil
-}
-
-func (f *fakeSlave) Handle() error {
-	if f.handleFunc != nil {
-		return f.handleFunc()
-	}
-	return f.handleErr
-}
-
 // testConfig creates a standard test configuration.
 func testConfig() *config.Shared {
 	return &config.Shared{
