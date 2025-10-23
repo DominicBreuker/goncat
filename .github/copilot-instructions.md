@@ -334,6 +334,8 @@ make build-linux
 
 **TLS:** Ephemeral certs per run, optional password-based mutual auth (`pkg/crypto/ca.go`)
 
+**For a comprehensive overview** of the system design, package relationships, architectural invariants, and data flow diagrams, see [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md).
+
 ## Trust These Instructions
 
 These instructions have been validated by:
