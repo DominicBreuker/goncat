@@ -9,7 +9,7 @@
 **Core Capabilities:**
 - **Dual-mode operation**: Master controls connection parameters; Slave executes instructions
 - **Flexible topology**: Both master and slave can listen or connect (4 combinations: master-listen, master-connect, slave-listen, slave-connect)
-- **Transport protocols**: TCP, WebSocket (ws), WebSocket Secure (wss)
+- **Transport protocols**: TCP, WebSocket (ws), WebSocket Secure (wss), UDP (with KCP)
 - **Security**: TLS encryption with optional password-based mutual authentication
 - **Interactive shells**: Cross-platform PTY support (Linux, Windows, macOS)
 - **Tunneling**: Local/remote port forwarding and SOCKS5 proxy (TCP CONNECT, UDP ASSOCIATE)
@@ -73,7 +73,7 @@ Organized into distinct layers and concerns:
   - Returns connection for handler to use
 - **Key insight**: Server and client are the ones that know about `pkg/transport` and `pkg/crypto`, not entrypoint
 
-#### Transport Layer (`pkg/transport`, `pkg/transport/tcp`, `pkg/transport/ws`)
+#### Transport Layer (`pkg/transport`, `pkg/transport/tcp`, `pkg/transport/ws`, `pkg/transport/udp`)
 - **Purpose**: Protocol abstraction for network connections
 - **Interface**: 
   - `Dialer`: Establishes outbound connections via `Dial(ctx) (net.Conn, error)`
@@ -87,8 +87,13 @@ Organized into distinct layers and concerns:
     - Converts WebSocket to `net.Conn` via `websocket.NetConn()`
     - WebSocket listener can optionally use TLS (wss://) with ephemeral certificates
     - HTTP server-based, rejects additional connections with HTTP 503 when busy
+  - `udp/`: UDP with KCP reliability using `github.com/xtaci/kcp-go`
+    - Creates raw UDP PacketConn via `net.ListenPacket`, then upgrades to KCP session
+    - KCP provides reliable, ordered delivery over UDP (similar to TCP semantics)
+    - Listener uses semaphore (capacity 1) to handle only one connection at a time
+    - Configures KCP for low-latency mode: NoDelay, StreamMode, WindowSize
 - **Pattern**: All return `net.Conn` for uniform handling by higher layers
-- **Concurrency**: Both TCP and WebSocket listeners limit to one active connection using a semaphore
+- **Concurrency**: All listeners limit to one active connection using a semaphore
 
 #### Security Layer (`pkg/crypto`)
 - **Purpose**: TLS certificate generation and mutual authentication

@@ -118,11 +118,12 @@ goncat supports four combinations of master/slave and listen/connect:
 
 ### Transport Protocols
 
-goncat supports three transport protocols:
+goncat supports four transport protocols:
 
 - **tcp**: Plain TCP connections (`tcp://host:port`)
 - **ws**: WebSocket connections (`ws://host:port`)
 - **wss**: WebSocket Secure connections with TLS (`wss://host:port`)
+- **udp**: UDP with KCP for reliable delivery (`udp://host:port`)
 
 Format: `protocol://host:port`
 - When listening, you can use `*` as the host to bind to all interfaces: `tcp://*:12345`
@@ -384,7 +385,7 @@ goncat slave connect tcp://192.168.1.100:12345 --cleanup
 
 ### Transport Protocol Options
 
-goncat supports three transport protocols:
+goncat supports four transport protocols:
 
 #### Plain TCP
 ```bash
@@ -409,6 +410,15 @@ goncat slave connect wss://192.168.1.100:8443
 ```
 
 **Best for**: WebSocket with TLS encryption (ephemeral certificates generated automatically).
+
+#### UDP with KCP
+```bash
+goncat master listen 'udp://*:12345' --exec /bin/sh
+goncat slave connect udp://192.168.1.100:12345
+```
+
+**Best for**: Situations where UDP is available but TCP might be blocked, or for traversing certain firewalls.  
+**Note**: Uses KCP protocol for reliable, ordered delivery over UDP.
 
 **Note**: When using `--ssl` flag with any protocol, TLS encryption is applied. For `wss://`, encryption is built into the protocol.
 

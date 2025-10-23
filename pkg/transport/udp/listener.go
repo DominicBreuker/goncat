@@ -62,9 +62,9 @@ func (l *Listener) Serve(handle transport.Handler) error {
 		kcpConn, err := l.kcpListener.AcceptKCP()
 		if err != nil {
 			// Treat listener closed as clean shutdown.
-			if errors.Is(err, net.ErrClosed) || 
-			   errors.Is(err, io.ErrClosedPipe) ||
-			   strings.Contains(err.Error(), "use of closed network connection") {
+			if errors.Is(err, net.ErrClosed) ||
+				errors.Is(err, io.ErrClosedPipe) ||
+				strings.Contains(err.Error(), "use of closed network connection") {
 				return nil
 			}
 			return fmt.Errorf("AcceptKCP(): %w", err)
@@ -72,7 +72,6 @@ func (l *Listener) Serve(handle transport.Handler) error {
 
 		// Configure KCP session
 		kcpConn.SetNoDelay(1, 10, 2, 1)
-		kcpConn.SetStreamMode(true)
 		kcpConn.SetWindowSize(1024, 1024)
 
 		// Try to acquire the single slot. If busy, drop the new connection.

@@ -59,7 +59,6 @@ func (d *Dialer) Dial(ctx context.Context) (net.Conn, error) {
 	// resend: 0=disable fast resend, 1=enable fast resend, 2=2 ACK crosses trigger fast resend
 	// nc: 0=normal congestion control, 1=disable congestion control
 	kcpConn.SetNoDelay(1, 10, 2, 1)
-	kcpConn.SetStreamMode(true)
 	kcpConn.SetWindowSize(1024, 1024)
 
 	return kcpConn, nil
