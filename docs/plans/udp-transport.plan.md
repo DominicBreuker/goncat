@@ -16,47 +16,26 @@ Key architectural principle: We create the raw UDP `net.PacketConn` ourselves us
 
 ## Implementation Plan
 
-- [ ] Step 1: Add KCP library dependency
+- [X] Step 1: Add KCP library dependency
   - **Task**: Add `github.com/xtaci/kcp-go` to project dependencies
   - **Files**: 
     - `go.mod`: Add dependency via `go get github.com/xtaci/kcp-go/v5@latest`
     - `go.sum`: Auto-generated checksum file
   - **Dependencies**: None
   - **Validation**: Run `go mod tidy` and verify dependency is added
+  - **Completed**: Added kcp-go v5.6.24 and dependencies (reedsolomon, pkg/errors, gmsm, crypto, net)
 
-- [ ] Step 2: Add UDP protocol constant and parsing
+- [X] Step 2: Add UDP protocol constant and parsing
   - **Task**: Extend config package to support UDP protocol type
   - **Files**:
     - `pkg/config/config.go`: Add `ProtoUDP = 4` constant and update `String()` method
-      ```go
-      const (
-          ProtoTCP = 1
-          ProtoWS  = 2
-          ProtoWSS = 3
-          ProtoUDP = 4  // New constant
-      )
-      
-      func (p Protocol) String() string {
-          // Add case for ProtoUDP returning "udp"
-      }
-      ```
     - `cmd/shared/parsers.go`: Update regex to accept `udp` protocol
-      ```go
-      // Change regex from `^(tcp|ws|wss)://` to `^(tcp|ws|wss|udp)://`
-      // Add case for "udp" in switch statement
-      case "udp":
-          proto = config.ProtoUDP
-      ```
     - `cmd/shared/parsers_test.go`: Add test cases for UDP protocol parsing
-      ```go
-      // Add test cases:
-      {"udp protocol", "udp://localhost:12345", config.ProtoUDP, "localhost", 12345, false},
-      {"udp wildcard", "udp://*:12345", config.ProtoUDP, "", 12345, false},
-      ```
   - **Dependencies**: None
   - **Validation**: Run `go test ./cmd/shared/...` to verify parsing tests pass
+  - **Completed**: Added ProtoUDP constant, updated parser regex and String() method, added test cases
 
-- [ ] Step 3: Create UDP transport package structure
+- [X] Step 3: Create UDP transport package structure
   - **Task**: Create new package `pkg/transport/udp` with dialer and listener implementations
   - **Files**:
     - `pkg/transport/udp/dialer.go`: UDP dialer implementation
@@ -65,154 +44,25 @@ Key architectural principle: We create the raw UDP `net.PacketConn` ourselves us
     - `pkg/transport/udp/listener_test.go`: Unit tests for listener
   - **Dependencies**: Step 1, Step 2
   - **Validation**: Files created, compile check with `go build ./pkg/transport/udp/...`
+  - **Completed**: Created package structure with all files
 
-- [ ] Step 4: Implement UDP Dialer
+- [X] Step 4: Implement UDP Dialer
   - **Task**: Create UDP dialer that establishes KCP session over UDP connection
   - **Files**:
-    - `pkg/transport/udp/dialer.go`: Complete implementation
-      ```go
-      package udp
-      
-      import (
-          "context"
-          "dominicbreuker/goncat/pkg/config"
-          "fmt"
-          "net"
-          
-          kcp "github.com/xtaci/kcp-go/v5"
-      )
-      
-      type Dialer struct {
-          remoteAddr *net.UDPAddr
-          packetConnFn config.PacketListenerFunc  // For creating PacketConn
-      }
-      
-      func NewDialer(addr string, deps *config.Dependencies) (*Dialer, error) {
-          // Parse UDP address
-          udpAddr, err := net.ResolveUDPAddr("udp", addr)
-          
-          // Get PacketListener function from dependencies or use default
-          packetConnFn := config.GetPacketListenerFunc(deps)
-          
-          return &Dialer{
-              remoteAddr: udpAddr,
-              packetConnFn: packetConnFn,
-          }, nil
-      }
-      
-      func (d *Dialer) Dial(ctx context.Context) (net.Conn, error) {
-          // Create UDP packet connection using stdlib
-          // Use ":0" for local address to let OS choose port
-          conn, err := d.packetConnFn("udp", ":0")
-          
-          // Upgrade to KCP session using kcp.NewConn
-          // Parameters: remoteAddr, block cipher (nil for now), dataShards (0), parityShards (0), conn
-          kcpConn, err := kcp.NewConn(d.remoteAddr.String(), nil, 0, 0, conn)
-          
-          // Configure KCP for optimal performance
-          // SetNoDelay(nodelay, interval, resend, nc)
-          kcpConn.SetNoDelay(1, 10, 2, 1)
-          kcpConn.SetStreamMode(true)
-          kcpConn.SetWindowSize(1024, 1024)
-          
-          return kcpConn, nil
-      }
-      ```
-    - `pkg/transport/udp/dialer_test.go`: Unit tests similar to TCP dialer tests
-      ```go
-      // Test cases:
-      // - Valid address parsing
-      // - Invalid address (no port, bad format)
-      // - IPv4 and IPv6 addresses
-      ```
+    - `pkg/transport/udp/dialer.go`: Complete implementation with KCP session creation
+    - `pkg/transport/udp/dialer_test.go`: Unit tests for address validation
   - **Dependencies**: Step 1, Step 2, Step 3
   - **Validation**: Run `go test ./pkg/transport/udp/...` to verify dialer tests pass
+  - **Completed**: Implemented dialer with KCP configuration (NoDelay, StreamMode, WindowSize)
 
-- [ ] Step 5: Implement UDP Listener
+- [X] Step 5: Implement UDP Listener
   - **Task**: Create UDP listener that accepts KCP sessions over UDP
   - **Files**:
-    - `pkg/transport/udp/listener.go`: Complete implementation
-      ```go
-      package udp
-      
-      import (
-          "dominicbreuker/goncat/pkg/config"
-          "dominicbreuker/goncat/pkg/log"
-          "dominicbreuker/goncat/pkg/transport"
-          "fmt"
-          "net"
-          
-          kcp "github.com/xtaci/kcp-go/v5"
-      )
-      
-      type Listener struct {
-          kcpListener *kcp.Listener
-          sem         chan struct{} // capacity 1 for single connection
-      }
-      
-      func NewListener(addr string, deps *config.Dependencies) (*Listener, error) {
-          // Parse UDP address
-          udpAddr, err := net.ResolveUDPAddr("udp", addr)
-          
-          // Create UDP packet connection using stdlib
-          packetConnFn := config.GetPacketListenerFunc(deps)
-          conn, err := packetConnFn("udp", addr)
-          
-          // Create KCP listener from packet connection
-          // ServeConn wraps a PacketConn and returns a Listener
-          kcpListener, err := kcp.ServeConn(nil, 0, 0, conn)
-          
-          l := &Listener{
-              kcpListener: kcpListener,
-              sem:         make(chan struct{}, 1),
-          }
-          l.sem <- struct{}{} // initially allow one connection
-          return l, nil
-      }
-      
-      func (l *Listener) Serve(handle transport.Handler) error {
-          for {
-              // Accept KCP session (blocks until connection)
-              kcpConn, err := l.kcpListener.AcceptKCP()
-              
-              // Configure KCP session
-              kcpConn.SetNoDelay(1, 10, 2, 1)
-              kcpConn.SetStreamMode(true)
-              kcpConn.SetWindowSize(1024, 1024)
-              
-              // Semaphore logic similar to TCP listener
-              select {
-              case <-l.sem:
-                  go func(conn *kcp.UDPSession) {
-                      defer func() {
-                          conn.Close()
-                          l.sem <- struct{}{}
-                      }()
-                      
-                      if err := handle(conn); err != nil {
-                          log.ErrorMsg("Handling connection: %s\n", err)
-                      }
-                  }(kcpConn)
-              default:
-                  kcpConn.Close()
-              }
-          }
-      }
-      
-      func (l *Listener) Close() error {
-          return l.kcpListener.Close()
-      }
-      ```
-    - `pkg/transport/udp/listener_test.go`: Unit tests similar to TCP listener tests
-      ```go
-      // Test cases:
-      // - Valid listener creation
-      // - Invalid address handling
-      // - Single connection acceptance
-      // - Listener close
-      ```
+    - `pkg/transport/udp/listener.go`: Complete implementation with KCP listener
+    - `pkg/transport/udp/listener_test.go`: Unit tests for listener creation
   - **Dependencies**: Step 1, Step 2, Step 3, Step 4
   - **Validation**: Run `go test ./pkg/transport/udp/...` to verify all tests pass
+  - **Completed**: Implemented listener with semaphore logic, error handling, and panic recovery
 
 - [ ] Step 6: Integrate UDP transport into server
   - **Task**: Update server package to support UDP protocol

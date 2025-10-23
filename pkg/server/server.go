@@ -13,6 +13,7 @@ import (
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/transport"
 	"dominicbreuker/goncat/pkg/transport/tcp"
+	"dominicbreuker/goncat/pkg/transport/udp"
 	"dominicbreuker/goncat/pkg/transport/ws"
 )
 
@@ -77,6 +78,8 @@ func (s *Server) Serve() error {
 	switch s.cfg.Protocol {
 	case config.ProtoWS, config.ProtoWSS:
 		l, err = ws.NewListener(s.ctx, addr, s.cfg.Protocol == config.ProtoWSS)
+	case config.ProtoUDP:
+		l, err = udp.NewListener(addr, s.cfg.Deps)
 	default:
 		l, err = tcp.NewListener(addr, s.cfg.Deps)
 	}
