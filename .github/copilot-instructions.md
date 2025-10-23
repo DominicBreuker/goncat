@@ -1,5 +1,9 @@
 # Copilot Instructions for goncat
 
+## User Documentation
+
+For a comprehensive user-oriented guide with practical examples and common use cases, see [`docs/USAGE.md`](../docs/USAGE.md). This guide is intended for end users of the goncat CLI tool.
+
 ## Project Overview
 
 **goncat** is a netcat-like tool written in Go for creating bind or reverse shells with an SSH-like experience. Key features include:
