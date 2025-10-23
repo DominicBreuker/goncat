@@ -9,8 +9,8 @@
 - Session logging and automatic cleanup capabilities
 
 **Repository Stats:**
-- ~125 files, ~5,600 lines of Go code
-- Small footprint: ~850KB repository size
+- 158 Go files, ~20,000 lines of Go code
+- Repository size: ~12MB (binaries in `dist/` excluded via .gitignore)
 - Go version: 1.23+ (toolchain 1.24.0)
 - License: GPL v3
 
@@ -36,7 +36,7 @@
    ```
    - Creates binaries in `dist/` directory
    - Generates: `goncat.elf` (Linux), `goncat.exe` (Windows), `goncat.macho` (macOS)
-   - Build time: ~15-30 seconds for all platforms
+   - Build time: ~30-40 seconds for all platforms (~11s for Linux only)
 
 3. **Build individual platforms:**
    ```bash
@@ -84,7 +84,8 @@ go test -cover ./...   # Same as above
 - **Mocking**: Internal dependency injection with simple fakes in test files
 - **Pattern**: Internal unexported functions accept injected dependencies (e.g., `masterListen()` with `serverFactory`)
 - **Do NOT use**: `mocks/` package (that's for integration tests only)
-- **Fast execution**: ~2-3 seconds
+- **Fast execution**: ~5 seconds
+- **With race detection**: ~24 seconds (as run in CI)
 - **Example**: `pkg/entrypoint/*_test.go` uses fake servers/clients
 
 **Integration Tests (in `test/integration/`):**
@@ -95,21 +96,26 @@ go test ./test/integration/...  # Integration tests with mocked system resources
 - **Mocking**: Use `mocks/` package (MockTCPNetwork, MockStdio, MockExec)
 - **Pattern**: Pass mocks via `config.Dependencies` to entrypoint functions
 - **Purpose**: Test complete tool workflows without real network/terminal I/O
-- **Fast execution**: ~2 seconds
+- **Fast execution**: ~1-2 seconds
+- **With race detection**: ~4 seconds (as run in CI)
 - **IMPORTANT**: All integration tests must remain passing
 - **See**: `test/integration/README.md` for details
 
 **E2E Tests (in `test/e2e/`):**
 ```bash
 make test              # All tests (unit + E2E)
-make test-integration  # Only E2E tests
+make test-e2e          # Only E2E tests
 ```
 - **Location**: `test/e2e/` directory with expect scripts
 - **Mocking**: None - uses real compiled binaries
 - **Environment**: Docker containers with Alpine Linux
 - **Requirements**: Docker and Docker Compose
-- **Duration**: ~2-3 minutes
+- **Duration**: ~8-9 minutes for full suite (as run in CI)
 - **Scenarios**: Bind/reverse shell with tcp, ws, wss protocols
+- **Partial E2E run**: To save time during development, run a single scenario:
+  ```bash
+  TRANSPORT='tcp' TEST_SET='master-connect' docker compose -f test/e2e/docker-compose.slave-listen.yml up --exit-code-from master
+  ```
 
 **Testing Guidelines:**
 - See `TESTING.md` for comprehensive testing guidelines
@@ -208,14 +214,16 @@ Triggers:
 
 Build Steps:
 1. Checkout repository
-2. Setup Go 1.23
-3. Run `make build` (builds all platforms)
-4. List built binaries
-5. Run `make test` (unit + integration tests)
+2. Setup Go 1.24
+3. Run `make lint` (format, vet, staticcheck)
+4. Run `make build` (builds all platforms)
+5. Run `make test-unit-with-race` (~25 seconds)
+6. Run `make test-integration-with-race` (~4 seconds)
+7. Run `make test-e2e` (~8-9 minutes)
 
 **Environment:** ubuntu-latest with Docker support
 
-**Expected Runtime:** ~5-7 minutes total
+**Expected Runtime:** ~10-11 minutes total
 
 ## Code Quality Standards
 
@@ -241,32 +249,49 @@ Build Steps:
 
 ## Validation Steps
 
-Before committing changes:
+Before committing changes, always follow these steps:
 
 1. **Run linters:**
    ```bash
    make lint
    ```
+   - This runs `go fmt`, `go vet`, and `staticcheck`
+   - **REQUIRED** before every commit to ensure proper formatting and no issues
 
-2. **Run unit tests with coverage:**
+2. **Run unit tests:**
    ```bash
    make test-unit
    ```
+   - Quick validation of code changes (~5 seconds)
+   - Run with race detection for thorough validation: `make test-unit-with-race` (~24 seconds)
 
-3. **Build all platforms:**
+3. **Run integration tests:**
    ```bash
-   make build
+   make test-integration
    ```
+   - Validates complete workflows (~1-2 seconds)
+   - Run with race detection: `make test-integration-with-race` (~4 seconds)
 
-4. **Verify binaries:**
+4. **Build binaries (when finishing work on PR):**
+   ```bash
+   make build-linux    # Fast: ~11 seconds
+   # OR for all platforms:
+   make build          # Slower: ~30-40 seconds
+   ```
+   - Ensures the tool compiles successfully
+   - Required before E2E tests
+
+5. **Verify binaries (optional):**
    ```bash
    ls -lh dist/
    ./dist/goncat.elf version  # Should output: 0.0.1
    ```
 
-5. **Run full test suite (if Docker available):**
+6. **Run E2E tests (if time permits and significant changes made):**
    ```bash
-   make test
+   make test-e2e       # Full suite: ~8-9 minutes
+   # OR run partial E2E for faster validation:
+   TRANSPORT='tcp' TEST_SET='master-connect' docker compose -f test/e2e/docker-compose.slave-listen.yml up --exit-code-from master
    ```
 
 ## Common Tasks
@@ -284,13 +309,22 @@ make build-linux
 
 ## Important Notes
 
-1. **Always run `go test ./...` before committing** - Fast, catches parser issues
-2. **Build generates random KEY_SALT each time** - Intentional for security
-3. **Integration tests need Docker** - Skip if only non-functional changes
-4. **Run `go fmt ./...` before committing** - No CI formatting check
-5. **Binaries:** .elf (Linux), .exe (Windows), .macho (macOS) in gitignored `dist/`
-6. **Static builds:** CGO disabled, no vendoring, dependencies via `go mod`
-7. **Windows PTY quirks:** See `pkg/pty/pty_windows.go` comments
+1. **Always run `make lint` before committing** - This is REQUIRED for every commit
+2. **When finishing work on a pull request:**
+   - Run `make build-linux` to ensure the tool compiles
+   - Run `make test-unit` and `make test-integration` to ensure tests pass
+   - If time permits and bigger changes were made, run partial E2E tests (see Validation Steps)
+3. **Partial work is acceptable** - If you run out of time/tokens while working on a pull request:
+   - Commit your partial work using the reporting mechanism
+   - Clearly state in your response that the task is only partially completed
+   - Describe the current status, progress made, and open TODOs
+   - The remaining work can be completed in the next iteration
+4. **Build generates random KEY_SALT each time** - Intentional for security
+5. **Integration and E2E tests need Docker** - Unit tests will pass without Docker
+6. **Binaries:** .elf (Linux), .exe (Windows), .macho (macOS) in gitignored `dist/`
+7. **Static builds:** CGO disabled, no vendoring, dependencies via `go mod`
+8. **Windows PTY quirks:** See `pkg/pty/pty_windows.go` comments
+9. **Pre-existing go vet warning** - `pkg/handler/socks/slave/associate.go:174:2: unreachable code` exists in main branch, can be ignored
 
 ## Architecture
 
