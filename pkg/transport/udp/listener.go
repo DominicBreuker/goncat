@@ -23,6 +23,7 @@ type Listener struct {
 // NewListener creates a new UDP listener with KCP on the specified address.
 // The deps parameter is optional and can be nil to use default implementations.
 func NewListener(addr string, deps *config.Dependencies) (*Listener, error) {
+
 	// Parse UDP address (not strictly necessary but good for validation)
 	_, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
@@ -73,6 +74,17 @@ func (l *Listener) Serve(handle transport.Handler) error {
 		// Configure KCP session
 		kcpConn.SetNoDelay(1, 10, 2, 1)
 		kcpConn.SetWindowSize(1024, 1024)
+
+		// IMPORTANT: Read and discard the dummy handshake byte from the client.
+		// The client writes a single byte to trigger the KCP handshake (see dialer.go).
+		// We must read and discard this byte before passing the connection to the handler,
+		// otherwise it would interfere with the yamux/gob protocol.
+		dummyBuf := make([]byte, 1)
+		_, err = kcpConn.Read(dummyBuf)
+		if err != nil {
+			_ = kcpConn.Close()
+			continue
+		}
 
 		// Try to acquire the single slot. If busy, drop the new connection.
 		select {

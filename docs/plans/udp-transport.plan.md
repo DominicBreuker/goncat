@@ -53,7 +53,9 @@ Key architectural principle: We create the raw UDP `net.PacketConn` ourselves us
     - `pkg/transport/udp/dialer_test.go`: Unit tests for address validation
   - **Dependencies**: Step 1, Step 2, Step 3
   - **Validation**: Run `go test ./pkg/transport/udp/...` to verify dialer tests pass
-  - **Completed**: Implemented dialer with KCP configuration (NoDelay, StreamMode, WindowSize)
+  - **Completed**: Implemented dialer with KCP configuration (NoDelay, WindowSize)
+  - **FIX APPLIED**: Added IPv4/IPv6 network selection (udp4/udp6) based on remote address
+  - **FIX APPLIED**: Added dummy byte write to trigger KCP handshake (see notes below)
 
 - [X] Step 5: Implement UDP Listener
   - **Task**: Create UDP listener that accepts KCP sessions over UDP
@@ -63,6 +65,7 @@ Key architectural principle: We create the raw UDP `net.PacketConn` ourselves us
   - **Dependencies**: Step 1, Step 2, Step 3, Step 4
   - **Validation**: Run `go test ./pkg/transport/udp/...` to verify all tests pass
   - **Completed**: Implemented listener with semaphore logic, error handling, and panic recovery
+  - **FIX APPLIED**: Added dummy byte read/discard to match client handshake (see notes below)
 
 - [X] Step 6: Integrate UDP transport into server
   - **Task**: Update server package to support UDP protocol
@@ -108,13 +111,48 @@ Key architectural principle: We create the raw UDP `net.PacketConn` ourselves us
     - Binary builds successfully
     - UDP connection establishes
     - Protocol is recognized in CLI
-  - **Completed**: Built Linux binary (11MB), UDP protocol recognized, ready for manual testing
+  - **Completed**: Built Linux binary (11MB), UDP protocol recognized
+  - **TROUBLESHOOTING APPLIED**: Fixed KCP handshake issue (see notes below)
+  - **VERIFIED**: Manual testing confirms UDP transport works correctly
 
 - [X] Step 12: Run full test suite
   - **Task**: Verify all tests pass with UDP transport added
   - **Dependencies**: All previous steps
   - **Validation**: All tests pass without errors
-  - **Completed**: All unit tests passing, linting clean, ready for E2E validation
+  - **Completed**: All unit tests passing, linting clean, build successful
+
+## Troubleshooting Notes (Added during debugging)
+
+### Issue Identified
+Manual testing revealed that UDP connections were timing out with error:
+```
+mux.AcceptSession(conn): AcceptNewChannel() for ctlClientToServer: AcceptStreamWithContext(): context deadline exceeded
+```
+
+### Root Cause Analysis
+1. **IPv6 binding issue**: Client was binding to `[::]:port` (IPv6) when connecting to IPv4 addresses
+2. **KCP handshake requirement**: KCP's `NewConn()` creates a session object but doesn't send any packets until data is written
+3. **Server blocking**: Server's `AcceptKCP()` blocks until it receives the first packet from client
+4. **Chicken-and-egg problem**: Neither side was sending data, so no connection was established
+
+### Solution Applied
+1. **Network type selection**: Modified dialer to use `"udp4"` for IPv4 addresses and `"udp6"` for IPv6 addresses
+2. **Dummy byte handshake**: 
+   - Client writes a single byte (0x00) after creating KCP session to trigger handshake
+   - Server reads and discards this byte after accepting connection
+   - This allows KCP to establish the session before yamux/gob protocol begins
+3. **Added comprehensive comments** explaining the handshake mechanism
+
+### Files Modified for Fix
+- `pkg/transport/udp/dialer.go`: Added network type selection and dummy byte write
+- `pkg/transport/udp/listener.go`: Added dummy byte read/discard  
+- `pkg/client/client.go`: Removed debug output (no functional changes)
+
+### Verification
+- Manual testing confirms sessions establish successfully
+- UDP packets visible in tcpdump
+- Both master and slave show "Session established" messages
+- All unit tests continue to pass
 
 ## Notes and Considerations
 
