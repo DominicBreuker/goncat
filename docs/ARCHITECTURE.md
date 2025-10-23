@@ -18,11 +18,12 @@
 **Execution Flow:**
 
 1. CLI parses commands (master/slave, listen/connect) → validates configuration
-2. Transport layer establishes connection (TCP or WebSocket) → optional TLS wrapper
-3. Multiplexing layer (yamux) creates control and data streams over single connection
-4. Handler layer manages master orchestration or slave command execution
-5. PTY/exec layer provides interactive shell or command execution
-6. Port forwarding/SOCKS handlers tunnel additional connections as needed
+2. Entrypoint creates server (listen mode) or client (connect mode) with handler from `pkg/handler`
+3. Server/Client chooses transport implementation (TCP or WebSocket) and optionally wraps in TLS
+4. Handler receives connection, creates yamux session with control and data streams
+5. Handler orchestrates (master) or executes (slave) based on control messages
+6. Execution layer provides interactive shell or command execution with optional PTY
+7. Port forwarding/SOCKS handlers tunnel additional connections as needed
 
 **Architecture Stats:**
 - 158 Go source files (~20k lines of code)
@@ -56,8 +57,21 @@ Organized into distinct layers and concerns:
 #### Entry Points (`pkg/entrypoint`)
 - **Purpose**: Top-level entry functions for the four operation modes
 - **Files**: `masterconnect.go`, `masterlisten.go`, `slaveconnect.go`, `slavelisten.go`
-- **Responsibility**: Orchestrate transport, crypto, mux, and handler layers
-- **Pattern**: Accept `config.Shared` and `config.Master/Slave`, return errors
+- **Responsibility**: Create server/client instances and pass handlers to them
+- **Pattern**: Accept `config.Shared` and `config.Master/Slave`, delegate to `pkg/server` or `pkg/client` with handlers from `pkg/handler`
+- **Key insight**: Entrypoint does NOT directly use transport or mux - those are abstracted by server/client
+
+#### Server and Client (`pkg/server`, `pkg/client`)
+- **Purpose**: Abstraction layer between entrypoint and transport protocols
+- **`server/`**: Creates listeners, handles TLS wrapping, delegates to transport implementations
+  - Chooses transport based on protocol (TCP vs WebSocket)
+  - Wraps connections in TLS if `--ssl` enabled
+  - Accepts handler function and passes connections to it
+- **`client/`**: Creates dialers, handles TLS upgrade, delegates to transport implementations
+  - Chooses transport based on protocol (TCP vs WebSocket)
+  - Upgrades connection to TLS if `--ssl` enabled
+  - Returns connection for handler to use
+- **Key insight**: Server and client are the ones that know about `pkg/transport` and `pkg/crypto`, not entrypoint
 
 #### Transport Layer (`pkg/transport`, `pkg/transport/tcp`, `pkg/transport/ws`)
 - **Purpose**: Protocol abstraction for network connections
@@ -74,6 +88,7 @@ Organized into distinct layers and concerns:
   - `random.go`: Deterministic RNG from password for mutual authentication
   - `crypto.go`: TLS config creation for client/server
 - **Security model**: Ephemeral certificates per run, optional password-derived cert validation
+- **Used by**: `pkg/server` and `pkg/client` for TLS encryption
 
 #### Multiplexing Layer (`pkg/mux`)
 - **Purpose**: Multiple logical streams over single connection
@@ -83,6 +98,7 @@ Organized into distinct layers and concerns:
   - `master.go`, `slave.go`: Setup master/slave sessions
   - `session.go`: Session wrapper with control stream management
   - `msg/`: Control message definitions (gob encoding)
+- **Used by**: `pkg/handler` packages create and use mux sessions
 
 #### Handler Layer (`pkg/handler`)
 - **Purpose**: Master orchestration and slave execution logic
@@ -106,7 +122,6 @@ Organized into distinct layers and concerns:
 
 #### Supporting Packages
 - **`config/`**: Configuration structures (`Shared`, `Master`, `Slave`), protocol constants, validation
-- **`client/`**, **`server/`**: Connection setup helpers
 - **`log/`**: Colored console output (red errors, blue info) and session logging
 - **`format/`**: Output formatting utilities
 - **`terminal/`**: Terminal handling (raw mode, size detection)
@@ -141,11 +156,13 @@ Three-tier testing strategy:
 
 ### Layering Rules
 
-1. **CLI → Entrypoint → Components**: `cmd/` packages only parse arguments and call `pkg/entrypoint`, never directly use `pkg/transport`, `pkg/handler`, etc.
+1. **CLI → Entrypoint → Server/Client → Transport/Crypto**: `cmd/` packages call `pkg/entrypoint`, which creates `pkg/server` or `pkg/client` instances and passes handlers from `pkg/handler`. Server/Client then choose transport implementations from `pkg/transport` and handle TLS via `pkg/crypto`.
 
 2. **No Reverse Dependencies**: Lower layers never depend on higher layers:
-   - `pkg/transport` does not know about `pkg/handler`
-   - `pkg/mux` does not know about `pkg/entrypoint`
+   - `pkg/transport` does not know about `pkg/server` or `pkg/client`
+   - `pkg/server` and `pkg/client` do not know about `pkg/entrypoint`
+   - `pkg/crypto` is used by `pkg/server` and `pkg/client`, not by entrypoint
+   - `pkg/mux` is used by `pkg/handler`, not by entrypoint
    - `pkg/exec` and `pkg/pty` do not know about `pkg/handler`
 
 3. **Interface Boundaries**: Side-effecting code (I/O, network, exec) is behind interfaces:
@@ -325,7 +342,12 @@ flowchart TB
         SC[SlaveConnect]
     end
     
-    subgraph TRANSPORT["pkg/transport - Network Layer"]
+    subgraph SERVERCLIENT["pkg/server + pkg/client - Connection Layer"]
+        SERVER[server/<br/>Server]
+        CLIENT[client/<br/>Client]
+    end
+    
+    subgraph TRANSPORT["pkg/transport - Network Protocols"]
         TCP[tcp/<br/>Plain TCP]
         WS[ws/<br/>WebSocket]
         TRANS[Transport<br/>Interface]
@@ -337,17 +359,17 @@ flowchart TB
         RAND[Deterministic RNG]
     end
     
-    subgraph MUX["pkg/mux - Multiplexing"]
-        YAMUX[yamux Session]
-        CTRL[Control Streams]
-        MSG[msg/<br/>Messages]
-    end
-    
     subgraph HANDLER["pkg/handler - Business Logic"]
         HMASTER[master/<br/>Orchestration]
         HSLAVE[slave/<br/>Execution]
         PORTFWD[portfwd/<br/>Forwarding]
         SOCKS[socks/<br/>Proxy]
+    end
+    
+    subgraph MUX["pkg/mux - Multiplexing"]
+        YAMUX[yamux Session]
+        CTRL[Control Streams]
+        MSG[msg/<br/>Messages]
     end
     
     subgraph EXEC["pkg/exec + pkg/pty - Execution"]
@@ -372,30 +394,33 @@ flowchart TB
     SLAVE --> SL
     SLAVE --> SC
     
-    ML --> TRANS
-    MC --> TRANS
-    SL --> TRANS
-    SC --> TRANS
+    ML --> SERVER
+    MC --> CLIENT
+    SL --> SERVER
+    SC --> CLIENT
+    
+    ML -.passes handler.-> HMASTER
+    MC -.passes handler.-> HMASTER
+    SL -.passes handler.-> HSLAVE
+    SC -.passes handler.-> HSLAVE
+    
+    SERVER --> TRANS
+    CLIENT --> TRANS
     
     TRANS --> TCP
     TRANS --> WS
     
-    TCP --> TLS
-    WS --> TLS
+    SERVER --> TLS
+    CLIENT --> TLS
     
     TLS --> CERT
     TLS --> RAND
     
-    ML --> YAMUX
-    MC --> YAMUX
-    SL --> YAMUX
-    SC --> YAMUX
+    HMASTER --> YAMUX
+    HSLAVE --> YAMUX
     
     YAMUX --> CTRL
     CTRL --> MSG
-    
-    YAMUX --> HMASTER
-    YAMUX --> HSLAVE
     
     HMASTER --> PORTFWD
     HMASTER --> SOCKS
@@ -413,9 +438,12 @@ flowchart TB
     
     ENTRY --> CONFIG
     HANDLER --> CONFIG
+    SERVER --> CONFIG
+    CLIENT --> CONFIG
     
     style CLI fill:#e1f5ff
     style ENTRY fill:#fff4e1
+    style SERVERCLIENT fill:#c8e6c9
     style TRANSPORT fill:#e8f5e9
     style CRYPTO fill:#fce4ec
     style MUX fill:#f3e5f5
@@ -428,17 +456,17 @@ flowchart TB
 
 1. **CLI Layer**: User invokes `goncat master|slave listen|connect` with flags
 2. **Command Layer**: `cmd/` parses arguments into `config.Shared`, `config.Master/Slave`
-3. **Entrypoint Layer**: `pkg/entrypoint` functions orchestrate connection setup
-4. **Transport Layer**: Establishes network connection (TCP or WebSocket)
-5. **Security Layer**: Wraps connection in TLS if `--ssl` specified
-6. **Multiplexing Layer**: Creates yamux session with control streams
-7. **Handler Layer**: Master orchestrates or slave executes based on control messages
+3. **Entrypoint Layer**: `pkg/entrypoint` functions create `pkg/server` or `pkg/client` instances, pass handlers from `pkg/handler`
+4. **Server/Client Layer**: Choose transport implementation (TCP or WebSocket) and handle TLS encryption via `pkg/crypto`
+5. **Transport Layer**: Establish network connections using protocol-specific implementations
+6. **Handler Layer**: Receive connections from server/client, create yamux sessions, orchestrate (master) or execute (slave)
+7. **Multiplexing Layer**: Create control streams and data streams over single connection
 8. **Execution Layer**: Slave spawns shell/command with optional PTY
 9. **Supporting Layers**: Logging, I/O piping, terminal control throughout
 
 **Data Flows:**
 
-- **Main data stream**: User input ↔ PTY/exec ↔ yamux ↔ TLS ↔ transport ↔ network
+- **Main data stream**: User input ↔ PTY/exec ↔ yamux ↔ handler ↔ server/client ↔ TLS ↔ transport ↔ network
 - **Control messages**: Master sends (exec, pty, forward configs) via `ctlClientToServer` stream
 - **Status messages**: Slave sends (errors, confirmations) via `ctlServerToClient` stream
 - **Port forwarding**: Additional yamux streams for each forwarded connection
