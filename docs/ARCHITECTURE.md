@@ -75,82 +75,188 @@ Organized into distinct layers and concerns:
 
 #### Transport Layer (`pkg/transport`, `pkg/transport/tcp`, `pkg/transport/ws`)
 - **Purpose**: Protocol abstraction for network connections
-- **Interface**: `Dialer` (establish outbound), `Listener` (accept inbound)
+- **Interface**: 
+  - `Dialer`: Establishes outbound connections via `Dial(ctx) (net.Conn, error)`
+  - `Listener`: Accepts inbound connections via `Serve(handler Handler) error` and `Close() error`
+  - `Handler`: Function type `func(net.Conn) error` for handling connections
 - **Implementations**: 
-  - `tcp/`: Plain TCP using `net.Dial` and `net.Listen`
-  - `ws/`: WebSocket using `github.com/coder/websocket`
-- **Pattern**: Both return `net.Conn` for uniform handling
+  - `tcp/`: Plain TCP connections with keep-alive enabled
+    - Uses `net.ResolveTCPAddr`, `net.ListenTCP`, configurable via `config.Dependencies`
+    - Listener uses semaphore (capacity 1) to handle only one connection at a time
+  - `ws/`: WebSocket connections using `github.com/coder/websocket`
+    - Converts WebSocket to `net.Conn` via `websocket.NetConn()`
+    - WebSocket listener can optionally use TLS (wss://) with ephemeral certificates
+    - HTTP server-based, rejects additional connections with HTTP 503 when busy
+- **Pattern**: All return `net.Conn` for uniform handling by higher layers
+- **Concurrency**: Both TCP and WebSocket listeners limit to one active connection using a semaphore
 
 #### Security Layer (`pkg/crypto`)
 - **Purpose**: TLS certificate generation and mutual authentication
 - **Key files**:
-  - `ca.go`: Certificate authority and certificate generation with password-based seeding
-  - `random.go`: Deterministic RNG from password for mutual authentication
-  - `crypto.go`: TLS config creation for client/server
-- **Security model**: Ephemeral certificates per run, optional password-derived cert validation
-- **Used by**: `pkg/server` and `pkg/client` for TLS encryption
+  - `ca.go`: CA key pair and certificate generation using ECDSA P256
+  - `cert.go`: Client certificate generation signed by CA
+  - `crypto.go`: Main entry point `GenerateCertificates(seed)` returns CA pool and certificate
+  - `random.go`: Deterministic RNG (`dRand`) using SHA-512 for password-based cert generation
+- **Security model**: 
+  - Ephemeral certificates per run (new key pair for each listen)
+  - If seed (password) provided: deterministic certificate generation for mutual auth
+  - Empty seed generates random certificates (encryption only, no auth)
+  - CA certificate validity: 1970 to 2063 (effectively permanent)
+- **Used by**: `pkg/server` wraps connections in `tls.Server()`, `pkg/client` uses `tls.Client()` and custom verifier
+- **Special handling**: `dRand` works around Go's non-deterministic certificate generation for reproducible certs
 
 #### Multiplexing Layer (`pkg/mux`)
-- **Purpose**: Multiple logical streams over single connection
-- **Implementation**: Wraps `github.com/hashicorp/yamux`
-- **Streams**: Control streams (master→slave, slave→master) + data streams (shell, forwards)
-- **Files**:
-  - `master.go`, `slave.go`: Setup master/slave sessions
-  - `session.go`: Session wrapper with control stream management
-  - `msg/`: Control message definitions (gob encoding)
-- **Used by**: `pkg/handler` packages create and use mux sessions
+- **Purpose**: Multiple logical streams over single connection using yamux
+- **Implementation**: Wraps `github.com/hashicorp/yamux` with control stream management
+- **Components**:
+  - `session.go`: Base `Session` wrapper holding yamux session and control streams
+  - `master.go`: `MasterSession` with gob encoder/decoder for master→slave communication
+  - `slave.go`: `SlaveSession` with gob encoder/decoder for slave→master communication
+  - `msg/`: Message type definitions for control protocol (Hello, Foreground, PortForward, SOCKS, etc.)
+- **Control Streams**: Two dedicated channels established during session setup:
+  - `ctlClientToServer`: Master sends commands (encoded with gob), slave receives
+  - `ctlServerToClient`: Slave sends responses (encoded with gob), master receives
+- **Data Streams**: Additional yamux streams opened on demand for:
+  - Foreground shell I/O
+  - Port forwarding connections
+  - SOCKS proxy connections
+- **Concurrency**: Uses `sync.Mutex` to ensure atomic send+open operations
+- **Timeouts**: Configurable timeout for all operations (default from `config.Shared.Timeout`)
+- **Used by**: `pkg/handler/master` calls `mux.OpenSessionContext()`, `pkg/handler/slave` calls `mux.AcceptSessionContext()`
 
 #### Handler Layer (`pkg/handler`)
 - **Purpose**: Master orchestration and slave execution logic
 - **Structure**:
-  - `master/`: Coordinates shell, logging, port forwarding, SOCKS
-  - `slave/`: Executes commands, provides PTY, handles forwarding
-  - `portfwd/`: Port forwarding client/server implementations
-  - `socks/`: SOCKS5 proxy implementation (TCP CONNECT, UDP ASSOCIATE)
-- **Pattern**: Handlers accept yamux sessions and configuration, manage goroutines
+  - `master/`: Master-side handler coordinating operations
+    - `master.go`: Main handler creates mux session, performs handshake, orchestrates tasks
+    - `foreground.go`: Manages foreground shell/command execution
+    - `portfwd.go`: Initiates port forwarding (local and remote)
+    - `socks.go`: Sets up SOCKS proxy server
+  - `slave/`: Slave-side handler responding to master commands
+    - `slave.go`: Main handler accepts mux session, performs handshake, listens for commands
+    - `foreground.go`: Executes commands or provides shell via exec/pty
+    - `portfwd.go`: Handles port forwarding requests
+    - `socks.go`: Handles SOCKS proxy connections
+  - `portfwd/`: Shared port forwarding implementation
+    - `server.go`: Accepts connections and forwards through yamux streams
+    - `client.go`: Receives yamux streams and connects to target
+  - `socks/master/`: SOCKS5 proxy server on master side
+  - `socks/slave/`: SOCKS5 proxy client on slave side (connects to actual targets)
+- **Pattern**: 
+  - Master creates `MasterSession`, sends control messages (gob-encoded)
+  - Slave creates `SlaveSession`, receives control messages, executes actions
+  - Both perform handshake by exchanging `msg.Hello` messages
+  - Additional yamux streams opened for data transfer
+- **Message Types**: `msg.Hello`, `msg.Foreground`, `msg.PortForward`, `msg.SOCKSConnect`, `msg.SOCKSAssociate`, `msg.SOCKSDatagram`
+- **Concurrency**: Uses goroutines and `sync.WaitGroup` for concurrent operations
 
 #### Execution Layer (`pkg/exec`, `pkg/pty`)
-- **`exec/`**: Command execution across platforms
-  - `exec.go`: Common interface
-  - `exec_default.go`: Unix implementation using `os/exec`
+- **`exec/`**: Command execution with I/O piping
+  - `exec.go`: Main `Run()` function - executes program and pipes I/O to net.Conn
+  - `exec_default.go`: Unix implementation using `os/exec.Command`
   - `exec_windows.go`: Windows-specific implementation
-- **`pty/`**: Pseudo-terminal support
-  - `pty.go`: Common interface
-  - `pty_unix.go`, `pty_unix_linux.go`, `pty_unix_darwin.go`: Unix PTY implementations
-  - `pty_windows.go`: Windows ConPTY implementation
-  - **Platform quirks**: Windows requires special console API handling
+  - Uses `pipeio.Pipe()` for bidirectional I/O between command and connection
+  - Waits for both command exit AND I/O completion before returning
+- **`pty/`**: Pseudo-terminal support for interactive shells
+  - `pty.go`: Common interface and `TerminalSize` struct
+  - `pty_unix.go`: Unix PTY allocation using `syscall` package
+  - `pty_unix_linux.go`, `pty_unix_darwin.go`: Platform-specific PTY implementations
+  - `pty_windows.go`: Windows ConPTY implementation using Windows console API
+  - PTY provides interactive terminal with proper control sequences (colors, cursor movement, etc.)
+- **Platform differences**:
+  - Unix: Uses `syscall.ForkExec` with PTY file descriptor
+  - Windows: Uses ConPTY API with complex handle juggling
+  - Both expose same interface to handlers
+- **Used by**: `pkg/handler/slave/foreground.go` calls either `exec.Run()` or platform-specific PTY code
 
 #### Supporting Packages
-- **`config/`**: Configuration structures (`Shared`, `Master`, `Slave`), protocol constants, validation
-- **`log/`**: Colored console output (red errors, blue info) and session logging
-- **`format/`**: Output formatting utilities
-- **`terminal/`**: Terminal handling (raw mode, size detection)
-- **`pipeio/`**: I/O piping utilities with bidirectional copy and cancellation
-- **`clean/`**: Self-deletion cleanup (platform-specific)
-- **`socks/`**: SOCKS protocol constants and message parsing
+- **`config/`**: Configuration structures and validation
+  - `Shared`: Common config (protocol, host, port, SSL, key, timeout, dependencies)
+  - `Master`: Master-specific config (exec, pty, log file, port forwarding, SOCKS)
+  - `Slave`: Slave-specific config (cleanup flag)
+  - Protocol constants: `ProtoTCP`, `ProtoWS`, `ProtoWSS`
+  - `Dependencies`: Injectable dependencies for testing (network, stdio, exec functions)
+  - `KeySalt`: Build-time injected random salt for key derivation
+- **`log/`**: Colored console output and session logging
+  - `ErrorMsg()`: Red text to stderr
+  - `InfoMsg()`: Blue text to stderr
+  - Uses `github.com/fatih/color` for colored output
+- **`format/`**: Output formatting utilities (address formatting, etc.)
+- **`terminal/`**: Terminal handling and PTY support
+  - `Pipe()`: Bidirectional I/O between stdio and network connection
+  - `PipeWithPTY()`: PTY-enabled piping with raw mode and terminal size sync
+  - Uses `golang.org/x/term` for raw mode and terminal control
+  - Sends terminal size updates via gob encoding
+- **`pipeio/`**: Bidirectional I/O piping
+  - `Pipe()`: Copies data bidirectionally between two `io.ReadWriteCloser`
+  - Uses two goroutines for concurrent bidirectional copy
+  - `sync.Once` for cleanup, captures first error only
+  - Recognizes benign errors (EOF, EPIPE, ECONNRESET, closed connections)
+  - `cmdio.go`: Merges stdout/stderr into single reader for command I/O
+- **`clean/`**: Self-deletion cleanup
+  - `EnsureDeletion()`: Sets up signal handlers to delete executable on exit
+  - Platform-specific: Unix uses signals, Windows uses scheduled task
+- **`socks/`**: SOCKS5 protocol constants and message parsing (RFC 1928)
+  - Defines message structures for method selection, connect, UDP associate
+  - Supports IPv4, IPv6, FQDN address types
+  - Used by `pkg/handler/socks` packages
 
 ### `/mocks` - Test Infrastructure
 
-Mock implementations for testing:
-- **`mocktcp.go`**: Mock TCP network using `net.Pipe()` for testing without real sockets
-- **`mockstdio.go`**: Mock stdin/stdout for testing I/O
-- **Purpose**: Enable integration tests without real system resources
+Mock implementations for testing without real system resources:
+
+- **`mockstdio.go`**: Mock stdin/stdout using pipes
+  - `MockStdio` provides pipe-based stdin/stdout for testing
+  - `WriteToStdin()` simulates user input
+  - `ReadFromStdout()` retrieves application output
+  - `WaitForOutput()` waits for expected strings with timeout
+  - Uses `sync.Cond` for efficient output waiting
+  
+- **`mockexec.go`**: Mock command execution
+  - Simulates `os/exec.Command` without spawning real processes
+  - Returns configurable exit codes and output
+  
+- **`mockudp.go`**: Mock UDP network
+  - Simulates UDP connections for SOCKS UDP ASSOCIATE testing
+  
+- **`tcp/network.go`**: Mock TCP network using `net.Pipe()`
+  - `MockTCPNetwork` simulates TCP without real sockets
+  - `ListenTCP()` and `DialTCP()` create in-memory connections
+  - Listeners keyed by address string, uses `sync.Cond` for coordination
+  - Connections use `net.Pipe()` for bidirectional in-memory I/O
+  
+- **Purpose**: Enable integration tests to run quickly and deterministically
+- **Injection**: Via `config.Dependencies` (network, stdio, exec functions)
+- **Pattern**: Mock implementations satisfy same interfaces as real ones
 
 ### `/test` - Test Suites
 
-Three-tier testing strategy:
+Three-tier testing strategy with different scopes and mocking approaches:
 
-- **`test/integration/`**: High-level workflow tests using mocks
-  - Tests complete master-slave interactions
-  - Uses `mocks/` package and `config.Dependencies`
-  - Categories: `exec/`, `plain/`, `portfwd/`, `socks/`
-- **`test/e2e/`**: End-to-end tests with real binaries
+- **`test/integration/`**: High-level workflow tests using mocks from `mocks/` package
+  - Tests complete master-slave interactions via entrypoint functions
+  - Mocks injected via `config.Dependencies` (network, stdio, exec)
+  - `plain/`: Basic master-slave communication and data exchange
+  - `exec/`: Command execution workflows
+  - `portfwd/`: Port forwarding scenarios (local and remote)
+  - `socks/`: SOCKS proxy testing (connect/ and associate/ for TCP and UDP)
+  - Fast execution (~1-2 seconds), deterministic results
+  - Example: `plain/plain_test.go` tests end-to-end data flow with mock network
+  
+- **`test/e2e/`**: End-to-end tests with real compiled binaries
   - Docker containers (Alpine Linux) with `expect` scripts
-  - Tests all transport protocols (tcp, ws, wss)
-  - Validates bind/reverse shell scenarios
+  - Tests all transport protocols (tcp, ws, wss) in realistic scenarios
+  - Two topologies: bind shell (slave-listen) and reverse shell (slave-connect)
+  - No mocking - validates actual binary behavior
+  - Slower execution (~8-9 minutes for full suite)
+  - Docker Compose files: `docker-compose.slave-listen.yml`, `docker-compose.slave-connect.yml`
+  
 - **`test/helpers/`**: Shared test utilities
+  - Helper functions for setting up test scenarios
+  - Configuration builders for tests
+  - Common test fixtures
 
-**Note**: Unit tests (`*_test.go`) live alongside source code in package directories.
+**Note**: Unit tests (`*_test.go`) live alongside source code in package directories and use internal dependency injection with simple fakes.
 
 ## Architectural Invariants
 
