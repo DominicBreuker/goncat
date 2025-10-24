@@ -72,11 +72,22 @@ func (d *Dialer) Dial(ctx context.Context) (net.Conn, error) {
 	}
 
 	// Open bidirectional stream
-	stream, err := conn.OpenStreamSync(ctx)
+	stream, err := conn.OpenStream()
 	if err != nil {
 		conn.CloseWithError(0, "failed to open stream")
 		udpConn.Close()
 		return nil, fmt.Errorf("open stream: %w", err)
+	}
+
+	// CRITICAL: QUIC streams are lazy-initialized and not transmitted until data is written.
+	// We must write an initialization byte to force the stream to be sent to the peer.
+	// The server will read and discard this byte. This ensures the server's AcceptStream()
+	// call will complete immediately rather than blocking indefinitely.
+	_, err = stream.Write([]byte{0})
+	if err != nil {
+		conn.CloseWithError(0, "failed to write init byte")
+		udpConn.Close()
+		return nil, fmt.Errorf("write init byte: %w", err)
 	}
 
 	// Wrap in net.Conn adapter

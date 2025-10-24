@@ -111,10 +111,23 @@ func (l *Listener) handleConnection(conn *quic.Conn, handle transport.Handler) {
 		}
 	}()
 
-	// Accept first bidirectional stream
-	stream, err := conn.AcceptStream(context.Background())
+	// Accept first bidirectional stream with a reasonable timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	stream, err := conn.AcceptStream(ctx)
 	if err != nil {
 		_ = conn.CloseWithError(0, "no stream")
+		return
+	}
+
+	// Read and discard the initialization byte that was sent by the client to activate the stream.
+	// QUIC streams are lazy-initialized - the client must write data before the stream is
+	// transmitted and visible to AcceptStream(). This single byte ensures immediate connection
+	// establishment without blocking.
+	initByte := make([]byte, 1)
+	_, err = stream.Read(initByte)
+	if err != nil {
+		_ = conn.CloseWithError(0, "failed to read init byte")
 		return
 	}
 
