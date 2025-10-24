@@ -26,7 +26,7 @@ const TimeoutFlag = "timeout" // TODO for future: consider changing to time.Dura
 // specifications used in CLI commands.
 func GetBaseDescription() string {
 	return strings.Join([]string{
-		"Specify transport like this: tcp://127.0.0.1:123 (supports tcp|ws|wss)",
+		"Specify transport like this: tcp://127.0.0.1:123 (supports tcp|ws|wss|udp)",
 		"You can omit the host when listening to bind to all interfaces.",
 	}, "\n")
 }

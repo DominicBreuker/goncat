@@ -16,8 +16,10 @@ func TestParseTransport(t *testing.T) {
 		{input: "tcp://localhost:123", protocol: config.ProtoTCP, host: "localhost", port: 123, err: false},
 		{input: "ws://localhost:123", protocol: config.ProtoWS, host: "localhost", port: 123, err: false},
 		{input: "wss://localhost:123", protocol: config.ProtoWSS, host: "localhost", port: 123, err: false},
+		{input: "udp://localhost:12345", protocol: config.ProtoUDP, host: "localhost", port: 12345, err: false},
 		{input: "tcp://:123", protocol: config.ProtoTCP, host: "", port: 123, err: false},  // optional, we may want to bind all interfaces
 		{input: "tcp://*:123", protocol: config.ProtoTCP, host: "", port: 123, err: false}, // also bind to all interfaces if * is provided
+		{input: "udp://*:12345", protocol: config.ProtoUDP, host: "", port: 12345, err: false},
 
 		// error cases, bad protocols
 		{input: "foobar://localhost:123", err: true},

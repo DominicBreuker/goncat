@@ -40,7 +40,7 @@ A few examples to illustrate basic use, which all assume a goncat binary exists 
     *   Remote: `goncat slave listen 'tcp://*:12345'` to listen in port 12345 for connections. The listener will do whatever a connecting master asks it to.
     *   On your machine: `goncat master connect tcp://55.66.77.88:12345 --exec /bin/sh` to connect to the remote host and make it execute `/bin/sh`.
 
-Supported protocols include `tcp` (plain TCP connection) as well as `ws` and `wss` (websocket connections).
+Supported protocols include `tcp` (plain TCP connection), `ws` and `wss` (websocket connections), and `udp` (UDP with KCP for reliability).
 
 Advanced features can be enabled with additional flags:
 
