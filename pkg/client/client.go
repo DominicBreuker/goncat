@@ -100,11 +100,11 @@ func (c *Client) connect(deps *dependencies) error {
 				return fmt.Errorf("generate certificates: %w", err)
 			}
 			tlsConfig = &tls.Config{
-				Certificates:       []tls.Certificate{cert},
-				RootCAs:            caCert,
-				ServerName:         "goncat",
-				MinVersion:         tls.VersionTLS13,
-				NextProtos:         []string{"goncat-quic"},
+				Certificates: []tls.Certificate{cert},
+				RootCAs:      caCert,
+				ServerName:   "goncat",
+				MinVersion:   tls.VersionTLS13,
+				NextProtos:   []string{"goncat-quic"},
 				// For QUIC, we need InsecureSkipVerify because certificates don't have SANs
 				// Security is provided by the shared-key-based CA verification
 				InsecureSkipVerify: true,

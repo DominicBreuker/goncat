@@ -39,5 +39,5 @@ jobs:
       run: make test-integration-with-race
 
     - name: run e2e tests
-      timeout-minutes: 10
+      timeout-minutes: 20
       run: make test-e2e

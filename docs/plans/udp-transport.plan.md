@@ -1044,22 +1044,39 @@ The implementation follows the existing architecture pattern where transports ar
     - PR description is comprehensive
     - Progress is reported using report_progress tool
     - CI pipeline is triggered
+  - **Completed**: All implementation work committed and documented in comprehensive PR.
 
-- [ ] Step 24: Monitor CI pipeline
-  - **Task**: Ensure the GitHub Actions CI pipeline passes for the UDP transport implementation, including linters, tests, and binary builds.
+- [x] Step 24: Add UDP to E2E test suite
+  - **Task**: Integrate UDP transport into the existing end-to-end test infrastructure so UDP is tested alongside TCP, WS, and WSS
+  - **Files**:
+    - `Makefile`: Add UDP test runs to test-e2e target (adds 2 more test runs: bind shell + reverse shell)
+    - `test/e2e/docker-compose.slave-listen.yml`: Update all 3 slave healthchecks to support UDP
+    - `.github/workflows/test.yml`: Increase E2E timeout from 10 to 20 minutes
+  - **Dependencies**: Steps 1-23
+  - **Rationale**: UDP doesn't have a TCP-style LISTEN state. The healthcheck needs to detect both TCP (LISTEN) and UDP (port binding) using `grep -E 'LISTEN|udp'`. With 4 transports instead of 3, E2E suite needs more time.
+  - **Definition of done**: 
+    - Makefile runs UDP tests for both topologies (slave-listen, slave-connect)
+    - Healthchecks work for UDP listeners in docker-compose: `netstat -an | grep 8080 | grep -E 'LISTEN|udp'`
+    - GitHub Actions E2E timeout increased to 20 minutes
+    - All existing E2E test scripts pass for UDP transport
+  - **Completed**: Added UDP to E2E test suite. Makefile now includes 2 UDP test runs. Modified 3 healthchecks in docker-compose to detect UDP. Increased CI E2E timeout to 20 minutes to accommodate 4 transports.
+
+- [ ] Step 25: Monitor CI pipeline
+  - **Task**: Ensure the GitHub Actions CI pipeline passes for the UDP transport implementation, including linters, unit tests, integration tests, E2E tests (now including UDP), and binary builds.
   - **Files**: N/A (monitoring)
   - **Expected CI steps**:
     1. Linters pass (fmt, vet, staticcheck)
     2. Unit tests pass with race detection
-    3. Integration tests pass with race detection
-    4. E2E tests pass (existing tests should still work)
+    3. Integration tests pass with race detection  
+    4. E2E tests pass for all 4 transports (tcp, ws, wss, udp) in both topologies
     5. Binaries build successfully for all platforms
-  - **Dependencies**: Step 23
+  - **Dependencies**: Step 24
   - **Definition of done**: 
     - CI pipeline completes successfully (all green checks)
     - No lint errors
-    - All tests pass
+    - All tests pass (unit, integration, E2E)
     - All binaries build
+    - UDP E2E tests specifically pass
     - **IF CI FAILS**: Investigate failures, fix issues, and re-run pipeline
 
 ## Key Technical Decisions
