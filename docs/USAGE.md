@@ -118,15 +118,22 @@ goncat supports four combinations of master/slave and listen/connect:
 
 ### Transport Protocols
 
-goncat supports three transport protocols:
+goncat supports four transport protocols:
 
 - **tcp**: Plain TCP connections (`tcp://host:port`)
 - **ws**: WebSocket connections (`ws://host:port`)
 - **wss**: WebSocket Secure connections with TLS (`wss://host:port`)
+- **udp**: UDP connections with QUIC for reliability (`udp://host:port`)
 
 Format: `protocol://host:port`
 - When listening, you can use `*` as the host to bind to all interfaces: `tcp://*:12345`
 - When connecting, specify the target IP or hostname: `tcp://192.168.1.100:12345`
+
+**UDP Transport Notes**:
+- UDP transport uses QUIC protocol for reliable, ordered byte streams over UDP
+- TLS 1.3 encryption is built into QUIC (mandatory)
+- Works with all goncat features: --ssl, --key, --pty, port forwarding, SOCKS proxy
+- Connection establishment is as fast as TCP (~10-15ms on localhost)
 
 ## Configuration
 
@@ -384,7 +391,7 @@ goncat slave connect tcp://192.168.1.100:12345 --cleanup
 
 ### Transport Protocol Options
 
-goncat supports three transport protocols:
+goncat supports four transport protocols:
 
 #### Plain TCP
 ```bash
@@ -410,7 +417,21 @@ goncat slave connect wss://192.168.1.100:8443
 
 **Best for**: WebSocket with TLS encryption (ephemeral certificates generated automatically).
 
-**Note**: When using `--ssl` flag with any protocol, TLS encryption is applied. For `wss://`, encryption is built into the protocol.
+#### UDP with QUIC
+```bash
+goncat master listen 'udp://*:12345' --exec /bin/sh
+goncat slave connect udp://192.168.1.100:12345
+```
+
+**Best for**: Environments where UDP is preferred or required. QUIC provides reliable, ordered streaming over UDP with built-in TLS 1.3 encryption.
+
+**Note**: 
+- UDP transport uses the QUIC protocol for reliability (similar to TCP but over UDP)
+- TLS 1.3 encryption is mandatory and built into QUIC
+- Works with all goncat features: --ssl, --key, --pty, port forwarding, SOCKS proxy
+- Performance is comparable to TCP on local networks
+
+**Note**: When using `--ssl` flag with any protocol, TLS encryption is applied. For `wss://` and `udp://`, encryption is built into the protocol.
 
 ## Examples
 

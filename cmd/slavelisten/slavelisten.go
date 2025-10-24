@@ -22,9 +22,14 @@ func GetCommand() *cli.Command {
 		Name:        "listen",
 		Description: shared.GetBaseDescription(),
 		ArgsUsage:   shared.GetArgsUsage(),
-		Action: func(ctx context.Context, cmd *cli.Command) error {
+		Action: func(parent context.Context, cmd *cli.Command) error {
+			ctx, cancel := context.WithCancel(parent)
+			defer cancel()
+
+			shared.SetupSignalHandling(cancel)
+
 			if cmd.Bool(shared.CleanupFlag) {
-				delFunc, err := clean.EnsureDeletion()
+				delFunc, err := clean.EnsureDeletion(ctx)
 				if err != nil {
 					return fmt.Errorf("clean.EnsureDeletion(): %s", err)
 				}
