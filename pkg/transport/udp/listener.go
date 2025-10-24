@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net"
 	"strings"
+	"syscall"
 	"time"
 
 	"dominicbreuker/goncat/pkg/log"
@@ -28,16 +29,29 @@ type Listener struct {
 // - timeout: MaxIdleTimeout for QUIC connections
 // - tlsConfig: TLS configuration (required by QUIC, must use TLS 1.3+)
 func NewListener(ctx context.Context, addr string, timeout time.Duration, tlsConfig *tls.Config) (*Listener, error) {
-	// Parse UDP address
-	udpAddr, err := net.ResolveUDPAddr("udp", addr)
-	if err != nil {
-		return nil, fmt.Errorf("resolve udp addr: %w", err)
+	// Create UDP socket with SO_REUSEADDR for rapid port reuse (important for E2E tests)
+	lc := &net.ListenConfig{
+		Control: func(network, address string, c syscall.RawConn) error {
+			var sockOptErr error
+			err := c.Control(func(fd uintptr) {
+				sockOptErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
+			})
+			if err != nil {
+				return err
+			}
+			return sockOptErr
+		},
 	}
 
-	// Create UDP socket
-	udpConn, err := net.ListenUDP("udp", udpAddr)
+	packetConn, err := lc.ListenPacket(ctx, "udp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("listen udp: %w", err)
+	}
+
+	udpConn, ok := packetConn.(*net.UDPConn)
+	if !ok {
+		packetConn.Close()
+		return nil, fmt.Errorf("expected *net.UDPConn, got %T", packetConn)
 	}
 
 	// Configure QUIC
