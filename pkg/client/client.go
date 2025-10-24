@@ -105,7 +105,9 @@ func (c *Client) connect(deps *dependencies) error {
 				ServerName:         "goncat",
 				MinVersion:         tls.VersionTLS13,
 				NextProtos:         []string{"goncat-quic"},
-				InsecureSkipVerify: c.cfg.GetKey() == "", // Skip verify if no key
+				// For QUIC, we need InsecureSkipVerify because certificates don't have SANs
+				// Security is provided by the shared-key-based CA verification
+				InsecureSkipVerify: true,
 			}
 		} else {
 			// UDP/QUIC requires TLS even without --ssl flag
