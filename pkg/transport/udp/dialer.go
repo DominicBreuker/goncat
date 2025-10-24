@@ -50,9 +50,15 @@ func (d *Dialer) Dial(ctx context.Context) (net.Conn, error) {
 	}
 
 	// Configure QUIC
+	// MaxIdleTimeout should be longer than the timeout used for control operations
+	// to avoid premature connection closure. Use at least 30 seconds or 3x the timeout.
+	maxIdleTimeout := d.timeout * 3
+	if maxIdleTimeout < 30*time.Second {
+		maxIdleTimeout = 30 * time.Second
+	}
 	quicConfig := &quic.Config{
-		MaxIdleTimeout:  d.timeout,
-		KeepAlivePeriod: d.timeout / 3,
+		MaxIdleTimeout:  maxIdleTimeout,
+		KeepAlivePeriod: maxIdleTimeout / 3,
 	}
 
 	// Create QUIC transport

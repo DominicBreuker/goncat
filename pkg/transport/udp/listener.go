@@ -41,9 +41,15 @@ func NewListener(ctx context.Context, addr string, timeout time.Duration, tlsCon
 	}
 
 	// Configure QUIC
+	// MaxIdleTimeout should be longer than the timeout used for control operations
+	// to avoid premature connection closure. Use at least 30 seconds or 3x the timeout.
+	maxIdleTimeout := timeout * 3
+	if maxIdleTimeout < 30*time.Second {
+		maxIdleTimeout = 30 * time.Second
+	}
 	quicConfig := &quic.Config{
-		MaxIdleTimeout:  timeout,
-		KeepAlivePeriod: timeout / 3, // Keep alive more frequently than idle timeout
+		MaxIdleTimeout:  maxIdleTimeout,
+		KeepAlivePeriod: maxIdleTimeout / 3, // Keep alive more frequently than idle timeout
 	}
 
 	// Ensure TLS 1.3 (required by QUIC)
