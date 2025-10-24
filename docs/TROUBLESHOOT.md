@@ -878,7 +878,11 @@ This section documents recurring issues and their resolutions. Add new problems 
 
 8. **Remove all debug prints** using this cleanup command:
    ```bash
+   # Linux:
    find . -name '*.go' -type f -exec sed -i '/DEBUG_PRINT:/d' {} +
+   
+   # macOS (requires .bak extension):
+   find . -name '*.go' -type f -exec sed -i.bak '/DEBUG_PRINT:/d' {} + && find . -name '*.go.bak' -delete
    ```
 
 9. **Verify cleanup** worked:
