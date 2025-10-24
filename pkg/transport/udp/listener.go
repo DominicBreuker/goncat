@@ -14,6 +14,10 @@ import (
 	quic "github.com/quic-go/quic-go"
 )
 
+// Platform-specific socket option implementations are in:
+// - listener_unix.go for Unix-like systems (Linux, macOS, BSD)
+// - listener_windows.go for Windows
+
 // Listener implements transport.Listener for UDP with QUIC.
 // It ensures only one connection is handled at a time via a semaphore.
 type Listener struct {
@@ -34,7 +38,7 @@ func NewListener(ctx context.Context, addr string, timeout time.Duration, tlsCon
 		Control: func(network, address string, c syscall.RawConn) error {
 			var sockOptErr error
 			err := c.Control(func(fd uintptr) {
-				sockOptErr = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1)
+				sockOptErr = setSockoptReuseAddr(fd)
 			})
 			if err != nil {
 				return err
