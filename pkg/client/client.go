@@ -16,6 +16,7 @@ import (
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/transport"
 	"dominicbreuker/goncat/pkg/transport/tcp"
+	"dominicbreuker/goncat/pkg/transport/udp"
 	"dominicbreuker/goncat/pkg/transport/ws"
 )
 
@@ -23,6 +24,7 @@ import (
 type dependencies struct {
 	newTCPDialer func(string, *config.Dependencies) (transport.Dialer, error)
 	newWSDialer  func(context.Context, string, config.Protocol) transport.Dialer
+	newUDPDialer func(string, time.Duration, *tls.Config) (transport.Dialer, error)
 	tlsUpgrader  func(net.Conn, string, time.Duration) (net.Conn, error)
 }
 
@@ -59,7 +61,7 @@ func (c *Client) GetConnection() net.Conn {
 }
 
 // Connect establishes a connection to the configured remote address.
-// It supports TCP and WebSocket protocols, and optionally upgrades to TLS.
+// It supports TCP, WebSocket, and UDP protocols, and optionally upgrades to TLS.
 // The connection is stored in the Client and can be retrieved via GetConnection.
 func (c *Client) Connect() error {
 	deps := &dependencies{
@@ -68,6 +70,9 @@ func (c *Client) Connect() error {
 		},
 		newWSDialer: func(ctx context.Context, addr string, proto config.Protocol) transport.Dialer {
 			return ws.NewDialer(ctx, addr, proto)
+		},
+		newUDPDialer: func(addr string, timeout time.Duration, tlsConfig *tls.Config) (transport.Dialer, error) {
+			return udp.NewDialer(addr, timeout, tlsConfig)
 		},
 		tlsUpgrader: upgradeToTLS,
 	}
@@ -85,6 +90,39 @@ func (c *Client) connect(deps *dependencies) error {
 	switch c.cfg.Protocol {
 	case config.ProtoWS, config.ProtoWSS:
 		d = deps.newWSDialer(c.ctx, addr, c.cfg.Protocol)
+	case config.ProtoUDP:
+		// For UDP/QUIC, TLS is required. Generate certificates based on config.
+		var tlsConfig *tls.Config
+		if c.cfg.SSL || c.cfg.GetKey() != "" {
+			// Use configured SSL settings with mutual auth if key is provided
+			caCert, cert, err := crypto.GenerateCertificates(c.cfg.GetKey())
+			if err != nil {
+				return fmt.Errorf("generate certificates: %w", err)
+			}
+			tlsConfig = &tls.Config{
+				Certificates:       []tls.Certificate{cert},
+				RootCAs:            caCert,
+				ServerName:         "goncat",
+				MinVersion:         tls.VersionTLS13,
+				InsecureSkipVerify: c.cfg.GetKey() == "", // Skip verify if no key
+			}
+		} else {
+			// UDP/QUIC requires TLS even without --ssl flag
+			_, cert, err := crypto.GenerateCertificates("")
+			if err != nil {
+				return fmt.Errorf("generate certificates: %w", err)
+			}
+			tlsConfig = &tls.Config{
+				Certificates:       []tls.Certificate{cert},
+				ServerName:         "goncat",
+				MinVersion:         tls.VersionTLS13,
+				InsecureSkipVerify: true, // Accept any server cert when no key
+			}
+		}
+		d, err = deps.newUDPDialer(addr, c.cfg.Timeout, tlsConfig)
+		if err != nil {
+			return fmt.Errorf("create udp dialer: %w", err)
+		}
 	default:
 		d, err = deps.newTCPDialer(addr, c.cfg.Deps)
 		if err != nil {
@@ -97,7 +135,8 @@ func (c *Client) connect(deps *dependencies) error {
 		return fmt.Errorf("dial: %w", err)
 	}
 
-	if c.cfg.SSL {
+	// For UDP, TLS is already handled by QUIC, so skip separate TLS upgrade
+	if c.cfg.SSL && c.cfg.Protocol != config.ProtoUDP {
 		c.conn, err = deps.tlsUpgrader(c.conn, c.cfg.GetKey(), c.cfg.Timeout)
 		if err != nil {
 			return fmt.Errorf("upgrade to tls: %w", err)

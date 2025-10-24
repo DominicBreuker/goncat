@@ -429,7 +429,7 @@ The implementation follows the existing architecture pattern where transports ar
     - Code passes linters
   - **Completed**: Created UDP dialer in pkg/transport/udp/dialer.go. Establishes QUIC connection and opens bidirectional stream.
 
-- [ ] Step 8: Integrate UDP transport into server
+- [x] Step 8: Integrate UDP transport into server
   - **Task**: Update the server package to recognize ProtoUDP and create UDP listeners. This involves updating the switch statement in the Serve method to handle UDP transport.
   - **Files**: 
     - `pkg/server/server.go`:
@@ -480,8 +480,9 @@ The implementation follows the existing architecture pattern where transports ar
     - TLS configuration is properly set up for QUIC
     - Code compiles without errors
     - Existing tests still pass
+  - **Completed**: Integrated UDP into server.go. Added ProtoUDP case in Serve() with TLS config generation. Modified New() to skip TLS wrapping for UDP (QUIC handles it).
 
-- [ ] Step 9: Integrate UDP transport into client
+- [x] Step 9: Integrate UDP transport into client
   - **Task**: Update the client package to recognize ProtoUDP and create UDP dialers. This involves updating the switch statement in the connect method to handle UDP transport.
   - **Files**: 
     - `pkg/client/client.go`:
@@ -550,6 +551,7 @@ The implementation follows the existing architecture pattern where transports ar
     - SSL handling is correctly bypassed for UDP (already integrated in QUIC)
     - Code compiles without errors
     - Existing tests still pass
+  - **Completed**: Integrated UDP into client.go. Added ProtoUDP case in connect() with TLS config generation. Added newUDPDialer to dependencies. Modified to skip TLS upgrade for UDP.
 
 - [ ] Step 10: Handle signal interruption for graceful shutdown
   - **Task**: Set up signal handlers (SIGINT, SIGTERM) to close QUIC connections gracefully with an error code, so the remote side is notified and can display a proper closure message.
