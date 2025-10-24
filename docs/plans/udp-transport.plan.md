@@ -700,7 +700,7 @@ The implementation follows the existing architecture pattern where transports ar
     - Integration tests can run without real UDP sockets
     - Tests are fast and deterministic
 
-- [ ] Step 13: Run linters and fix issues
+- [x] Step 13: Run linters and fix issues
   - **Task**: Run all project linters (fmt, vet, staticcheck) and fix any issues introduced by the UDP transport implementation.
   - **Files**: 
     - All newly created files in `pkg/transport/udp/`
@@ -735,7 +735,7 @@ The implementation follows the existing architecture pattern where transports ar
     - No race conditions detected with `-race` flag
     - Test coverage is maintained or improved
 
-- [ ] Step 15: Build binaries with UDP support
+- [x] Step 15: Build binaries with UDP support
   - **Task**: Build the goncat binaries for all platforms to ensure the UDP transport compiles correctly and doesn't introduce platform-specific issues.
   - **Files**: N/A (building binaries)
   - **Commands**:
@@ -753,9 +753,22 @@ The implementation follows the existing architecture pattern where transports ar
     - `./dist/goncat.elf version` outputs version correctly
     - `./dist/goncat.elf --help` shows UDP in supported protocols
 
-- [ ] Step 16: Manual verification - Basic UDP connection
+- [~] Step 16: Manual verification - Basic UDP connection (IN PROGRESS - BLOCKER)
   - **Task**: **CRITICAL MANUAL VERIFICATION** - Manually test basic UDP reverse shell (master listen, slave connect) to ensure the transport works in practice with real UDP sockets and QUIC. This step CANNOT be skipped.
   - **Files**: N/A (manual testing)
+  - **BLOCKER STATUS**: UDP/QUIC connection timing out during handshake. Master listens successfully, slave connects but QUIC handshake doesn't complete.
+  - **Debugging done**:
+    - Added NextProtos ALPN to TLS config ("goncat-quic")
+    - Verified TCP transport still works correctly
+    - Confirmed timeout is 10 seconds (should be sufficient)
+    - InsecureSkipVerify set to true for no-key scenarios
+    - Buffer size warnings appear but are non-fatal
+  - **Possible issues to investigate**:
+    - TLS certificate verification may be failing despite InsecureSkipVerify
+    - QUIC handshake might need additional configuration
+    - Network-level UDP packet delivery issue in test environment
+    - ServerName matching or certificate SAN requirements
+    - Context cancellation or deadline issues
   - **Test scenario** (from `docs/TROUBLESHOOT.md` pattern):
     ```bash
     # Terminal 1: Start master listener with UDP

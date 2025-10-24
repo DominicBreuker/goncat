@@ -92,6 +92,7 @@ func (s *Server) Serve() error {
 			tlsConfig = &tls.Config{
 				Certificates: []tls.Certificate{cert},
 				MinVersion:   tls.VersionTLS13,
+				NextProtos:   []string{"goncat-quic"},
 			}
 			if s.cfg.GetKey() != "" {
 				tlsConfig.ClientAuth = tls.RequireAndVerifyClientCert
@@ -106,6 +107,7 @@ func (s *Server) Serve() error {
 			tlsConfig = &tls.Config{
 				Certificates:       []tls.Certificate{cert},
 				MinVersion:         tls.VersionTLS13,
+				NextProtos:         []string{"goncat-quic"},
 				InsecureSkipVerify: true, // Accept any client cert when no key is set
 			}
 		}

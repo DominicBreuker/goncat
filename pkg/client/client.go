@@ -104,6 +104,7 @@ func (c *Client) connect(deps *dependencies) error {
 				RootCAs:            caCert,
 				ServerName:         "goncat",
 				MinVersion:         tls.VersionTLS13,
+				NextProtos:         []string{"goncat-quic"},
 				InsecureSkipVerify: c.cfg.GetKey() == "", // Skip verify if no key
 			}
 		} else {
@@ -116,6 +117,7 @@ func (c *Client) connect(deps *dependencies) error {
 				Certificates:       []tls.Certificate{cert},
 				ServerName:         "goncat",
 				MinVersion:         tls.VersionTLS13,
+				NextProtos:         []string{"goncat-quic"},
 				InsecureSkipVerify: true, // Accept any server cert when no key
 			}
 		}
