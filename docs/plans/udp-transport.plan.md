@@ -105,7 +105,7 @@ The implementation follows the existing architecture pattern where transports ar
     - `goncat --help` displays updated text
   - **Completed**: Updated GetBaseDescription() to include udp. Verified help text displays correctly.
 
-- [ ] Step 5: Create QUIC stream adapter (StreamConn)
+- [x] Step 5: Create QUIC stream adapter (StreamConn)
   - **Task**: Create a `StreamConn` type that wraps a QUIC stream and implements the `net.Conn` interface. This adapter makes a QUIC stream behave like a network connection.
   - **Files**: 
     - `pkg/transport/udp/streamconn.go` (new file):
@@ -181,8 +181,9 @@ The implementation follows the existing architecture pattern where transports ar
     - Compiler confirms interface compliance
     - Unit tests verify each method delegates correctly to underlying stream
     - Code passes `go vet` and linters
+  - **Completed**: Created StreamConn adapter in pkg/transport/udp/streamconn.go. Test confirms net.Conn interface compliance.
 
-- [ ] Step 6: Create UDP listener
+- [x] Step 6: Create UDP listener
   - **Task**: Create a UDP listener that accepts QUIC connections and returns StreamConn instances. The listener creates a UDP socket, wraps it in a QUIC transport, and accepts QUIC connections, then opens a bidirectional stream on each connection.
   - **Files**: 
     - `pkg/transport/udp/listener.go` (new file):
@@ -333,8 +334,9 @@ The implementation follows the existing architecture pattern where transports ar
     - Single connection semaphore works correctly
     - Unit tests verify listener behavior
     - Code passes linters
+  - **Completed**: Created UDP listener in pkg/transport/udp/listener.go. Uses QUIC transport over UDP socket with semaphore for single connection handling.
 
-- [ ] Step 7: Create UDP dialer
+- [x] Step 7: Create UDP dialer
   - **Task**: Create a UDP dialer that establishes QUIC connections and returns StreamConn instances. The dialer creates a UDP socket, wraps it in a QUIC transport, dials the remote address, and opens a bidirectional stream.
   - **Files**: 
     - `pkg/transport/udp/dialer.go` (new file):
@@ -425,6 +427,7 @@ The implementation follows the existing architecture pattern where transports ar
     - Dialer opens a stream and returns StreamConn
     - Unit tests verify dialer behavior
     - Code passes linters
+  - **Completed**: Created UDP dialer in pkg/transport/udp/dialer.go. Establishes QUIC connection and opens bidirectional stream.
 
 - [ ] Step 8: Integrate UDP transport into server
   - **Task**: Update the server package to recognize ProtoUDP and create UDP listeners. This involves updating the switch statement in the Serve method to handle UDP transport.
