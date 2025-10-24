@@ -16,7 +16,7 @@ The implementation follows the existing architecture pattern where transports ar
 
 ## Implementation plan
 
-- [ ] Step 1: Add quic-go dependency
+- [x] Step 1: Add quic-go dependency
   - **Task**: Add the `github.com/quic-go/quic-go` library to the project dependencies using `go get` and update documentation
   - **Files**: 
     - `go.mod`: Add `github.com/quic-go/quic-go` dependency (use latest stable version, likely v0.5x)
@@ -26,8 +26,9 @@ The implementation follows the existing architecture pattern where transports ar
     - `go.mod` contains the quic-go dependency
     - `go mod tidy` runs successfully
     - `go build` completes without errors
+  - **Completed**: Added `github.com/quic-go/quic-go v0.55.0` dependency. Build and tidy successful.
 
-- [ ] Step 2: Add UDP protocol constant
+- [x] Step 2: Add UDP protocol constant
   - **Task**: Add `ProtoUDP` constant to the Protocol type in the config package and update related helper functions
   - **Files**: 
     - `pkg/config/config.go`:
@@ -60,8 +61,9 @@ The implementation follows the existing architecture pattern where transports ar
     - `ProtoUDP` constant is defined with value 4
     - `Protocol.String()` method returns "udp" for `ProtoUDP`
     - Existing tests still pass
+  - **Completed**: Added ProtoUDP constant with value 4 and updated String() method. All config tests pass.
 
-- [ ] Step 3: Update transport parser
+- [x] Step 3: Update transport parser
   - **Task**: Update the `ParseTransport` function to recognize "udp://" URLs
   - **Files**: 
     - `cmd/shared/parsers.go`:
@@ -84,8 +86,9 @@ The implementation follows the existing architecture pattern where transports ar
     - Parser returns `ProtoUDP` for UDP URLs
     - Unit tests for UDP parsing pass
     - All existing parser tests still pass
+  - **Completed**: Updated regex to include udp, added udp case, updated error message, added 2 UDP test cases. All tests pass.
 
-- [ ] Step 4: Update CLI help text
+- [x] Step 4: Update CLI help text
   - **Task**: Update command descriptions and help text to mention UDP support
   - **Files**: 
     - `cmd/shared/shared.go`:
@@ -100,6 +103,7 @@ The implementation follows the existing architecture pattern where transports ar
   - **Definition of done**: 
     - Help text shows "tcp|ws|wss|udp" as supported protocols
     - `goncat --help` displays updated text
+  - **Completed**: Updated GetBaseDescription() to include udp. Verified help text displays correctly.
 
 - [ ] Step 5: Create QUIC stream adapter (StreamConn)
   - **Task**: Create a `StreamConn` type that wraps a QUIC stream and implements the `net.Conn` interface. This adapter makes a QUIC stream behave like a network connection.

@@ -31,6 +31,7 @@ const (
 	ProtoTCP = 1 // ProtoTCP represents plain TCP protocol
 	ProtoWS  = 2 // ProtoWS represents WebSocket protocol without TLS
 	ProtoWSS = 3 // ProtoWSS represents WebSocket protocol with TLS
+	ProtoUDP = 4 // ProtoUDP represents UDP protocol with QUIC
 )
 
 // String returns the string representation of the Protocol.
@@ -42,6 +43,8 @@ func (p Protocol) String() string {
 		return "ws"
 	case ProtoWSS:
 		return "wss"
+	case ProtoUDP:
+		return "udp"
 	default:
 		return ""
 	}
