@@ -13,6 +13,7 @@ import (
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/transport"
 	"dominicbreuker/goncat/pkg/transport/tcp"
+	"dominicbreuker/goncat/pkg/transport/udp"
 	"dominicbreuker/goncat/pkg/transport/ws"
 )
 
@@ -26,6 +27,9 @@ type Server struct {
 func New(ctx context.Context, cfg *config.Shared, handle transport.Handler) (*Server, error) {
 	s := &Server{ctx: ctx, cfg: cfg}
 
+	// Wrap handler with application-level TLS if --ssl is set.
+	// This applies to all transports: TCP, WS, WSS, and UDP.
+	// WebSocket (wss) and UDP already have transport-level TLS, but app-level TLS is separate.
 	if cfg.SSL {
 		caCert, cert, err := crypto.GenerateCertificates(cfg.GetKey())
 		if err != nil {
@@ -77,6 +81,10 @@ func (s *Server) Serve() error {
 	switch s.cfg.Protocol {
 	case config.ProtoWS, config.ProtoWSS:
 		l, err = ws.NewListener(s.ctx, addr, s.cfg.Protocol == config.ProtoWSS)
+	case config.ProtoUDP:
+		// UDP/QUIC handles transport-level TLS internally (like WebSocket wss)
+		// Application-level TLS (--ssl) is applied via handler wrapper in New()
+		l, err = udp.NewListener(s.ctx, addr, s.cfg.Timeout)
 	default:
 		l, err = tcp.NewListener(addr, s.cfg.Deps)
 	}

@@ -11,6 +11,7 @@ Tests are organized by feature:
 - `socks/` - SOCKS proxy tests
   - `connect/` - SOCKS5 CONNECT tests
   - `associate/` - SOCKS5 UDP ASSOCIATE tests
+- `udp/` - UDP transport tests with QUIC protocol
 
 ## Key Features
 

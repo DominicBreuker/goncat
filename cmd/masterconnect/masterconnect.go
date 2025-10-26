@@ -20,7 +20,12 @@ func GetCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "connect",
 		Usage: "Connect to a remote host",
-		Action: func(ctx context.Context, cmd *cli.Command) error {
+		Action: func(parent context.Context, cmd *cli.Command) error {
+			ctx, cancel := context.WithCancel(parent)
+			defer cancel()
+
+			shared.SetupSignalHandling(cancel)
+
 			args := cmd.Args()
 			if args.Len() != 1 {
 				return fmt.Errorf("must provide exactly one argument, got %d (%s)", args.Len(), strings.Join(args.Slice(), ", "))

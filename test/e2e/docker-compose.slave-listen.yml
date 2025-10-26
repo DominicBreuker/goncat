@@ -11,7 +11,7 @@ services:
     volumes:
       - ../../dist:/opt/dist:ro
     healthcheck:
-      test: ["CMD-SHELL", "netstat -an | grep 8080 | grep LISTEN"] 
+      test: ["CMD-SHELL", "netstat -an | grep 8080 | grep -E 'LISTEN|udp'"] 
       interval: 5s
       timeout: 3s
       retries: 3
@@ -32,7 +32,7 @@ services:
     volumes:
       - ../../dist:/opt/dist:ro
     healthcheck:
-      test: ["CMD-SHELL", "netstat -an | grep 8080 | grep LISTEN"] 
+      test: ["CMD-SHELL", "netstat -an | grep 8080 | grep -E 'LISTEN|udp'"] 
       interval: 5s
       timeout: 3s
       retries: 3
@@ -55,7 +55,7 @@ services:
     volumes:
       - ../../dist:/opt/dist:ro
     healthcheck:
-      test: ["CMD-SHELL", "netstat -an | grep 8080 | grep LISTEN"] 
+      test: ["CMD-SHELL", "netstat -an | grep 8080 | grep -E 'LISTEN|udp'"] 
       interval: 5s
       timeout: 3s
       retries: 3

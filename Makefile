@@ -75,6 +75,8 @@ test-e2e: build-linux
 	TRANSPORT='ws' TEST_SET='master-connect' docker compose -f test/e2e/docker-compose.slave-listen.yml up --exit-code-from master
 	@echo ""
 	TRANSPORT='wss' TEST_SET='master-connect' docker compose -f test/e2e/docker-compose.slave-listen.yml up --exit-code-from master
+	# @echo ""
+	# TRANSPORT='udp' TEST_SET='master-connect' docker compose -f test/e2e/docker-compose.slave-listen.yml up --exit-code-from master
 	@echo ""
 	@echo "### ############################## ###"
 	@echo "### Testing reverse shell features ###"
@@ -85,3 +87,5 @@ test-e2e: build-linux
 	TRANSPORT='ws' TEST_SET='master-listen' docker compose -f test/e2e/docker-compose.slave-connect.yml up --exit-code-from master
 	@echo ""
 	TRANSPORT='wss' TEST_SET='master-listen' docker compose -f test/e2e/docker-compose.slave-connect.yml up --exit-code-from master
+	# @echo ""
+	# TRANSPORT='udp' TEST_SET='master-listen' docker compose -f test/e2e/docker-compose.slave-connect.yml up --exit-code-from master
