@@ -1,0 +1,784 @@
+# Plan for UDP Port Forwarding
+
+Add support for UDP port forwarding in addition to the existing TCP port forwarding. Users will be able to specify the protocol (TCP or UDP) using an optional prefix in the port forwarding specification syntax.
+
+## Overview
+
+Currently, goncat only supports TCP port forwarding via the `-L` (local) and `-R` (remote) flags. This task adds UDP port forwarding capability with a new syntax that allows users to explicitly choose between TCP and UDP protocols. The syntax will be:
+
+- **Current (TCP only)**: `-L 8080:127.0.0.1:9000` → TCP forwarding (implicit)
+- **New explicit TCP**: `-L T:8080:127.0.0.1:9000` or `-L t:8080:127.0.0.1:9000` → TCP forwarding (explicit)
+- **New UDP**: `-L U:8080:127.0.0.1:9000` or `-L u:8080:127.0.0.1:9000` → UDP forwarding
+
+The same syntax applies to remote port forwarding (`-R`). The protocol prefix is case-insensitive.
+
+## Implementation plan
+
+- [ ] Step 1: Add protocol type to port forwarding configuration
+  - **Task**: Extend the port forwarding configuration structures to include a protocol field (TCP or UDP), with TCP as the default for backward compatibility
+  - **Files**:
+    - `pkg/config/portfwd.go`: Add `Protocol` field to `portForwardingCfg` struct
+      ```go
+      type portForwardingCfg struct {
+          Protocol   string // "tcp" or "udp", default "tcp"
+          LocalHost  string
+          LocalPort  int
+          RemoteHost string
+          RemotePort int
+          spec       string
+          parsingErr error
+      }
+      ```
+    - Update `String()` methods for `LocalPortForwardingCfg` and `RemotePortForwardingCfg` to include protocol
+    - Update `newLocalPortForwardingCfg()` parser to extract optional protocol prefix:
+      ```go
+      // Parse optional protocol prefix (T: or U: or t: or u:)
+      if strings.Contains(spec, ":") {
+          parts := strings.SplitN(spec, ":", 2)
+          firstPart := strings.ToUpper(strings.TrimSpace(parts[0]))
+          if firstPart == "T" || firstPart == "U" {
+              out.Protocol = map[string]string{"T": "tcp", "U": "udp"}[firstPart]
+              spec = parts[1] // Continue parsing remainder
+          } else {
+              out.Protocol = "tcp" // Default
+          }
+      } else {
+          out.Protocol = "tcp" // Default when no colons at all
+      }
+      ```
+  - **Dependencies**: None
+  - **Definition of done**: 
+    - `portForwardingCfg` has `Protocol` field with default value "tcp"
+    - Parser correctly extracts protocol prefix (T:/U:/t:/u:) or defaults to "tcp"
+    - String representation includes protocol (e.g., "T:8080:host:9000")
+    - Existing tests pass with "tcp" default
+    - New unit tests verify protocol parsing for all cases
+
+- [ ] Step 2: Add UDP listener support to portfwd server
+  - **Task**: Modify the port forwarding server to support UDP listeners in addition to TCP, based on the configured protocol
+  - **Files**:
+    - `pkg/config/dependencies.go`: Add `UDPListenerFunc` type similar to `TCPListenerFunc`
+      ```go
+      type UDPListenerFunc func(network string, laddr *net.UDPAddr) (*net.UDPConn, error)
+      
+      func GetUDPListenerFunc(deps *Dependencies) UDPListenerFunc {
+          if deps != nil && deps.UDPListenerFunc != nil {
+              return deps.UDPListenerFunc
+          }
+          return func(network string, laddr *net.UDPAddr) (*net.UDPConn, error) {
+              return net.ListenUDP(network, laddr)
+          }
+      }
+      ```
+    - `pkg/handler/portfwd/server.go`: Update `Server` struct and `Handle()` method
+      ```go
+      type Server struct {
+          ctx           context.Context
+          cfg           Config
+          sessCtl       ServerControlSession
+          tcpListenerFn config.TCPListenerFunc
+          udpListenerFn config.UDPListenerFunc  // Add this
+      }
+      
+      // In Handle() method, branch based on cfg.Protocol:
+      func (srv *Server) Handle() error {
+          switch srv.cfg.Protocol {
+          case "tcp":
+              return srv.handleTCP()
+          case "udp":
+              return srv.handleUDP()
+          default:
+              return fmt.Errorf("unsupported protocol: %s", srv.cfg.Protocol)
+          }
+      }
+      
+      // Extract existing TCP logic to handleTCP()
+      func (srv *Server) handleTCP() error {
+          // ... existing TCP listener logic ...
+      }
+      
+      // New UDP handler
+      func (srv *Server) handleUDP() error {
+          // Create UDP listener
+          // Read datagrams in loop
+          // For each datagram, open yamux stream, send Connect message, forward data
+          // Handle bidirectional UDP communication
+      }
+      ```
+    - **UDP Forwarding Strategy**: For UDP, we need to handle stateless datagrams differently than TCP streams:
+      - Maintain a map of `clientAddr -> yamux.Stream` to track active UDP "sessions"
+      - When receiving a datagram from a new client address, open new yamux stream
+      - Reuse existing streams for subsequent datagrams from same client
+      - Implement timeout-based cleanup of idle UDP sessions (e.g., 60 seconds)
+  - **Dependencies**: Step 1
+  - **Definition of done**: 
+    - Server can create UDP listeners when protocol is "udp"
+    - UDP datagrams are read and forwarded through yamux streams
+    - Multiple UDP clients can be handled concurrently
+    - Context cancellation properly closes UDP listeners and streams
+    - Unit tests verify UDP server behavior with mocked network
+
+- [ ] Step 3: Add UDP dialer support to portfwd client
+  - **Task**: Modify the port forwarding client to support UDP connections in addition to TCP
+  - **Files**:
+    - `pkg/config/dependencies.go`: Add `UDPDialerFunc` type
+      ```go
+      type UDPDialerFunc func(ctx context.Context, network string, laddr, raddr *net.UDPAddr) (*net.UDPConn, error)
+      
+      func GetUDPDialerFunc(deps *Dependencies) UDPDialerFunc {
+          if deps != nil && deps.UDPDialerFunc != nil {
+              return deps.UDPDialerFunc
+          }
+          return func(ctx context.Context, network string, laddr, raddr *net.UDPAddr) (*net.UDPConn, error) {
+              d := net.Dialer{Timeout: 10 * time.Second}
+              conn, err := d.DialContext(ctx, network, raddr.String())
+              if err != nil {
+                  return nil, err
+              }
+              return conn.(*net.UDPConn), nil
+          }
+      }
+      ```
+    - `pkg/handler/portfwd/client.go`: Update `Client` struct and `Handle()` method
+      ```go
+      type Client struct {
+          ctx         context.Context
+          m           msg.Connect
+          sessCtl     ClientControlSession
+          tcpDialerFn config.TCPDialerFunc
+          udpDialerFn config.UDPDialerFunc  // Add this
+      }
+      
+      // In Handle() method, branch based on protocol:
+      func (h *Client) Handle() error {
+          // Determine protocol from message (needs msg.Connect update)
+          switch h.m.Protocol {
+          case "tcp", "":  // empty defaults to tcp for backward compat
+              return h.handleTCP()
+          case "udp":
+              return h.handleUDP()
+          default:
+              return fmt.Errorf("unsupported protocol: %s", h.m.Protocol)
+          }
+      }
+      
+      // Extract existing TCP logic
+      func (h *Client) handleTCP() error {
+          // ... existing TCP dial logic ...
+      }
+      
+      // New UDP handler
+      func (h *Client) handleUDP() error {
+          // Dial UDP connection to destination
+          // Read from yamux stream, write to UDP
+          // Read from UDP, write to yamux stream
+          // Handle bidirectional communication
+      }
+      ```
+  - **Dependencies**: Step 1
+  - **Definition of done**: 
+    - Client can create UDP connections when protocol is "udp"
+    - UDP datagrams are forwarded bidirectionally between yamux stream and destination
+    - Context cancellation properly closes UDP connections
+    - Unit tests verify UDP client behavior
+
+- [ ] Step 4: Update control message to include protocol
+  - **Task**: Extend the `msg.Connect` message to include the protocol field so the slave knows whether to dial TCP or UDP
+  - **Files**:
+    - `pkg/mux/msg/msg.go`: Add `Protocol` field to `Connect` message
+      ```go
+      type Connect struct {
+          Protocol   string  // "tcp" or "udp", defaults to "tcp" if empty
+          RemoteHost string
+          RemotePort int
+      }
+      ```
+    - `pkg/handler/master/portfwd.go`: Update to include protocol in Connect messages
+    - `pkg/handler/slave/portfwd.go`: Update to extract protocol from Connect messages
+  - **Dependencies**: Steps 1, 2, 3
+  - **Definition of done**: 
+    - Connect message includes Protocol field
+    - Master sends protocol in Connect messages based on configuration
+    - Slave receives and respects protocol when establishing connections
+    - Backward compatibility maintained (empty protocol defaults to "tcp")
+    - Unit tests verify message serialization/deserialization
+
+- [ ] Step 5: Update timeout handling for UDP
+  - **Task**: Ensure all UDP operations respect the `--timeout` flag for read/write operations and connection lifetimes
+  - **Files**:
+    - `pkg/handler/portfwd/server.go`: In `handleUDP()`, set deadlines on UDP socket operations
+      ```go
+      // Set read deadline for each ReadFrom operation
+      deadline := time.Now().Add(timeout)
+      conn.SetReadDeadline(deadline)
+      
+      // For UDP session map, track last activity and cleanup idle sessions
+      type udpSession struct {
+          stream     net.Conn
+          lastActive time.Time
+      }
+      
+      // Background goroutine to cleanup sessions idle > timeout
+      go func() {
+          ticker := time.NewTicker(timeout / 2)
+          for {
+              select {
+              case <-ticker.C:
+                  srv.cleanupIdleSessions(timeout)
+              case <-srv.ctx.Done():
+                  return
+              }
+          }
+      }()
+      ```
+    - `pkg/handler/portfwd/client.go`: In `handleUDP()`, set deadlines on UDP operations
+  - **Dependencies**: Steps 2, 3
+  - **Definition of done**: 
+    - All UDP read operations use timeout from config
+    - Idle UDP sessions are cleaned up after timeout period
+    - Context cancellation properly terminates all timeout goroutines
+    - No goroutine leaks
+
+- [ ] Step 6: Update port forwarding config to pass protocol to handlers
+  - **Task**: Update the configuration structures passed to port forwarding handlers to include the protocol field
+  - **Files**:
+    - `pkg/handler/portfwd/server.go`: Update `Config` struct
+      ```go
+      type Config struct {
+          Protocol   string // "tcp" or "udp"
+          LocalHost  string
+          LocalPort  int
+          RemoteHost string
+          RemotePort int
+      }
+      ```
+    - `pkg/handler/master/portfwd.go`: Pass protocol from `LocalPortForwardingCfg` to `Config`
+    - `pkg/handler/slave/portfwd.go`: Extract protocol from `msg.Connect` when creating handlers
+  - **Dependencies**: Steps 1, 4
+  - **Definition of done**: 
+    - Config struct has Protocol field
+    - Protocol flows from CLI flag through config to handlers
+    - All handler constructors updated to use new Config
+    - Existing TCP tests still pass
+
+- [ ] Step 7: Add unit tests for protocol parsing
+  - **Task**: Create comprehensive unit tests for the new protocol parsing logic in port forwarding specifications
+  - **Files**:
+    - `pkg/config/portfwd_test.go`: Add test cases
+      ```go
+      func TestProtocolParsing(t *testing.T) {
+          tests := []struct {
+              spec     string
+              protocol string
+              wantErr  bool
+          }{
+              {"8080:host:9000", "tcp", false},           // default
+              {"T:8080:host:9000", "tcp", false},         // explicit TCP
+              {"t:8080:host:9000", "tcp", false},         // lowercase
+              {"U:8080:host:9000", "udp", false},         // explicit UDP
+              {"u:8080:host:9000", "udp", false},         // lowercase
+              {"localhost:8080:host:9000", "tcp", false}, // with local host
+              {"T:localhost:8080:host:9000", "tcp", false},
+              {"U:localhost:8080:host:9000", "udp", false},
+              {"X:8080:host:9000", "tcp", true},          // invalid protocol
+          }
+          // ... test implementation
+      }
+      ```
+  - **Dependencies**: Step 1
+  - **Definition of done**: 
+    - All test cases pass
+    - Edge cases covered (case sensitivity, with/without local host)
+    - Invalid protocols properly rejected
+    - Code coverage for parsing logic > 90%
+
+- [ ] Step 8: Add integration tests for UDP port forwarding
+  - **Task**: Create integration tests that validate end-to-end UDP port forwarding through master-slave connections
+  - **Files**:
+    - `test/integration/portfwd/udp_test.go`: New test file
+      ```go
+      func TestUDPLocalPortForwarding(t *testing.T) {
+          // Setup mock network and dependencies
+          // Configure master with -L U:8080:target:9000
+          // Configure slave to connect
+          // Create UDP listener on target port 9000
+          // Send UDP datagram to port 8080
+          // Verify datagram arrives at target port 9000
+          // Verify response datagram returns correctly
+      }
+      
+      func TestUDPRemotePortForwarding(t *testing.T) {
+          // Test remote port forwarding with UDP
+      }
+      
+      func TestMixedProtocolForwarding(t *testing.T) {
+          // Test both TCP and UDP forwarding simultaneously
+          // -L T:8080:host1:80 -L U:8081:host2:53
+      }
+      ```
+  - **Dependencies**: Steps 1-6
+  - **Definition of done**: 
+    - Integration tests for UDP local forwarding pass
+    - Integration tests for UDP remote forwarding pass
+    - Tests verify bidirectional UDP communication
+    - Tests use mocked network (no real UDP sockets in tests)
+    - All tests complete within reasonable time (< 5 seconds)
+
+- [ ] Step 9: Run linters and fix issues
+  - **Task**: Run all project linters and fix any issues introduced by UDP port forwarding implementation
+  - **Commands**:
+    ```bash
+    make fmt           # Auto-format
+    make vet           # Static analysis
+    make staticcheck   # Additional linting
+    make lint          # All linters
+    ```
+  - **Dependencies**: Steps 1-8
+  - **Definition of done**: 
+    - `make lint` passes without errors
+    - No new vet or staticcheck warnings
+    - All code properly formatted
+    - godoc comments added for new public functions/types
+
+- [ ] Step 10: Run unit and integration tests
+  - **Task**: Execute full test suite to ensure no regressions and new features work correctly
+  - **Commands**:
+    ```bash
+    make test-unit              # Unit tests
+    make test-integration       # Integration tests
+    go test -race ./...         # Race detection
+    ```
+  - **Dependencies**: Steps 1-9
+  - **Definition of done**: 
+    - All unit tests pass (including new UDP tests)
+    - All integration tests pass
+    - No race conditions detected
+    - Test coverage maintained or improved
+
+- [ ] Step 11: Build binaries
+  - **Task**: Build goncat binaries to ensure UDP port forwarding compiles for all platforms
+  - **Commands**:
+    ```bash
+    rm -rf dist/
+    make build-linux   # Fast build for testing (~11 seconds)
+    # OR
+    make build         # All platforms (~30-40 seconds)
+    ```
+  - **Dependencies**: Steps 1-10
+  - **Definition of done**: 
+    - Binary builds successfully
+    - Binary size remains ~9-10MB
+    - `./dist/goncat.elf --help` shows updated help text
+    - Version command works
+
+- [ ] Step 12: Manual verification - TCP port forwarding still works
+  - **Task**: **CRITICAL MANUAL VERIFICATION** - Verify existing TCP port forwarding functionality is not broken by UDP additions. This ensures backward compatibility.
+  - **Test scenario** (from `docs/TROUBLESHOOT.md`):
+    ```bash
+    # Setup: Create HTTP server on port 9999
+    python3 -m http.server 9999 &
+    HTTP_PID=$!
+    
+    # Terminal 1: Master with TCP local port forwarding (implicit)
+    ./dist/goncat.elf master listen 'tcp://*:12345' --exec /bin/sh -L 8888:localhost:9999 &
+    MASTER_PID=$!
+    
+    # Terminal 2: Slave
+    ./dist/goncat.elf slave connect tcp://localhost:12345 &
+    SLAVE_PID=$!
+    
+    sleep 3
+    
+    # Test forwarded port
+    curl -s http://localhost:8888/ | head -5
+    
+    # Expected: HTTP server responds through TCP tunnel (should see HTML)
+    
+    # Cleanup
+    kill $HTTP_PID $MASTER_PID $SLAVE_PID 2>/dev/null
+    pkill -9 goncat.elf 2>/dev/null
+    ```
+  - **Validation**:
+    - Connection establishes successfully
+    - HTTP request goes through the tunnel
+    - Response is received correctly
+    - No error messages
+  - **Dependencies**: Step 11
+  - **Definition of done**: 
+    - TCP port forwarding works exactly as before
+    - All validation steps pass
+    - **IF TEST FAILS**: Do NOT proceed - fix the regression first
+
+- [ ] Step 13: Manual verification - Explicit TCP port forwarding
+  - **Task**: **CRITICAL MANUAL VERIFICATION** - Test the new explicit TCP syntax (T: prefix) to ensure it works identically to implicit TCP
+  - **Test scenario**:
+    ```bash
+    # Setup: HTTP server
+    python3 -m http.server 9998 &
+    HTTP_PID=$!
+    
+    # Terminal 1: Master with EXPLICIT TCP forwarding
+    ./dist/goncat.elf master listen 'tcp://*:12346' --exec /bin/sh -L T:8887:localhost:9998 &
+    MASTER_PID=$!
+    
+    # Terminal 2: Slave
+    ./dist/goncat.elf slave connect tcp://localhost:12346 &
+    SLAVE_PID=$!
+    
+    sleep 3
+    
+    # Test
+    curl -s http://localhost:8887/ | head -5
+    
+    # Also test lowercase 't:'
+    kill $MASTER_PID $SLAVE_PID 2>/dev/null
+    
+    ./dist/goncat.elf master listen 'tcp://*:12346' --exec /bin/sh -L t:8886:localhost:9998 &
+    MASTER_PID=$!
+    
+    ./dist/goncat.elf slave connect tcp://localhost:12346 &
+    SLAVE_PID=$!
+    
+    sleep 3
+    
+    curl -s http://localhost:8886/ | head -5
+    
+    # Cleanup
+    kill $HTTP_PID $MASTER_PID $SLAVE_PID 2>/dev/null
+    pkill -9 goncat.elf 2>/dev/null
+    ```
+  - **Dependencies**: Step 11
+  - **Definition of done**: 
+    - Explicit `T:` syntax works
+    - Lowercase `t:` syntax works (case insensitive)
+    - Both produce same results as implicit TCP
+    - **IF TEST FAILS**: Debug and fix before continuing
+
+- [ ] Step 14: Manual verification - UDP port forwarding
+  - **Task**: **CRITICAL MANUAL VERIFICATION** - Test UDP port forwarding with a real UDP service to ensure datagrams are forwarded correctly in both directions
+  - **Test scenario**:
+    ```bash
+    # Setup: Create simple UDP echo server on port 9997
+    # Using netcat as UDP echo server
+    nc -u -l 9997 &
+    UDP_SERVER_PID=$!
+    
+    # Terminal 1: Master with UDP local port forwarding
+    ./dist/goncat.elf master listen 'tcp://*:12347' --exec /bin/sh -L U:8885:localhost:9997 &
+    MASTER_PID=$!
+    
+    # Terminal 2: Slave
+    ./dist/goncat.elf slave connect tcp://localhost:12347 &
+    SLAVE_PID=$!
+    
+    sleep 3
+    
+    # Test UDP forwarding with netcat client
+    echo "UDP_TEST_MESSAGE" | nc -u -w1 localhost 8885
+    
+    # Expected: Message should be received by UDP server on port 9997
+    # and any response should come back through the tunnel
+    
+    # Also test lowercase 'u:'
+    kill $MASTER_PID $SLAVE_PID 2>/dev/null
+    
+    ./dist/goncat.elf master listen 'tcp://*:12347' --exec /bin/sh -L u:8884:localhost:9997 &
+    MASTER_PID=$!
+    
+    ./dist/goncat.elf slave connect tcp://localhost:12347 &
+    SLAVE_PID=$!
+    
+    sleep 3
+    
+    echo "UDP_TEST_LOWERCASE" | nc -u -w1 localhost 8884
+    
+    # Cleanup
+    kill $UDP_SERVER_PID $MASTER_PID $SLAVE_PID 2>/dev/null
+    pkill -9 goncat.elf nc 2>/dev/null
+    ```
+  - **Validation**:
+    - UDP port 8885 opens on master side
+    - UDP datagrams sent to 8885 are forwarded through slave to 9997
+    - Responses (if any) return correctly
+    - Case-insensitive syntax works (U: and u:)
+    - No error messages about protocol mismatch
+  - **Dependencies**: Step 11
+  - **Definition of done**: 
+    - UDP forwarding works in both directions
+    - Case insensitivity verified
+    - All validation steps pass
+    - **IF TEST FAILS**: Use debug print statements to trace datagram flow, fix issues before proceeding
+
+- [ ] Step 15: Manual verification - UDP remote port forwarding
+  - **Task**: **MANUAL VERIFICATION** - Test UDP remote port forwarding (-R flag) to ensure it works symmetrically
+  - **Test scenario**:
+    ```bash
+    # Setup: UDP echo server on master side, port 9996
+    nc -u -l 9996 &
+    UDP_SERVER_PID=$!
+    
+    # Terminal 1: Master with UDP remote port forwarding
+    ./dist/goncat.elf master listen 'tcp://*:12348' --exec /bin/sh -R U:8883:localhost:9996 &
+    MASTER_PID=$!
+    
+    # Terminal 2: Slave
+    ./dist/goncat.elf slave connect tcp://localhost:12348 &
+    SLAVE_PID=$!
+    
+    sleep 3
+    
+    # Test: Send UDP from slave side (simulated on same machine) to port 8883
+    # This should tunnel back to master's localhost:9996
+    echo "REMOTE_UDP_TEST" | nc -u -w1 localhost 8883
+    
+    # Cleanup
+    kill $UDP_SERVER_PID $MASTER_PID $SLAVE_PID 2>/dev/null
+    pkill -9 goncat.elf nc 2>/dev/null
+    ```
+  - **Dependencies**: Step 14
+  - **Definition of done**: 
+    - Remote UDP forwarding opens port on slave side
+    - UDP datagrams tunnel back to master correctly
+    - Bidirectional communication works
+
+- [ ] Step 16: Manual verification - Mixed TCP and UDP forwarding
+  - **Task**: **MANUAL VERIFICATION** - Test simultaneous TCP and UDP port forwarding to ensure they don't interfere
+  - **Test scenario**:
+    ```bash
+    # Setup: HTTP server on 9995 and UDP server on 9994
+    python3 -m http.server 9995 &
+    HTTP_PID=$!
+    nc -u -l 9994 &
+    UDP_PID=$!
+    
+    # Master with BOTH TCP and UDP forwarding
+    ./dist/goncat.elf master listen 'tcp://*:12349' --exec /bin/sh \
+      -L T:8882:localhost:9995 \
+      -L U:8881:localhost:9994 &
+    MASTER_PID=$!
+    
+    # Slave
+    ./dist/goncat.elf slave connect tcp://localhost:12349 &
+    SLAVE_PID=$!
+    
+    sleep 3
+    
+    # Test TCP forward
+    curl -s http://localhost:8882/ | head -3
+    
+    # Test UDP forward
+    echo "MIXED_TEST" | nc -u -w1 localhost 8881
+    
+    # Cleanup
+    kill $HTTP_PID $UDP_PID $MASTER_PID $SLAVE_PID 2>/dev/null
+    pkill -9 goncat.elf nc python3 2>/dev/null
+    ```
+  - **Dependencies**: Steps 14, 15
+  - **Definition of done**: 
+    - Both TCP and UDP forwards work simultaneously
+    - No interference between protocols
+    - Both protocols handle multiple requests correctly
+
+- [ ] Step 17: Update documentation
+  - **Task**: Update documentation to describe UDP port forwarding feature, syntax, and examples
+  - **Files**:
+    - `README.md`: Add UDP port forwarding to feature list
+    - `docs/USAGE.md`: Add comprehensive UDP port forwarding section
+      ```markdown
+      #### UDP Port Forwarding
+      
+      Port forwarding supports both TCP and UDP protocols. Specify the protocol using an optional prefix:
+      
+      - **TCP (default)**: `-L 8080:target:9000` or `-L T:8080:target:9000`
+      - **UDP**: `-L U:8080:target:9000`
+      
+      The protocol prefix is case-insensitive (`T` or `t`, `U` or `u`).
+      
+      **UDP Examples:**
+      
+      ```bash
+      # Forward DNS queries (UDP port 53)
+      goncat master listen 'tcp://*:12345' --exec /bin/sh -L U:5353:8.8.8.8:53
+      
+      # Mix TCP and UDP forwarding
+      goncat master listen 'tcp://*:12345' --exec /bin/sh \
+        -L T:8080:web-server:80 \
+        -L U:5353:dns-server:53
+      ```
+      
+      **Notes on UDP Forwarding:**
+      - UDP is stateless; each datagram is forwarded independently
+      - Idle UDP "sessions" are cleaned up after timeout period
+      - UDP forwarding works for protocols like DNS, TFTP, NTP, etc.
+      - Response datagrams are routed back to the original sender
+      ```
+    - `docs/TROUBLESHOOT.md`: Add UDP port forwarding verification steps
+    - `.github/copilot-instructions.md`: Note UDP port forwarding support
+  - **Dependencies**: Steps 12-16
+  - **Definition of done**: 
+    - All documentation updated with UDP examples
+    - Syntax clearly explained
+    - Limitations and notes documented
+    - Examples are practical and tested
+
+- [ ] Step 18: Add E2E test scenarios for UDP port forwarding
+  - **Task**: Add UDP port forwarding test cases to the end-to-end test suite
+  - **Files**:
+    - `test/e2e/test-port-forward-udp.sh`: New test script
+      ```bash
+      #!/bin/bash
+      # Test UDP port forwarding in E2E environment
+      # Setup UDP echo service
+      # Configure master/slave with UDP forwarding
+      # Send UDP datagrams
+      # Verify forwarding works
+      ```
+    - Update `test/e2e/docker-compose.*.yml` if needed for UDP port exposure
+    - Update `Makefile` test-e2e target to include UDP port forwarding tests
+  - **Dependencies**: Steps 1-17
+  - **Definition of done**: 
+    - E2E test script for UDP port forwarding exists
+    - Test runs successfully in Docker environment
+    - Test validates bidirectional UDP forwarding
+    - make test-e2e includes UDP port forwarding tests
+
+- [ ] Step 19: Commit and report progress
+  - **Task**: Commit all changes and create comprehensive PR description
+  - **Commit message**: "Add UDP port forwarding support with T:/U: protocol prefix"
+  - **PR description**:
+    ```markdown
+    ## UDP Port Forwarding Implementation
+    
+    Added UDP port forwarding capability alongside existing TCP support.
+    
+    ### Changes
+    - Extended port forwarding syntax with optional protocol prefix (T:/U:)
+    - Added UDP listener and dialer to port forwarding handlers
+    - Updated control messages to include protocol field
+    - Implemented UDP session tracking with timeout-based cleanup
+    - Added comprehensive tests for UDP forwarding
+    - Updated documentation with examples
+    
+    ### New Syntax
+    - `-L 8080:host:9000` → TCP (default, backward compatible)
+    - `-L T:8080:host:9000` → TCP (explicit)
+    - `-L U:8080:host:9000` → UDP (new)
+    - Protocol prefix is case-insensitive (t/T, u/U)
+    - Same syntax for `-R` remote forwarding
+    
+    ### Testing
+    - All unit tests pass
+    - All integration tests pass
+    - Manual verification completed:
+      - TCP forwarding (implicit and explicit)
+      - UDP forwarding (local and remote)
+      - Mixed TCP and UDP forwarding
+    - E2E tests added and passing
+    
+    ### Usage Examples
+    ```bash
+    # UDP DNS forwarding
+    goncat master listen 'tcp://*:12345' --exec /bin/sh -L U:5353:8.8.8.8:53
+    
+    # Mix TCP HTTP and UDP DNS
+    goncat master listen 'tcp://*:12345' --exec /bin/sh \
+      -L T:8080:web:80 \
+      -L U:5353:dns:53
+    ```
+    ```
+  - **Dependencies**: Steps 1-18
+  - **Definition of done**: 
+    - All changes committed
+    - PR description is comprehensive
+    - Progress reported with checklist
+
+- [ ] Step 20: Monitor CI pipeline
+  - **Task**: Ensure GitHub Actions CI passes for UDP port forwarding implementation
+  - **Expected**: All linters, tests (unit, integration, E2E), and builds pass
+  - **Dependencies**: Step 19
+  - **Definition of done**: 
+    - CI pipeline completes successfully
+    - All checks are green
+    - **IF CI FAILS**: Investigate, fix issues, and re-run
+
+## Key Technical Decisions
+
+### UDP Session Management
+- UDP is stateless, but we need to maintain "sessions" to route response datagrams back to the correct client
+- Solution: Maintain a map of `client-address -> yamux-stream` on the server side
+- Each unique client UDP address gets its own yamux stream
+- Sessions are cleaned up after idle timeout to prevent resource leaks
+
+### Protocol Encoding
+- Protocol prefix (T:/U:) is case-insensitive for user convenience
+- Default protocol is TCP for backward compatibility
+- Protocol is stored as lowercase string internally ("tcp" or "udp")
+- Protocol is transmitted in the `msg.Connect` message to the slave
+
+### Timeout Handling
+- UDP operations respect the global `--timeout` flag
+- Idle UDP sessions are cleaned up after timeout period
+- Each UDP datagram read operation has a deadline
+- Context cancellation terminates all UDP operations immediately
+
+### Datagram Forwarding
+- UDP datagrams are read from local socket and written to yamux stream
+- Yamux stream provides reliability for the tunnel itself
+- Remote side reads from yamux stream and writes to UDP socket
+- Bidirectional: responses follow the reverse path
+
+## Potential Issues and Mitigations
+
+### Issue: UDP datagram size limits
+- **Problem**: UDP datagrams can be up to 65,507 bytes, but MTU may be smaller
+- **Mitigation**: Let the OS handle fragmentation; document that large datagrams may not work reliably
+- **Note**: Most UDP protocols use small datagrams (< 1500 bytes)
+
+### Issue: UDP session tracking memory usage
+- **Problem**: Many UDP clients could create many sessions, consuming memory
+- **Mitigation**: Implement aggressive timeout-based cleanup (default 60 seconds)
+- **Mitigation**: Add session limit (e.g., max 1000 concurrent UDP sessions per forward)
+
+### Issue: Out-of-order datagrams
+- **Problem**: Yamux provides ordered stream, but UDP doesn't guarantee order
+- **Consideration**: This is acceptable - the tunnel provides reliability, not ordering
+- **Note**: UDP applications must handle their own ordering if needed
+
+### Issue: NAT and stateful firewalls
+- **Problem**: UDP NAT entries expire quickly
+- **Mitigation**: Send periodic keepalive packets if session is idle but not yet timed out
+- **Note**: Document this behavior in usage guide
+
+## Out of Scope
+
+- UDP multicast/broadcast forwarding (only unicast supported)
+- Custom UDP session timeout per forward (global timeout applies)
+- UDP connection tracking statistics
+- Performance optimization for high-throughput UDP (prioritize correctness first)
+- Zero-copy UDP forwarding
+
+## Success Criteria
+
+1. ✓ Protocol prefix syntax is parsed correctly (T:/U:, case-insensitive)
+2. ✓ TCP port forwarding still works (backward compatible)
+3. ✓ UDP port forwarding works for local (-L) and remote (-R)
+4. ✓ Multiple UDP clients can use the same forward simultaneously
+5. ✓ Idle UDP sessions are cleaned up properly (no leaks)
+6. ✓ Timeout configuration is respected
+7. ✓ All tests pass (unit, integration, E2E)
+8. ✓ Manual verification tests all pass
+9. ✓ Documentation is clear and includes examples
+10. ✓ CI pipeline passes
+
+## Timeline Estimate
+
+- Steps 1-6: ~2-3 hours (config, parsing, basic handler updates)
+- Steps 7-8: ~2-3 hours (testing)
+- Steps 9-11: ~30 minutes (linting, building)
+- Steps 12-16: ~3-4 hours (manual verification - cannot be rushed)
+- Steps 17-18: ~1-2 hours (documentation, E2E tests)
+- Steps 19-20: ~30 minutes (commit, CI)
+
+**Total estimated time**: 10-14 hours of focused development work
+
+**Note**: Manual verification steps (12-16) are critical and time-consuming. These ensure the implementation actually works in practice and must not be skipped. Add generous debug print statements during development and remove them only after verification succeeds.
