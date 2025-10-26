@@ -2,11 +2,13 @@ package udp
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"fmt"
 	"net"
 	"time"
 
+	"dominicbreuker/goncat/pkg/crypto"
 	quic "github.com/quic-go/quic-go"
 )
 
@@ -14,39 +16,55 @@ import (
 type Dialer struct {
 	remoteAddr *net.UDPAddr
 	timeout    time.Duration
-	tlsConfig  *tls.Config
 }
 
 // NewDialer creates a UDP+QUIC dialer for the specified remote address.
 // Parameters:
 // - addr: Remote address to connect to (e.g., "192.168.1.100:12345")
 // - timeout: MaxIdleTimeout for QUIC connection
-// - tlsConfig: TLS configuration (required by QUIC, must include ServerName and use TLS 1.3+)
-func NewDialer(addr string, timeout time.Duration, tlsConfig *tls.Config) (*Dialer, error) {
+//
+// Note: QUIC mandates TLS 1.3. An ephemeral certificate is generated internally.
+// Application-level TLS (--ssl, --key) is handled separately by the caller,
+// similar to how WebSocket (wss) handles transport-level TLS separately from app-level TLS.
+func NewDialer(addr string, timeout time.Duration) (*Dialer, error) {
 	// Parse UDP address
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("resolve udp addr: %w", err)
 	}
 
-	// Ensure TLS 1.3 (required by QUIC)
-	if tlsConfig.MinVersion < tls.VersionTLS13 {
-		tlsConfig.MinVersion = tls.VersionTLS13
-	}
-
 	return &Dialer{
 		remoteAddr: udpAddr,
 		timeout:    timeout,
-		tlsConfig:  tlsConfig,
 	}, nil
 }
 
 // Dial establishes a QUIC connection and opens a bidirectional stream.
+// QUIC requires TLS 1.3, so an ephemeral certificate is generated for the transport layer.
+// This is separate from any application-level TLS (--ssl, --key) that may be applied by the caller.
 func (d *Dialer) Dial(ctx context.Context) (net.Conn, error) {
 	// Create UDP socket (use system-assigned local port)
 	udpConn, err := net.ListenUDP("udp", nil)
 	if err != nil {
 		return nil, fmt.Errorf("listen udp: %w", err)
+	}
+
+	// Generate ephemeral TLS config for QUIC transport layer.
+	// Similar to how WebSocket (wss) handles its transport TLS internally.
+	// Application-level TLS (if --ssl/--key is set) will be applied on top.
+	key := rand.Text()
+	_, cert, err := crypto.GenerateCertificates(key)
+	if err != nil {
+		udpConn.Close()
+		return nil, fmt.Errorf("generate certificates: %w", err)
+	}
+
+	tlsConfig := &tls.Config{
+		Certificates:       []tls.Certificate{cert},
+		ServerName:         "goncat",
+		MinVersion:         tls.VersionTLS13,
+		NextProtos:         []string{"goncat-quic"},
+		InsecureSkipVerify: true, // Accept any server cert for transport layer
 	}
 
 	// Configure QUIC
@@ -65,7 +83,7 @@ func (d *Dialer) Dial(ctx context.Context) (net.Conn, error) {
 	tr := &quic.Transport{Conn: udpConn}
 
 	// Dial QUIC connection
-	conn, err := tr.Dial(ctx, d.remoteAddr, d.tlsConfig, quicConfig)
+	conn, err := tr.Dial(ctx, d.remoteAddr, tlsConfig, quicConfig)
 	if err != nil {
 		udpConn.Close()
 		return nil, fmt.Errorf("quic dial: %w", err)

@@ -24,7 +24,7 @@ import (
 type dependencies struct {
 	newTCPDialer func(string, *config.Dependencies) (transport.Dialer, error)
 	newWSDialer  func(context.Context, string, config.Protocol) transport.Dialer
-	newUDPDialer func(string, time.Duration, *tls.Config) (transport.Dialer, error)
+	newUDPDialer func(string, time.Duration) (transport.Dialer, error)
 	tlsUpgrader  func(net.Conn, string, time.Duration) (net.Conn, error)
 }
 
@@ -71,8 +71,8 @@ func (c *Client) Connect() error {
 		newWSDialer: func(ctx context.Context, addr string, proto config.Protocol) transport.Dialer {
 			return ws.NewDialer(ctx, addr, proto)
 		},
-		newUDPDialer: func(addr string, timeout time.Duration, tlsConfig *tls.Config) (transport.Dialer, error) {
-			return udp.NewDialer(addr, timeout, tlsConfig)
+		newUDPDialer: func(addr string, timeout time.Duration) (transport.Dialer, error) {
+			return udp.NewDialer(addr, timeout)
 		},
 		tlsUpgrader: upgradeToTLS,
 	}
@@ -91,39 +91,9 @@ func (c *Client) connect(deps *dependencies) error {
 	case config.ProtoWS, config.ProtoWSS:
 		d = deps.newWSDialer(c.ctx, addr, c.cfg.Protocol)
 	case config.ProtoUDP:
-		// For UDP/QUIC, TLS is required. Generate certificates based on config.
-		var tlsConfig *tls.Config
-		if c.cfg.SSL || c.cfg.GetKey() != "" {
-			// Use configured SSL settings with mutual auth if key is provided
-			caCert, cert, err := crypto.GenerateCertificates(c.cfg.GetKey())
-			if err != nil {
-				return fmt.Errorf("generate certificates: %w", err)
-			}
-			tlsConfig = &tls.Config{
-				Certificates: []tls.Certificate{cert},
-				RootCAs:      caCert,
-				ServerName:   "goncat",
-				MinVersion:   tls.VersionTLS13,
-				NextProtos:   []string{"goncat-quic"},
-				// For QUIC, we need InsecureSkipVerify because certificates don't have SANs
-				// Security is provided by the shared-key-based CA verification
-				InsecureSkipVerify: true,
-			}
-		} else {
-			// UDP/QUIC requires TLS even without --ssl flag
-			_, cert, err := crypto.GenerateCertificates("")
-			if err != nil {
-				return fmt.Errorf("generate certificates: %w", err)
-			}
-			tlsConfig = &tls.Config{
-				Certificates:       []tls.Certificate{cert},
-				ServerName:         "goncat",
-				MinVersion:         tls.VersionTLS13,
-				NextProtos:         []string{"goncat-quic"},
-				InsecureSkipVerify: true, // Accept any server cert when no key
-			}
-		}
-		d, err = deps.newUDPDialer(addr, c.cfg.Timeout, tlsConfig)
+		// UDP/QUIC handles transport-level TLS internally (like WebSocket wss)
+		// Application-level TLS (--ssl) will be applied after connection if needed
+		d, err = deps.newUDPDialer(addr, c.cfg.Timeout)
 		if err != nil {
 			return fmt.Errorf("create udp dialer: %w", err)
 		}
@@ -139,8 +109,10 @@ func (c *Client) connect(deps *dependencies) error {
 		return fmt.Errorf("dial: %w", err)
 	}
 
-	// For UDP, TLS is already handled by QUIC, so skip separate TLS upgrade
-	if c.cfg.SSL && c.cfg.Protocol != config.ProtoUDP {
+	// Apply application-level TLS upgrade if --ssl is set
+	// This happens for all transports: TCP, WS, WSS, and UDP
+	// (WS and UDP already have transport-level TLS, but app-level TLS is separate)
+	if c.cfg.SSL {
 		c.conn, err = deps.tlsUpgrader(c.conn, c.cfg.GetKey(), c.cfg.Timeout)
 		if err != nil {
 			return fmt.Errorf("upgrade to tls: %w", err)

@@ -2,6 +2,7 @@ package udp
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"fmt"
 	"net"
@@ -9,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"dominicbreuker/goncat/pkg/crypto"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/transport"
 	quic "github.com/quic-go/quic-go"
@@ -31,8 +33,11 @@ type Listener struct {
 // - ctx: Context for lifecycle management
 // - addr: Address to bind (e.g., "0.0.0.0:12345" or ":12345")
 // - timeout: MaxIdleTimeout for QUIC connections
-// - tlsConfig: TLS configuration (required by QUIC, must use TLS 1.3+)
-func NewListener(ctx context.Context, addr string, timeout time.Duration, tlsConfig *tls.Config) (*Listener, error) {
+//
+// Note: QUIC mandates TLS 1.3. An ephemeral certificate is generated internally for
+// the transport layer. Application-level TLS (--ssl, --key) is handled separately
+// by the caller, similar to how WebSocket (wss) handles transport-level TLS.
+func NewListener(ctx context.Context, addr string, timeout time.Duration) (*Listener, error) {
 	// Create UDP socket with SO_REUSEADDR for rapid port reuse (important for E2E tests)
 	lc := &net.ListenConfig{
 		Control: func(network, address string, c syscall.RawConn) error {
@@ -58,6 +63,22 @@ func NewListener(ctx context.Context, addr string, timeout time.Duration, tlsCon
 		return nil, fmt.Errorf("expected *net.UDPConn, got %T", packetConn)
 	}
 
+	// Generate ephemeral TLS config for QUIC transport layer.
+	// Similar to how WebSocket (wss) handles its transport TLS internally.
+	// Application-level TLS (if --ssl/--key is set) will be applied on top by the caller.
+	key := rand.Text()
+	_, cert, err := crypto.GenerateCertificates(key)
+	if err != nil {
+		udpConn.Close()
+		return nil, fmt.Errorf("generate certificates: %w", err)
+	}
+
+	tlsConfig := &tls.Config{
+		Certificates: []tls.Certificate{cert},
+		MinVersion:   tls.VersionTLS13,
+		NextProtos:   []string{"goncat-quic"},
+	}
+
 	// Configure QUIC
 	// MaxIdleTimeout should be longer than the timeout used for control operations
 	// to avoid premature connection closure. Use at least 30 seconds or 3x the timeout.
@@ -68,11 +89,6 @@ func NewListener(ctx context.Context, addr string, timeout time.Duration, tlsCon
 	quicConfig := &quic.Config{
 		MaxIdleTimeout:  maxIdleTimeout,
 		KeepAlivePeriod: maxIdleTimeout / 3, // Keep alive more frequently than idle timeout
-	}
-
-	// Ensure TLS 1.3 (required by QUIC)
-	if tlsConfig.MinVersion < tls.VersionTLS13 {
-		tlsConfig.MinVersion = tls.VersionTLS13
 	}
 
 	// Create QUIC transport and listener
