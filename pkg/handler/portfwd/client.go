@@ -47,7 +47,7 @@ func (h *Client) Handle() error {
 	if protocol == "" {
 		protocol = "tcp" // default to TCP for backward compatibility
 	}
-	
+
 	switch protocol {
 	case "tcp":
 		return h.handleTCP()

@@ -269,7 +269,7 @@ func (srv *Server) handleUDP() error {
 		// Handle this datagram in a goroutine to avoid blocking
 		go func(clientAddr net.Addr, data []byte) {
 			sessionKey := clientAddr.String()
-			
+
 			sessionsMu.Lock()
 			sess, exists := sessions[sessionKey]
 			if !exists {
@@ -279,14 +279,14 @@ func (srv *Server) handleUDP() error {
 					lastActive: time.Now(),
 					cancel:     cancel,
 				}
-				
+
 				// Open yamux stream for this client
 				m := msg.Connect{
 					Protocol:   "udp",
 					RemoteHost: srv.cfg.RemoteHost,
 					RemotePort: srv.cfg.RemotePort,
 				}
-				
+
 				stream, err := srv.sessCtl.SendAndGetOneChannelContext(ctx, m)
 				if err != nil {
 					sessionsMu.Unlock()
@@ -294,10 +294,10 @@ func (srv *Server) handleUDP() error {
 					log.ErrorMsg("UDP port forwarding %s: failed to open stream for %s: %s\n", srv.cfg, clientAddr, err)
 					return
 				}
-				
+
 				sess.stream = stream
 				sessions[sessionKey] = sess
-				
+
 				// Start goroutine to read responses and send back to client
 				go func() {
 					defer func() {
@@ -307,7 +307,7 @@ func (srv *Server) handleUDP() error {
 						stream.Close()
 						cancel()
 					}()
-					
+
 					respBuffer := make([]byte, 65536)
 					for {
 						n, err := stream.Read(respBuffer)
@@ -317,14 +317,14 @@ func (srv *Server) handleUDP() error {
 							}
 							return
 						}
-						
+
 						// Send response back to client
 						_, err = conn.WriteTo(respBuffer[:n], clientAddr)
 						if err != nil {
 							log.ErrorMsg("UDP port forwarding %s: WriteTo(%s): %s\n", srv.cfg, clientAddr, err)
 							return
 						}
-						
+
 						// Update last active time
 						sessionsMu.Lock()
 						if s, ok := sessions[sessionKey]; ok {
@@ -337,7 +337,7 @@ func (srv *Server) handleUDP() error {
 			sess.lastActive = time.Now()
 			stream := sess.stream
 			sessionsMu.Unlock()
-			
+
 			// Forward datagram to remote through yamux stream
 			_, err := stream.Write(data)
 			if err != nil {
