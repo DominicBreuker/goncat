@@ -9,6 +9,7 @@ func init() {
 // Connect represents a message instructing the slave to establish a connection
 // to a remote host and port. This is used for port forwarding operations.
 type Connect struct {
+	Protocol   string // "tcp" or "udp", defaults to "tcp" if empty
 	RemoteHost string
 	RemotePort int
 }

@@ -172,6 +172,7 @@ func (srv *Server) acceptWithContext(l net.Listener) (net.Conn, error) {
 
 func (srv *Server) handleTCPConn(connLocal net.Conn) error {
 	m := msg.Connect{
+		Protocol:   "tcp",
 		RemoteHost: srv.cfg.RemoteHost,
 		RemotePort: srv.cfg.RemotePort,
 	}
@@ -277,6 +278,7 @@ func (srv *Server) handleUDP() error {
 				
 				// Open yamux stream for this client
 				m := msg.Connect{
+					Protocol:   "udp",
 					RemoteHost: srv.cfg.RemoteHost,
 					RemotePort: srv.cfg.RemotePort,
 				}

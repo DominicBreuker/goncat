@@ -193,7 +193,22 @@ The same syntax applies to remote port forwarding (`-R`). The protocol prefix is
     - Context cancellation properly closes UDP connections
     - Unit tests verify UDP client behavior
 
-- [ ] Step 4: Update control message to include protocol
+- [X] Step 4: Update control message to include protocol
+  - **Task**: Extend the `msg.Connect` message to include the protocol field so the slave knows whether to dial TCP or UDP
+  - **Files**:
+    - `pkg/mux/msg/connect.go`: Added `Protocol` field to Connect struct (defaults to "tcp" if empty)
+    - `pkg/handler/master/portfwd.go`: Will be updated in Step 6 to pass protocol from config
+    - `pkg/handler/slave/portfwd.go`: Will be updated in Step 6 to extract protocol from message
+    - `pkg/handler/portfwd/server.go`: Updated to send protocol in Connect messages ("tcp" or "udp")
+    - `pkg/handler/portfwd/client.go`: Updated to read protocol from Connect message
+  - **Dependencies**: Steps 1, 2, 3
+  - **Definition of done**: 
+    - Connect message includes Protocol field ✓
+    - Server sends protocol in Connect messages ✓
+    - Client receives and respects protocol when establishing connections ✓
+    - Backward compatibility maintained (empty protocol defaults to "tcp") ✓
+    - All tests passing ✓
+  - **Completed**: Protocol field added to Connect message, server and client updated
   - **Task**: Extend the `msg.Connect` message to include the protocol field so the slave knows whether to dial TCP or UDP
   - **Files**:
     - `pkg/mux/msg/msg.go`: Add `Protocol` field to `Connect` message

@@ -43,12 +43,13 @@ func NewClient(ctx context.Context, m msg.Connect, sessCtl ClientControlSession,
 // Handle establishes a connection to the remote destination and pipes
 // data between it and the channel obtained from the control session.
 func (h *Client) Handle() error {
-	// For now, default to TCP. This will be updated in Step 4 when
-	// the Connect message includes a Protocol field.
-	protocol := "tcp" // TODO: get from h.m.Protocol in Step 4
+	protocol := h.m.Protocol
+	if protocol == "" {
+		protocol = "tcp" // default to TCP for backward compatibility
+	}
 	
 	switch protocol {
-	case "tcp", "":
+	case "tcp":
 		return h.handleTCP()
 	case "udp":
 		return h.handleUDP()
