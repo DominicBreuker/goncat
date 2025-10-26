@@ -352,13 +352,23 @@ The same syntax applies to remote port forwarding (`-R`). The protocol prefix is
     - Code coverage for parsing logic > 90%
 
 - [X] Step 8: Add integration tests for UDP port forwarding
-  - **Status**: Complete - integration tests exist and pass ✓
-  - **Files**:
-    - `test/integration/portfwd/local_test.go`: TCP/UDP local forwarding tests
-    - `test/integration/portfwd/remote_test.go`: TCP/UDP remote forwarding tests
-    - `test/integration/udp/udp_test.go`: UDP-specific integration tests
-  - **Result**: All integration tests pass (6 test suites) ✓
-  - **Note**: Existing integration test infrastructure already covers UDP port forwarding scenarios
+  - **Status**: COMPLETE ✓
+  - **Files Created**:
+    - `test/integration/portfwd/udp_test.go`: New test file with 3 tests
+      - `TestUDPLocalPortForwarding`: Tests `-L U:8000:target:9000` syntax
+      - `TestUDPRemotePortForwarding`: Tests `-R U:8000:target:9000` syntax
+      - `TestMixedTCPAndUDPPortForwarding`: Tests both TCP and UDP simultaneously
+  - **Files Modified**:
+    - `test/helpers/helpers.go`: Added mockUDPDialer function, added UDPDialer to dependencies
+    - `pkg/handler/portfwd/client.go`: Fixed UDP client to use WriteTo() for compatibility with mocks
+  - **Test Results**: All 3 UDP port forwarding tests pass ✓
+  - **Integration Suite**: All 6 integration test suites pass ✓
+  - **Definition of done**: ✓ Complete
+    - UDP local port forwarding tested with mocked network
+    - UDP remote port forwarding tested with mocked network
+    - Mixed TCP/UDP port forwarding tested
+    - All tests verify bidirectional UDP datagram communication
+    - Tests complete quickly (< 1 second each)
 
 - [X] Step 9: Run linters and fix issues
   - **Commands**: make lint
