@@ -18,10 +18,12 @@ func (mst *master) startLocalPortFwdJob(ctx context.Context, wg *sync.WaitGroup,
 		defer wg.Done()
 
 		cfg := portfwd.Config{
+			Protocol:   lpf.Protocol,
 			LocalHost:  lpf.LocalHost,
 			LocalPort:  lpf.LocalPort,
 			RemoteHost: lpf.RemoteHost,
 			RemotePort: lpf.RemotePort,
+			Timeout:    mst.cfg.Timeout,
 		}
 		h := portfwd.NewServer(ctx, cfg, mst.sess, mst.cfg.Deps)
 		if err := h.Handle(); err != nil {
@@ -39,6 +41,7 @@ func (mst *master) startRemotePortFwdJob(ctx context.Context, wg *sync.WaitGroup
 		defer wg.Done()
 
 		m := msg.PortFwd{
+			Protocol:   rpf.Protocol,
 			LocalHost:  rpf.LocalHost,
 			LocalPort:  rpf.LocalPort,
 			RemoteHost: rpf.RemoteHost,

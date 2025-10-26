@@ -278,7 +278,23 @@ The same syntax applies to remote port forwarding (`-R`). The protocol prefix is
     - Context cancellation properly terminates all timeout goroutines
     - No goroutine leaks
 
-- [ ] Step 6: Update port forwarding config to pass protocol to handlers
+- [X] Step 6: Update port forwarding config to pass protocol to handlers
+  - **Task**: Update the configuration structures passed to port forwarding handlers to include the protocol field
+  - **Files**:
+    - `pkg/mux/msg/portfwd.go`: Added Protocol field to PortFwd message
+    - `pkg/handler/master/portfwd.go`: 
+      - startLocalPortFwdJob() passes Protocol and Timeout from config
+      - startRemotePortFwdJob() sends Protocol in PortFwd message
+    - `pkg/handler/slave/portfwd.go`: 
+      - handlePortFwdAsync() extracts Protocol from PortFwd message
+      - Passes Timeout from slave config to portfwd.Config
+  - **Dependencies**: Steps 1, 4
+  - **Definition of done**: 
+    - Protocol flows from CLI flag through config to handlers ✓
+    - Timeout flows from --timeout flag to handlers ✓
+    - Both local and remote port forwarding work with protocol ✓
+    - All tests passing ✓
+  - **Completed**: Protocol and timeout now flow through entire stack from CLI to handlers
   - **Task**: Update the configuration structures passed to port forwarding handlers to include the protocol field
   - **Files**:
     - `pkg/handler/portfwd/server.go`: Update `Config` struct

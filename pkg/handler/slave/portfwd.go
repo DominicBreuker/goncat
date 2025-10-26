@@ -25,10 +25,12 @@ func (slv *slave) handlePortFwdAsync(ctx context.Context, m msg.PortFwd) {
 	go func() {
 		// Flip the settings, because remote port forwarding is like local port forwarding from the perspective of the slave
 		cfg := portfwd.Config{
+			Protocol:   m.Protocol,
 			LocalHost:  m.RemoteHost,
 			LocalPort:  m.RemotePort,
 			RemoteHost: m.LocalHost,
 			RemotePort: m.LocalPort,
+			Timeout:    slv.cfg.Timeout,
 		}
 
 		h := portfwd.NewServer(ctx, cfg, slv.sess, slv.cfg.Deps)
