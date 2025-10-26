@@ -110,7 +110,26 @@ The same syntax applies to remote port forwarding (`-R`). The protocol prefix is
     - Context cancellation properly closes UDP listeners and streams
     - Unit tests verify UDP server behavior with mocked network
 
-- [ ] Step 3: Add UDP dialer support to portfwd client
+- [X] Step 3: Add UDP dialer support to portfwd client
+  - **Task**: Modify the port forwarding client to support UDP connections in addition to TCP
+  - **Files**:
+    - `pkg/config/dependencies.go`: 
+      - Added `UDPDialer` field to Dependencies struct
+      - Added `UDPDialerFunc` type definition
+      - Added `GetUDPDialerFunc()` helper function
+    - `pkg/handler/portfwd/client.go`:
+      - Added `udpDialerFn` field to Client struct
+      - Split Handle() to dispatch based on protocol (handleTCP/handleUDP)
+      - Implemented handleUDP() with bidirectional UDP datagram forwarding
+      - Two goroutines: one for stream→UDP, one for UDP→stream
+  - **Dependencies**: Step 1
+  - **Definition of done**: 
+    - Client can create UDP connections when protocol is "udp" ✓
+    - UDP datagrams are forwarded bidirectionally between yamux stream and destination ✓
+    - Context cancellation properly closes UDP connections ✓
+    - All tests passing ✓
+  - **Completed**: UDP client support implemented with bidirectional datagram forwarding, all tests passing
+  - **Note**: Protocol field will be added to msg.Connect in Step 4
   - **Task**: Modify the port forwarding client to support UDP connections in addition to TCP
   - **Files**:
     - `pkg/config/dependencies.go`: Add `UDPDialerFunc` type

@@ -14,10 +14,11 @@ import (
 // Client handles establishing connections to remote destinations
 // in response to port forwarding requests from the control session.
 type Client struct {
-	ctx      context.Context
-	m        msg.Connect
-	sessCtl  ClientControlSession
-	dialerFn config.TCPDialerFunc
+	ctx         context.Context
+	m           msg.Connect
+	sessCtl     ClientControlSession
+	tcpDialerFn config.TCPDialerFunc
+	udpDialerFn config.UDPDialerFunc
 }
 
 // ClientControlSession represents the interface for obtaining a channel
@@ -31,16 +32,34 @@ type ClientControlSession interface {
 // The deps parameter is optional and can be nil to use default implementations.
 func NewClient(ctx context.Context, m msg.Connect, sessCtl ClientControlSession, deps *config.Dependencies) *Client {
 	return &Client{
-		ctx:      ctx,
-		m:        m,
-		sessCtl:  sessCtl,
-		dialerFn: config.GetTCPDialerFunc(deps),
+		ctx:         ctx,
+		m:           m,
+		sessCtl:     sessCtl,
+		tcpDialerFn: config.GetTCPDialerFunc(deps),
+		udpDialerFn: config.GetUDPDialerFunc(deps),
 	}
 }
 
 // Handle establishes a connection to the remote destination and pipes
 // data between it and the channel obtained from the control session.
 func (h *Client) Handle() error {
+	// For now, default to TCP. This will be updated in Step 4 when
+	// the Connect message includes a Protocol field.
+	protocol := "tcp" // TODO: get from h.m.Protocol in Step 4
+	
+	switch protocol {
+	case "tcp", "":
+		return h.handleTCP()
+	case "udp":
+		return h.handleUDP()
+	default:
+		return fmt.Errorf("unsupported protocol: %s", protocol)
+	}
+}
+
+// handleTCP handles TCP port forwarding by establishing a TCP connection
+// and piping data bidirectionally.
+func (h *Client) handleTCP() error {
 	connRemote, err := h.sessCtl.GetOneChannelContext(h.ctx)
 	if err != nil {
 		return fmt.Errorf("AcceptNewChannel(): %w", err)
@@ -54,7 +73,7 @@ func (h *Client) Handle() error {
 		return fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %w", addr, err)
 	}
 
-	connLocal, err := h.dialerFn(h.ctx, "tcp", nil, tcpAddr)
+	connLocal, err := h.tcpDialerFn(h.ctx, "tcp", nil, tcpAddr)
 	if err != nil {
 		return fmt.Errorf("net.Dial(tcp, %s): %w", addr, err)
 	}
@@ -70,4 +89,99 @@ func (h *Client) Handle() error {
 	})
 
 	return nil
+}
+
+// handleUDP handles UDP port forwarding by establishing a UDP connection
+// and forwarding datagrams bidirectionally through the yamux stream.
+func (h *Client) handleUDP() error {
+	connRemote, err := h.sessCtl.GetOneChannelContext(h.ctx)
+	if err != nil {
+		return fmt.Errorf("GetOneChannelContext(): %w", err)
+	}
+	defer connRemote.Close()
+
+	addr := format.Addr(h.m.RemoteHost, h.m.RemotePort)
+
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return fmt.Errorf("net.ResolveUDPAddr(udp, %s): %w", addr, err)
+	}
+
+	connLocal, err := h.udpDialerFn(h.ctx, "udp", nil, udpAddr)
+	if err != nil {
+		return fmt.Errorf("dial(udp, %s): %w", addr, err)
+	}
+	defer connLocal.Close()
+
+	// Create channels for coordinating goroutines
+	done := make(chan struct{})
+	errCh := make(chan error, 2)
+
+	// Forward data from yamux stream to UDP socket
+	go func() {
+		buffer := make([]byte, 65536)
+		for {
+			select {
+			case <-h.ctx.Done():
+				return
+			case <-done:
+				return
+			default:
+			}
+
+			n, err := connRemote.Read(buffer)
+			if err != nil {
+				if h.ctx.Err() != nil {
+					return
+				}
+				errCh <- fmt.Errorf("read from stream: %w", err)
+				return
+			}
+
+			_, err = connLocal.WriteTo(buffer[:n], udpAddr)
+			if err != nil {
+				errCh <- fmt.Errorf("write to UDP: %w", err)
+				return
+			}
+		}
+	}()
+
+	// Forward data from UDP socket to yamux stream
+	go func() {
+		buffer := make([]byte, 65536)
+		for {
+			select {
+			case <-h.ctx.Done():
+				return
+			case <-done:
+				return
+			default:
+			}
+
+			n, _, err := connLocal.ReadFrom(buffer)
+			if err != nil {
+				if h.ctx.Err() != nil {
+					return
+				}
+				errCh <- fmt.Errorf("read from UDP: %w", err)
+				return
+			}
+
+			_, err = connRemote.Write(buffer[:n])
+			if err != nil {
+				errCh <- fmt.Errorf("write to stream: %w", err)
+				return
+			}
+		}
+	}()
+
+	// Wait for error or context cancellation
+	select {
+	case err := <-errCh:
+		close(done)
+		return err
+	case <-h.ctx.Done():
+		close(done)
+		return nil
+	}
 }
