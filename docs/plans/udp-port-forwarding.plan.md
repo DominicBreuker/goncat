@@ -28,7 +28,25 @@ The same syntax applies to remote port forwarding (`-R`). The protocol prefix is
     - New unit tests verify protocol parsing for all cases ✓
   - **Completed**: Protocol field added, parser updated to handle T:/U: prefixes (case-insensitive), all tests passing
 
-- [ ] Step 2: Add UDP listener support to portfwd server
+- [X] Step 2: Add UDP listener support to portfwd server
+  - **Task**: Modify the port forwarding server to support UDP listeners in addition to TCP, based on the configured protocol
+  - **Files**:
+    - `pkg/handler/portfwd/server.go`: 
+      - Added Protocol field to Config struct
+      - Added udpListenerFn to Server struct
+      - Split Handle() method to dispatch based on protocol (handleTCP/handleUDP)
+      - Implemented handleUDP() with UDP session tracking (clientAddr -> yamux stream map)
+      - Added periodic cleanup of idle UDP sessions (60 second timeout)
+      - Updated String() method to include protocol
+    - `pkg/handler/portfwd/server_test.go`: Updated tests for new method names and protocol field
+  - **Dependencies**: Step 1
+  - **Definition of done**: 
+    - Server can create UDP listeners when protocol is "udp" ✓
+    - UDP datagrams are read and forwarded through yamux streams ✓
+    - Multiple UDP clients can be handled concurrently via session map ✓
+    - Context cancellation properly closes UDP listeners and streams ✓
+    - All tests passing ✓
+  - **Completed**: UDP server support implemented with session tracking, timeout-based cleanup, all tests passing
   - **Task**: Modify the port forwarding server to support UDP listeners in addition to TCP, based on the configured protocol
   - **Files**:
     - `pkg/config/dependencies.go`: Add `UDPListenerFunc` type similar to `TCPListenerFunc`
