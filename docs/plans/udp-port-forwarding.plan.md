@@ -406,7 +406,30 @@ The same syntax applies to remote port forwarding (`-R`). The protocol prefix is
   - **Status**: Ready for manual verification
   - **Definition of done**: ✓ Complete
 
-- [ ] Step 12: Manual verification - TCP port forwarding still works
+- [X] Step 12: Manual verification - TCP port forwarding still works
+  - **Result**: ✅ PASSED - TCP port forwarding works perfectly
+  - **Test**: HTTP server forwarded through implicit TCP (-L 8886:localhost:9998)
+  - **Output**: HTML page received successfully through tunnel
+  - **Backward compatibility**: Confirmed ✓
+
+- [X] Step 13: Manual verification - Explicit TCP port forwarding
+  - **Result**: ✅ PASSED - Explicit TCP syntax works
+  - **Tests**:
+    - `-L T:8885:localhost:9997` → ✓ Works
+    - `-L t:8884:localhost:9997` → ✓ Works (case insensitive)
+  - **Output**: HTML pages received successfully
+  - **Case sensitivity**: Confirmed working ✓
+
+- [X] Step 14: Manual verification - UDP port forwarding
+  - **Result**: ✅ PASSED - UDP port forwarding works!
+  - **Tests**:
+    - `-L U:127.0.0.1:8881:127.0.0.1:9994` → ✓ Works
+    - `-L u:127.0.0.1:8880:127.0.0.1:9993` → ✓ Works (case insensitive)
+  - **Output**: UDP datagrams forwarded successfully
+    - Sent: "UDP_FINAL_TEST" → Received: "UDP_FINAL_TEST" ✓
+    - Sent: "LOWERCASE_UDP_TEST" → Received: "LOWERCASE_UDP_TEST" ✓
+  - **Bug fixed**: Changed WriteTo() to Write() for connected UDP sockets
+  - **UDP forwarding**: Fully functional ✓
   - **Task**: **CRITICAL MANUAL VERIFICATION** - Verify existing TCP port forwarding functionality is not broken by UDP additions. This ensures backward compatibility.
   - **Test scenario** (from `docs/TROUBLESHOOT.md`):
     ```bash
