@@ -31,11 +31,12 @@ type Server struct {
 // Config contains the configuration for port forwarding, specifying both
 // the local endpoint to listen on and the remote destination to forward to.
 type Config struct {
-	Protocol   string // "tcp" or "udp"
-	LocalHost  string // Local host address to listen on
-	LocalPort  int    // Local port to listen on
-	RemoteHost string // Remote host to forward connections to
-	RemotePort int    // Remote port to forward connections to
+	Protocol   string        // "tcp" or "udp"
+	LocalHost  string        // Local host address to listen on
+	LocalPort  int           // Local port to listen on
+	RemoteHost string        // Remote host to forward connections to
+	RemotePort int           // Remote port to forward connections to
+	Timeout    time.Duration // Timeout for operations (used for UDP session cleanup)
 }
 
 // ServerControlSession represents the interface for communicating over
@@ -221,7 +222,10 @@ func (srv *Server) handleUDP() error {
 	var sessionsMu sync.Mutex
 
 	// Cleanup idle sessions periodically
-	timeout := 60 * time.Second // Default UDP session timeout
+	timeout := srv.cfg.Timeout
+	if timeout == 0 {
+		timeout = 60 * time.Second // Default UDP session timeout if not configured
+	}
 	go func() {
 		ticker := time.NewTicker(timeout / 2)
 		defer ticker.Stop()
