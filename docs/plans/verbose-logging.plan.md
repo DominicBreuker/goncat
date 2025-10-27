@@ -21,10 +21,11 @@ The implementation will:
 
 ## Implementation plan
 
-- [ ] Step 1: Refactor log package to support stateful logger
+- [X] Step 1: Refactor log package to support stateful logger
   - **Task**: Modify `pkg/log/log.go` to support a logger struct that can be initialized with verbose settings and passed through the config. The logger should avoid package-level state while maintaining backward compatibility with existing `ErrorMsg()` and `InfoMsg()` calls.
+  - **Completed**: Added Logger struct with verbose field, NewLogger constructor, VerboseMsg method (nil-safe, no-op when verbose=false), and ErrorMsg/InfoMsg methods on Logger. Maintained backward compatibility with package-level ErrorMsg/InfoMsg functions via defaultLogger. Added comprehensive unit tests for all new functionality. All tests pass.
   - **Files**:
-    - `pkg/log/log.go`: Add `Logger` struct with `verbose bool` field. Add constructor `NewLogger(verbose bool) *Logger`. Add method `func (l *Logger) VerboseMsg(format string, a ...interface{})` that only prints when `l.verbose` is true. Add package-level default logger for backward compatibility.
+    - `pkg/log/log.go`: Added Logger struct with verbose field. Added constructor `NewLogger(verbose bool) *Logger`. Added method `func (l *Logger) VerboseMsg(format string, a ...interface{})` that only prints when `l.verbose` is true. Added package-level default logger for backward compatibility.
       ```go
       // Logger provides structured logging with verbose mode support
       type Logger struct {
@@ -67,10 +68,11 @@ The implementation will:
     - Unit test added in `pkg/log/log_test.go` validating VerboseMsg behavior
     - All existing tests pass
 
-- [ ] Step 2: Add Logger to config.Shared
+- [X] Step 2: Add Logger to config.Shared
   - **Task**: Add a `Logger *log.Logger` field to `config.Shared` so it can be passed throughout the application. Initialize the logger in CLI command handlers based on the `--verbose` flag.
+  - **Completed**: Added Logger field to config.Shared. Initialized Logger in all 4 CLI command handlers (masterlisten, masterconnect, slaveconnect, slavelisten) using log.NewLogger(cmd.Bool(shared.VerboseFlag)). All unit tests pass.
   - **Files**:
-    - `pkg/config/config.go`: Add `Logger *log.Logger` field to `Shared` struct
+    - `pkg/config/config.go`: Added `Logger *log.Logger` field to `Shared` struct
     - `cmd/masterconnect/masterconnect.go`: Initialize `cfg.Logger = log.NewLogger(cfg.Verbose)` after parsing flags
     - `cmd/masterlisten/masterlisten.go`: Same as above
     - `cmd/slaveconnect/slaveconnect.go`: Same as above

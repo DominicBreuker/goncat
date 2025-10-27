@@ -4,6 +4,7 @@
 package config
 
 import (
+	"dominicbreuker/goncat/pkg/log"
 	"fmt"
 	mrand "math/rand"
 	"time"
@@ -21,6 +22,7 @@ type Shared struct {
 	Verbose  bool
 	Timeout  time.Duration
 	Deps     *Dependencies
+	Logger   *log.Logger
 }
 
 // Protocol represents the network protocol type used for communication.

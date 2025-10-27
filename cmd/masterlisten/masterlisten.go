@@ -46,6 +46,7 @@ func GetCommand() *cli.Command {
 				Key:      cmd.String(shared.KeyFlag),
 				Verbose:  cmd.Bool(shared.VerboseFlag),
 				Timeout:  time.Duration(cmd.Int(shared.TimeoutFlag)) * time.Millisecond,
+				Logger:   log.NewLogger(cmd.Bool(shared.VerboseFlag)),
 			}
 
 			mCfg := &config.Master{
