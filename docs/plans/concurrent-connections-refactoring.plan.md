@@ -312,7 +312,8 @@ This improves UX by allowing multiple concurrent command executions on listening
     - All integration tests pass
     - Tests are race-free (`go test -race`)
 
-- [ ] **Step 11: Verify and fix handler code paths**
+- [X] **Step 11: Verify and fix handler code paths**
+  - **Completed**: Verified that semaphore is only acquired for stdin/stdout piping (terminal.Pipe), not for command execution (exec.Run). Master always acquires semaphore (always uses stdin/stdout). Slave acquires only when m.Exec is empty.
   - **Task**: Trace through the handler code to ensure semaphore is only acquired for foreground stdin/stdout piping, not for command execution. The slave handler should NOT acquire semaphore when executing commands (--exec flag), only when piping its own stdin/stdout.
   - **Files**:
     - Review `pkg/handler/slave/foreground.go`:
@@ -329,7 +330,8 @@ This improves UX by allowing multiple concurrent command executions on listening
     - Code review shows correct behavior
     - Documentation/comments explain the design
 
-- [ ] **Step 12: Run full test suite**
+- [X] **Step 12: Run full test suite**
+  - **Completed**: All linters pass, unit tests pass with race detection, integration tests pass with race detection, binary builds successfully.
   - **Task**: Execute the complete test suite including unit, integration, and E2E tests to verify nothing is broken by the refactoring.
   - **Files**: N/A (running tests)
   - **Commands**:
