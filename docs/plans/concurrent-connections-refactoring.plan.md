@@ -19,8 +19,9 @@ This improves UX by allowing multiple concurrent command executions on listening
 
 ## Implementation Plan
 
-- [ ] **Step 1: Create connection semaphore abstraction**
+- [X] **Step 1: Create connection semaphore abstraction**
   - **Task**: Create a new `pkg/semaphore` package with a timeout-aware semaphore implementation for controlling concurrent connections. This provides a reusable abstraction for connection limiting with proper timeout handling and error reporting.
+  - **Completed**: Created `pkg/semaphore/semaphore.go` and `pkg/semaphore/semaphore_test.go`. All tests pass with race detection.
   - **Files**:
     - `pkg/semaphore/semaphore.go`: New file
       ```go
