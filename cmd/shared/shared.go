@@ -138,7 +138,7 @@ func GetMasterFlags() []cli.Flag {
 		&cli.StringSliceFlag{
 			Name:     LocalPortForwardingFlag,
 			Aliases:  []string{"L"},
-			Usage:    "Local port forwarding, format: -L <local-host>:<local-port>:<remote-host>:<rempote-port> (local-host optional)",
+			Usage:    "Local port forwarding: [[T:|U:]<local-host>:]<local-port>:<remote-host>:<remote-port>. Use T: for TCP (default), U: for UDP. Example: -L U:127.0.0.1:53:8.8.8.8:53",
 			Category: categoryMaster,
 			Value:    []string{},
 			Required: false,
@@ -146,7 +146,7 @@ func GetMasterFlags() []cli.Flag {
 		&cli.StringSliceFlag{
 			Name:     RemotePortForwardingFlag,
 			Aliases:  []string{"R"},
-			Usage:    "Remote port forwarding, format: -R <remote-host>:<remote-port>:<local-host>:<local-port> (remote-host optional)",
+			Usage:    "Remote port forwarding: [[T:|U:]<remote-host>:]<remote-port>:<local-host>:<local-port>. Use T: for TCP (default), U: for UDP. Example: -R U:53:localhost:5353",
 			Category: categoryMaster,
 			Value:    []string{},
 			Required: false,

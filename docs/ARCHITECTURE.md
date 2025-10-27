@@ -12,7 +12,7 @@
 - **Transport protocols**: TCP, WebSocket (ws), WebSocket Secure (wss)
 - **Security**: TLS encryption with optional password-based mutual authentication
 - **Interactive shells**: Cross-platform PTY support (Linux, Windows, macOS)
-- **Tunneling**: Local/remote port forwarding and SOCKS5 proxy (TCP CONNECT, UDP ASSOCIATE)
+- **Tunneling**: Local/remote port forwarding with TCP and UDP protocol support, SOCKS5 proxy (TCP CONNECT, UDP ASSOCIATE)
 - **Convenience**: Session logging and automatic cleanup capabilities
 
 **Execution Flow:**
@@ -138,8 +138,10 @@ Organized into distinct layers and concerns:
     - `portfwd.go`: Handles port forwarding requests
     - `socks.go`: Handles SOCKS proxy connections
   - `portfwd/`: Shared port forwarding implementation
-    - `server.go`: Accepts connections and forwards through yamux streams
-    - `client.go`: Receives yamux streams and connects to target
+    - `server.go`: Accepts TCP or UDP connections and forwards through yamux streams
+    - `client.go`: Receives yamux streams and connects to TCP or UDP targets
+    - Supports protocol selection via prefix: `-L T:8080:target:80` (TCP), `-L U:53:dns:53` (UDP)
+    - UDP implementation includes session tracking (client address → yamux stream mapping)
   - `socks/master/`: SOCKS5 proxy server on master side
   - `socks/slave/`: SOCKS5 proxy client on slave side (connects to actual targets)
 - **Pattern**: 

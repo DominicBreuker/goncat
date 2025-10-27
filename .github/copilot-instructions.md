@@ -9,7 +9,8 @@ For a comprehensive user-oriented guide with practical examples and common use c
 **goncat** is a netcat-like tool written in Go for creating bind or reverse shells with an SSH-like experience. Key features include:
 - Encryption with mutual authentication (TLS)
 - Cross-platform PTY support (Linux, Windows, macOS)
-- Port forwarding (local/remote) and SOCKS proxy support
+- Port forwarding (local/remote) with TCP and UDP protocol support
+- SOCKS5 proxy support (TCP CONNECT and UDP ASSOCIATE)
 - Session logging and automatic cleanup capabilities
 
 **Repository Stats:**
