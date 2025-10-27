@@ -197,7 +197,6 @@ func (srv *Server) handleTCPConn(connLocal net.Conn) error {
 func (srv *Server) handleUDP() error {
 	addr := format.Addr(srv.cfg.LocalHost, srv.cfg.LocalPort)
 
-
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
 		return fmt.Errorf("net.ResolveUDPAddr(udp, %s): %w", addr, err)
@@ -207,7 +206,6 @@ func (srv *Server) handleUDP() error {
 	if err != nil {
 		return fmt.Errorf("listen(udp, %s): %w", addr, err)
 	}
-
 
 	// Set a read deadline for debugging
 
@@ -255,7 +253,7 @@ func (srv *Server) handleUDP() error {
 	buffer := make([]byte, 65536) // Max UDP datagram size
 	for {
 		// Reset read deadline for each iteration
-		
+
 		n, clientAddr, err := conn.ReadFrom(buffer)
 		if err != nil {
 			if srv.ctx.Err() != nil {
@@ -268,7 +266,6 @@ func (srv *Server) handleUDP() error {
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
-
 
 		data := make([]byte, n)
 		copy(data, buffer[:n])
@@ -301,7 +298,6 @@ func (srv *Server) handleUDP() error {
 					log.ErrorMsg("UDP port forwarding %s: failed to open stream for %s: %s\n", srv.cfg, clientAddr, err)
 					return
 				}
-
 
 				sess.stream = stream
 				sessions[sessionKey] = sess

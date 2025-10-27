@@ -115,7 +115,6 @@ func (h *Client) handleUDP() error {
 	}
 	defer connLocal.Close()
 
-
 	// Create channels for coordinating goroutines
 	done := make(chan struct{})
 	errCh := make(chan error, 2)
@@ -140,7 +139,6 @@ func (h *Client) handleUDP() error {
 				errCh <- fmt.Errorf("read from stream: %w", err)
 				return
 			}
-
 
 			// Use WriteTo for compatibility with both connected and unconnected UDP sockets
 			_, err = connLocal.WriteTo(buffer[:n], udpAddr)
@@ -171,7 +169,6 @@ func (h *Client) handleUDP() error {
 				errCh <- fmt.Errorf("read from UDP: %w", err)
 				return
 			}
-
 
 			_, err = connRemote.Write(buffer[:n])
 			if err != nil {
