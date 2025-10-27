@@ -7,6 +7,7 @@ import (
 	"context"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/handler/master"
+	"dominicbreuker/goncat/pkg/semaphore"
 	"errors"
 	"fmt"
 	"net"
@@ -18,6 +19,13 @@ import (
 // MasterListen starts a server that listens for incoming slave connections
 // and controls them as a master.
 func MasterListen(ctx context.Context, cfg *config.Shared, mCfg *config.Master) error {
+	// Create N=1 semaphore for limiting concurrent stdin/stdout connections.
+	// Master listeners are always limited to one connection since they always use stdin/stdout.
+	if cfg.Deps == nil {
+		cfg.Deps = &config.Dependencies{}
+	}
+	cfg.Deps.ConnSem = semaphore.New(1, cfg.Timeout)
+
 	return masterListen(ctx, cfg, mCfg, realServerFactory(), master.Handle)
 }
 

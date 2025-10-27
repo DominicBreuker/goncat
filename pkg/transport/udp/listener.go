@@ -21,11 +21,11 @@ import (
 // - listener_windows.go for Windows
 
 // Listener implements transport.Listener for UDP with QUIC.
-// It ensures only one connection is handled at a time via a semaphore.
+// It allows up to 100 concurrent connections to prevent resource exhaustion.
 type Listener struct {
 	udpConn      *net.UDPConn
 	quicListener *quic.Listener
-	sem          chan struct{} // capacity 1 -> allows a single active handler
+	sem          chan struct{} // capacity 100 -> allows up to 100 concurrent handlers
 }
 
 // NewListener creates a UDP+QUIC listener on the specified address.
@@ -102,15 +102,18 @@ func NewListener(ctx context.Context, addr string, timeout time.Duration) (*List
 	l := &Listener{
 		udpConn:      udpConn,
 		quicListener: quicListener,
-		sem:          make(chan struct{}, 1),
+		sem:          make(chan struct{}, 100),
 	}
-	l.sem <- struct{}{} // initially allow one connection
+	// initially allow 100 connections
+	for i := 0; i < 100; i++ {
+		l.sem <- struct{}{}
+	}
 
 	return l, nil
 }
 
 // Serve accepts QUIC connections and handles them using the provided handler.
-// Only one connection is handled at a time; additional connections are rejected.
+// Up to 100 connections can be handled concurrently; additional connections are rejected.
 func (l *Listener) Serve(handle transport.Handler) error {
 	for {
 		// Accept QUIC connection
@@ -123,12 +126,12 @@ func (l *Listener) Serve(handle transport.Handler) error {
 			return fmt.Errorf("accept quic: %w", err)
 		}
 
-		// Try to acquire single slot
+		// Try to acquire a slot
 		select {
 		case <-l.sem:
 			go l.handleConnection(conn, handle)
 		default:
-			// Already handling one connection
+			// All 100 slots busy
 			_ = conn.CloseWithError(0x42, "server busy")
 		}
 	}

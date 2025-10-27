@@ -18,12 +18,12 @@ import (
 
 // Listener implements the transport.Listener interface for WebSocket connections.
 // It wraps an HTTP server that upgrades incoming requests to WebSocket connections.
-// Only one connection is handled at a time; additional connections receive HTTP 503.
+// Up to 100 connections can be handled concurrently; additional connections receive HTTP 503.
 type Listener struct {
 	ctx context.Context
 	nl  net.Listener
 
-	// semaphore (cap=1) to allow exactly one active connection
+	// semaphore (cap=100) to allow up to 100 concurrent connections
 	sem chan struct{}
 }
 
@@ -52,10 +52,12 @@ func NewListener(ctx context.Context, addr string, useTLS bool) (*Listener, erro
 	l := &Listener{
 		ctx: ctx,
 		nl:  nl,
-		sem: make(chan struct{}, 1),
+		sem: make(chan struct{}, 100),
 	}
-	// initially allow one active connection
-	l.sem <- struct{}{}
+	// initially allow 100 active connections
+	for i := 0; i < 100; i++ {
+		l.sem <- struct{}{}
+	}
 	return l, nil
 }
 
@@ -78,7 +80,7 @@ func getTLSListener(nl net.Listener) (net.Listener, error) {
 func (l *Listener) Serve(handle transport.Handler) error {
 	s := &http.Server{
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Try to acquire the single slot. If busy, reject.
+			// Try to acquire a slot. If all 100 slots busy, reject.
 			select {
 			case <-l.sem:
 				// release on return
@@ -109,7 +111,7 @@ func (l *Listener) Serve(handle transport.Handler) error {
 				}
 
 			default:
-				// Busy: reject extra connections politely
+				// All 100 slots busy: reject extra connections politely
 				http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
 				return
 			}

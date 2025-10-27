@@ -14,7 +14,7 @@ import (
 func TestNewStdio(t *testing.T) {
 	t.Parallel()
 
-	stdio := NewStdio(nil)
+	stdio := NewStdio(nil, nil)
 
 	if stdio == nil {
 		t.Fatal("NewStdio() returned nil")
@@ -32,7 +32,7 @@ func TestNewStdio(t *testing.T) {
 func TestStdio_Close(t *testing.T) {
 	t.Parallel()
 
-	stdio := NewStdio(nil)
+	stdio := NewStdio(nil, nil)
 
 	if err := stdio.Close(); err != nil {
 		t.Errorf("Close() error = %v", err)
