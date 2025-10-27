@@ -72,7 +72,7 @@ func (slv *slave) run() error {
 	// 1) Send Hello
 	slv.cfg.Logger.VerboseMsg("Sending Hello message to master")
 	if err := slv.sess.SendContext(ctx, msg.Hello{ID: slv.cfg.ID}); err != nil {
-	slv.cfg.Logger.VerboseMsg("Failed to send Hello message: %v", err)
+		slv.cfg.Logger.VerboseMsg("Failed to send Hello message: %v", err)
 		// treat as terminal; session likely unusable
 		return fmt.Errorf("sending hello to master: %w", err)
 	}
@@ -105,7 +105,7 @@ func (slv *slave) run() error {
 		}
 
 		if h, ok := m.(msg.Hello); ok {
-	slv.cfg.Logger.VerboseMsg("Received Hello from master %s (ID: %s)", slv.remoteAddr, h.ID)
+			slv.cfg.Logger.VerboseMsg("Received Hello from master %s (ID: %s)", slv.remoteAddr, h.ID)
 			slv.remoteID = h.ID
 			log.InfoMsg("Session with %s established (%s)\n", slv.remoteAddr, slv.remoteID)
 			break

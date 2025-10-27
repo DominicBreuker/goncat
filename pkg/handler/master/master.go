@@ -64,10 +64,10 @@ func Handle(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn n
 	defer cancel()
 
 	// 1) Perform handshake: send Hello and wait for Hello
-cfg.Logger.VerboseMsg("Sending Hello message to slave")
+	cfg.Logger.VerboseMsg("Sending Hello message to slave")
 	if err := mst.sess.SendContext(ctx, msg.Hello{ID: mst.cfg.ID}); err != nil {
 		// Treat handshake send failure as terminal
-cfg.Logger.VerboseMsg("Failed to send Hello message: %v", err)
+		cfg.Logger.VerboseMsg("Failed to send Hello message: %v", err)
 		return fmt.Errorf("sending hello to slave: %w", err)
 	}
 
@@ -75,17 +75,17 @@ cfg.Logger.VerboseMsg("Failed to send Hello message: %v", err)
 	helloCtx, helloCancel := context.WithTimeout(ctx, mst.cfg.Timeout)
 	defer helloCancel()
 
-cfg.Logger.VerboseMsg("Waiting for Hello response from slave")
+	cfg.Logger.VerboseMsg("Waiting for Hello response from slave")
 	helloSeen := false
 	for !helloSeen {
 		m, err := mst.sess.ReceiveContext(helloCtx)
 		if err != nil {
 			if err == io.EOF {
-cfg.Logger.VerboseMsg("Handshake failed: peer closed connection")
+				cfg.Logger.VerboseMsg("Handshake failed: peer closed connection")
 				return fmt.Errorf("handshake: peer closed")
 			}
 			if helloCtx.Err() != nil || ctx.Err() != nil {
-cfg.Logger.VerboseMsg("Handshake timeout: %v", helloCtx.Err())
+				cfg.Logger.VerboseMsg("Handshake timeout: %v", helloCtx.Err())
 				return fmt.Errorf("handshake: %w", helloCtx.Err())
 			}
 			// Common transient/timeout errors during early handshake; keep waiting within helloCtx
@@ -104,7 +104,7 @@ cfg.Logger.VerboseMsg("Handshake timeout: %v", helloCtx.Err())
 		case msg.Hello:
 			mst.remoteID = message.ID
 			log.InfoMsg("Session with %s established (%s)\n", mst.remoteAddr, mst.remoteID)
-cfg.Logger.VerboseMsg("Received Hello from slave %s (ID: %s)", mst.remoteAddr, mst.remoteID)
+			cfg.Logger.VerboseMsg("Received Hello from slave %s (ID: %s)", mst.remoteAddr, mst.remoteID)
 			helloSeen = true
 		default:
 			// Ignore any other messages until hello is completed.
