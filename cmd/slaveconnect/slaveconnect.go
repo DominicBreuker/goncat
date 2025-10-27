@@ -19,8 +19,9 @@ import (
 // GetCommand returns the CLI command for slave connect mode.
 func GetCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "connect",
-		Usage: "Connect to a remote host",
+		Name:        "connect",
+		Usage:       "Connect to a remote host",
+		Description: shared.GetBaseDescription(),
 		Action: func(parent context.Context, cmd *cli.Command) error {
 			ctx, cancel := context.WithCancel(parent)
 			defer cancel()

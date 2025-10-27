@@ -118,6 +118,86 @@ namespace eval Expect {
         send -- "exit\r"
     }
 
+    # Run a UDP local port forwarding verification.
+    # Usage: Expect::check_local_forward_udp <local_port> <remote_prefix> ?message? ?timeout?
+    # - local_port: UDP port on localhost to send to (on the master side)
+    # - remote_prefix: hostname prefix used by the echo handler (e.g. "slave-companion")
+    # - message: the message string to send (default: "test message")
+    # - timeout: expect timeout in seconds (default: 5)
+    proc check_local_forward_udp {local_port remote_prefix {message "test message"} {timeout 5}} {
+        # Save the currently active spawn (should be the master connection).
+        if {[info exists ::spawn_id]} {
+            set spawn_id_master $::spawn_id
+        } else {
+            set spawn_id_master ""
+        }
+
+        # Use socat to send UDP datagram and receive response
+        # UDP4-DATAGRAM:localhost:port creates a UDP socket, sends the message, and waits for response
+        spawn sh -c "echo '$message' | socat - UDP4-DATAGRAM:localhost:$local_port"
+        set spawn_id_client $spawn_id
+
+        # Wait for the expected echo from the remote prefix
+        expect -i $spawn_id_client {
+            "*${remote_prefix} says: $message*" {
+                puts "\n✓ UDP local port forwarding test successful!"
+            }
+            timeout {
+                puts stderr "\n✗ Timeout waiting for UDP response from ${remote_prefix}"
+                exit 1
+            }
+            eof {
+                puts stderr "\n✗ Unexpected EOF while waiting for UDP response"
+                exit 1
+            }
+        }
+
+        # Clean up the socat connection
+        if {[catch {close -i $spawn_id_client} _]} {
+            # spawn id already closed or not available; ignore
+        }
+        if {[catch {wait -i $spawn_id_client} _]} {
+            # wait failed or spawn already reaped; ignore
+        }
+
+        # Restore the master's spawn id
+        if {$spawn_id_master ne ""} {
+            set ::spawn_id $spawn_id_master
+        }
+    }
+
+    # Run a UDP remote port forwarding verification.
+    # Usage: Expect::check_remote_forward_udp <remote_port> <remote_prefix> ?message? ?timeout?
+    # - remote_port: UDP port on the *remote* side (the slave) bound by -R
+    # - remote_prefix: hostname prefix expected in the echo (e.g. "master-companion")
+    # - message: message to send (default: "test message")
+    # - timeout: expect timeout in seconds (default: 5)
+    proc check_remote_forward_udp {remote_port remote_prefix {message "test message"} {timeout 5}} {
+        # We're in a shell on the remote side. Send a UDP datagram to localhost:remote_port
+        send -- "sh -c 'echo $message | socat - UDP4-DATAGRAM:localhost:$remote_port'\r"
+
+        # Wait for expected echo from the remote_prefix on the master side
+        expect {
+            "*${remote_prefix} says: $message*" {
+                puts "\n✓ UDP remote port forwarding test successful!"
+            }
+            timeout {
+                puts stderr "\n✗ Timeout waiting for UDP response from ${remote_prefix}"
+                exit 1
+            }
+            eof {
+                puts stderr "\n✗ Unexpected EOF while waiting for UDP response"
+                exit 1
+            }
+        }
+
+        # Give any remaining output a moment to flush
+        sleep 1
+
+        # Exit the remote shell
+        send -- "exit\r"
+    }
+
     # Run a SOCKS5 UDP ASSOCIATE verification using the Python helper client.
     # Usage: Expect::check_socks_udp_associate <socks_host> <socks_port> <target_host> <target_port> ?timeout?
     # - socks_host/socks_port: where the SOCKS proxy is listening (usually localhost 1080)

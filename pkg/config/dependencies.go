@@ -14,6 +14,7 @@ import (
 type Dependencies struct {
 	TCPDialer      TCPDialerFunc
 	TCPListener    TCPListenerFunc
+	UDPDialer      UDPDialerFunc
 	UDPListener    UDPListenerFunc
 	PacketListener PacketListenerFunc
 	Stdin          StdinFunc
@@ -28,6 +29,10 @@ type TCPDialerFunc func(ctx context.Context, network string, laddr, raddr *net.T
 // TCPListenerFunc is a function that creates a TCP listener.
 // It returns a net.Listener to allow for mock implementations.
 type TCPListenerFunc func(network string, laddr *net.TCPAddr) (net.Listener, error)
+
+// UDPDialerFunc is a function that dials a UDP connection using the provided context.
+// It returns a net.PacketConn to allow for mock implementations.
+type UDPDialerFunc func(ctx context.Context, network string, laddr, raddr *net.UDPAddr) (net.PacketConn, error)
 
 // UDPListenerFunc is a function that creates a UDP listener.
 // It returns a net.PacketConn to allow for mock implementations.
@@ -75,6 +80,19 @@ func GetTCPDialerFunc(deps *Dependencies) TCPDialerFunc {
 		// Use net.Dialer with a reasonable default timeout so dials are cancelable.
 		d := &net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}
 		return d.DialContext(ctx, network, raddr.String())
+	}
+}
+
+// GetUDPDialerFunc returns the UDP dialer function from dependencies, or a default implementation.
+// If deps is nil or deps.UDPDialer is nil, returns a function that creates an unconnected UDP socket.
+func GetUDPDialerFunc(deps *Dependencies) UDPDialerFunc {
+	if deps != nil && deps.UDPDialer != nil {
+		return deps.UDPDialer
+	}
+	return func(ctx context.Context, network string, laddr, raddr *net.UDPAddr) (net.PacketConn, error) {
+		// Create an unconnected UDP socket so we can use WriteTo()
+		// This is necessary because we need to send to a specific address
+		return net.ListenUDP(network, laddr)
 	}
 }
 

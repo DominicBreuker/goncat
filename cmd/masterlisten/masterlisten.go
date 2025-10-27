@@ -18,8 +18,9 @@ import (
 // GetCommand returns the CLI command for master listen mode.
 func GetCommand() *cli.Command {
 	return &cli.Command{
-		Name:  "listen",
-		Usage: "Listen for connections",
+		Name:        "listen",
+		Usage:       "Listen for connections",
+		Description: shared.GetBaseDescription(),
 		Action: func(parent context.Context, cmd *cli.Command) error {
 			ctx, cancel := context.WithCancel(parent)
 			defer cancel()

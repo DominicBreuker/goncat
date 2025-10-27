@@ -10,6 +10,8 @@ func init() {
 // remote endpoints. The slave receives this message and establishes a connection
 // to the remote host/port while forwarding traffic to/from the local host/port.
 type PortFwd struct {
+	Protocol string // "tcp" or "udp", defaults to "tcp" if empty
+
 	LocalHost string
 	LocalPort int
 

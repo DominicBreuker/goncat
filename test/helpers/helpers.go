@@ -2,12 +2,30 @@
 package helpers
 
 import (
+	"context"
 	"dominicbreuker/goncat/mocks"
 	mocks_tcp "dominicbreuker/goncat/mocks/tcp"
 	"dominicbreuker/goncat/pkg/config"
 	"io"
+	"net"
 	"time"
 )
+
+// mockUDPDialer creates a mock UDP dialer that uses the mock UDP network.
+// It returns a function that creates a connected UDP socket using the mock network.
+func mockUDPDialer(mockNet *mocks.MockUDPNetwork) config.UDPDialerFunc {
+	return func(ctx context.Context, network string, laddr, raddr *net.UDPAddr) (net.PacketConn, error) {
+		// Create a local listener with an ephemeral port to act as the "dialed" connection
+		conn, err := mockNet.ListenUDP(network, &net.UDPAddr{IP: net.ParseIP("127.0.0.1"), Port: 0})
+		if err != nil {
+			return nil, err
+		}
+		// Note: This creates an "unconnected" UDP socket, but the real implementation
+		// uses net.Dial which creates a "connected" one. For our mock purposes,
+		// the difference doesn't matter as much since we control both ends.
+		return conn, nil
+	}
+}
 
 // MockDependenciesAndConfigs contains all mock dependencies and default configurations
 // for integration tests. It provides a unified setup that can be easily customized
@@ -60,6 +78,7 @@ func SetupMockDependenciesAndConfigs() *MockDependenciesAndConfigs {
 	masterDeps := &config.Dependencies{
 		TCPDialer:      mockTCPNet.DialTCPContext,
 		TCPListener:    mockTCPNet.ListenTCP,
+		UDPDialer:      mockUDPDialer(mockUDPNet),
 		UDPListener:    mockUDPNet.ListenUDP,
 		PacketListener: mockUDPNet.ListenPacket,
 		Stdin:          func() io.Reader { return masterStdio.GetStdin() },
@@ -71,6 +90,7 @@ func SetupMockDependenciesAndConfigs() *MockDependenciesAndConfigs {
 	slaveDeps := &config.Dependencies{
 		TCPDialer:      mockTCPNet.DialTCPContext,
 		TCPListener:    mockTCPNet.ListenTCP,
+		UDPDialer:      mockUDPDialer(mockUDPNet),
 		UDPListener:    mockUDPNet.ListenUDP,
 		PacketListener: mockUDPNet.ListenPacket,
 		Stdin:          func() io.Reader { return slaveStdio.GetStdin() },

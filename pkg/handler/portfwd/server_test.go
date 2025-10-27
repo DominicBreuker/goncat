@@ -19,34 +19,58 @@ func TestConfig_String(t *testing.T) {
 		want string
 	}{
 		{
-			name: "standard config",
+			name: "standard config TCP",
+			cfg: Config{
+				Protocol:   "tcp",
+				LocalHost:  "127.0.0.1",
+				LocalPort:  8080,
+				RemoteHost: "192.168.1.1",
+				RemotePort: 9090,
+			},
+			want: "PortForwarding[tcp:127.0.0.1:8080 -> 192.168.1.1:9090]",
+		},
+		{
+			name: "standard config UDP",
+			cfg: Config{
+				Protocol:   "udp",
+				LocalHost:  "127.0.0.1",
+				LocalPort:  8080,
+				RemoteHost: "192.168.1.1",
+				RemotePort: 9090,
+			},
+			want: "PortForwarding[udp:127.0.0.1:8080 -> 192.168.1.1:9090]",
+		},
+		{
+			name: "localhost to localhost",
+			cfg: Config{
+				Protocol:   "tcp",
+				LocalHost:  "localhost",
+				LocalPort:  3000,
+				RemoteHost: "localhost",
+				RemotePort: 4000,
+			},
+			want: "PortForwarding[tcp:localhost:3000 -> localhost:4000]",
+		},
+		{
+			name: "wildcard address",
+			cfg: Config{
+				Protocol:   "tcp",
+				LocalHost:  "*",
+				LocalPort:  1234,
+				RemoteHost: "example.com",
+				RemotePort: 443,
+			},
+			want: "PortForwarding[tcp:*:1234 -> example.com:443]",
+		},
+		{
+			name: "empty protocol defaults to TCP",
 			cfg: Config{
 				LocalHost:  "127.0.0.1",
 				LocalPort:  8080,
 				RemoteHost: "192.168.1.1",
 				RemotePort: 9090,
 			},
-			want: "PortForwarding[127.0.0.1:8080 -> 192.168.1.1:9090]",
-		},
-		{
-			name: "localhost to localhost",
-			cfg: Config{
-				LocalHost:  "localhost",
-				LocalPort:  3000,
-				RemoteHost: "localhost",
-				RemotePort: 4000,
-			},
-			want: "PortForwarding[localhost:3000 -> localhost:4000]",
-		},
-		{
-			name: "wildcard address",
-			cfg: Config{
-				LocalHost:  "*",
-				LocalPort:  1234,
-				RemoteHost: "example.com",
-				RemotePort: 443,
-			},
-			want: "PortForwarding[*:1234 -> example.com:443]",
+			want: "PortForwarding[tcp:127.0.0.1:8080 -> 192.168.1.1:9090]",
 		},
 	}
 
@@ -158,9 +182,9 @@ func TestServer_HandlePortForwardingConn_SendAndGetError(t *testing.T) {
 	defer client.Close()
 	defer server.Close()
 
-	err := srv.handlePortForwardingConn(client)
+	err := srv.handleTCPConn(client)
 	if err == nil {
-		t.Error("handlePortForwardingConn() expected error, got nil")
+		t.Error("handleTCPConn() expected error, got nil")
 	}
 }
 
@@ -289,11 +313,11 @@ func TestServer_HandlePortForwardingConn_Success(t *testing.T) {
 	defer localClient.Close()
 	defer localServer.Close()
 
-	// Call handlePortForwardingConn in a goroutine since it blocks
+	// Call handleTCPConn in a goroutine since it blocks
 	go func() {
-		err := srv.handlePortForwardingConn(localClient)
+		err := srv.handleTCPConn(localClient)
 		if err != nil {
-			t.Errorf("handlePortForwardingConn() unexpected error: %v", err)
+			t.Errorf("handleTCPConn() unexpected error: %v", err)
 		}
 	}()
 
