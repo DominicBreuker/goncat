@@ -84,8 +84,9 @@ The implementation will:
     - Logger initialization uses the Verbose flag value
     - All existing tests pass (integration tests may need updates to set Logger in mock configs)
 
-- [ ] Step 3: Add verbose logging to connection establishment (client & server)
+- [X] Step 3: Add verbose logging to connection establishment (client & server)
   - **Task**: Add verbose logging to client and server connection setup to trace connection attempts, protocol selection, and TLS handshakes.
+  - **Completed**: Added verbose logging to server.go (listener creation, TLS cert generation, TLS handshake) and client.go (dialing, connection establishment, TLS upgrade). Updated client_test.go to handle new logger parameter. All tests pass.
   - **Files**:
     - `pkg/server/server.go`: 
       - Log when creating listeners: `cfg.Logger.VerboseMsg("Creating listener for protocol %s at %s", proto, addr)`
