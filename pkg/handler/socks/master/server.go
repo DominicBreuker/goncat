@@ -29,6 +29,8 @@ type Server struct {
 func NewServer(ctx context.Context, cfg Config, sessCtl ServerControlSession) (*Server, error) {
 	addr := format.Addr(cfg.LocalHost, cfg.LocalPort)
 
+	cfg.Logger.VerboseMsg("SOCKS proxy: listening on %s", addr)
+
 	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %s", addr, err)
@@ -38,11 +40,13 @@ func NewServer(ctx context.Context, cfg Config, sessCtl ServerControlSession) (*
 	listenerFn := config.GetTCPListenerFunc(cfg.Deps)
 	l, err := listenerFn("tcp", tcpAddr)
 	if err != nil {
+		cfg.Logger.VerboseMsg("SOCKS proxy error: failed to listen on %s: %v", addr, err)
 		return nil, fmt.Errorf("listen(tcp, %s): %s", addr, err)
 	}
 
 	go func() {
 		<-ctx.Done()
+		cfg.Logger.VerboseMsg("SOCKS proxy: context cancelled, closing listener on %s", addr)
 		l.Close()
 	}()
 
@@ -70,13 +74,19 @@ func (srv *Server) Serve() error {
 				return nil
 			}
 
+			srv.cfg.Logger.VerboseMsg("SOCKS proxy error: Accept(): %v", err)
 			srv.LogError("Accept(): %s\n", err)
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 
+		srv.cfg.Logger.VerboseMsg("SOCKS proxy: accepted client connection from %s", conn.RemoteAddr())
+
 		go func() {
-			defer conn.Close()
+			defer func() {
+				srv.cfg.Logger.VerboseMsg("SOCKS proxy: connection from %s closed", conn.RemoteAddr())
+				conn.Close()
+			}()
 
 			if err := srv.handle(conn); err != nil {
 				srv.LogError("handling connection: %s\n", err)
@@ -120,6 +130,7 @@ func (srv *Server) handle(connLocal net.Conn) error {
 		defer c.SetReadDeadline(time.Time{})
 	}
 
+	srv.cfg.Logger.VerboseMsg("SOCKS proxy: negotiating method with %s", connLocal.RemoteAddr())
 	if err := handleMethodSelection(bufConnLocal); err != nil {
 		return fmt.Errorf("handling method selection: %s", err)
 	}
@@ -145,8 +156,10 @@ func (srv *Server) handle(connLocal net.Conn) error {
 
 	switch req.Cmd {
 	case socks.CommandConnect:
+		srv.cfg.Logger.VerboseMsg("SOCKS proxy: CONNECT request from %s to %s:%d", connLocal.RemoteAddr(), req.DstAddr, req.DstPort)
 		return srv.handleConnect(connLocal, req)
 	case socks.CommandAssociate:
+		srv.cfg.Logger.VerboseMsg("SOCKS proxy: UDP ASSOCIATE request from %s", connLocal.RemoteAddr())
 		return srv.handleAssociate(bufConnLocal, req)
 	default:
 		return fmt.Errorf("unexpected SOCKS command %v: this is a bug", req.Cmd)

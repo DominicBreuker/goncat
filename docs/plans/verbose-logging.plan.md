@@ -149,8 +149,9 @@ The implementation will:
     - Logs capture listener startup, connection lifecycle, and errors
     - Manual verification: Set up local port forward with `--verbose`, make connection through tunnel, observe logs showing forwarding activity
 
-- [ ] Step 6: Add verbose logging to SOCKS proxy
+- [X] Step 6: Add verbose logging to SOCKS proxy
   - **Task**: Add verbose logging to SOCKS master and slave handlers to trace proxy listener startup, client connections, protocol negotiation, and connection forwarding.
+  - **Completed**: Added Logger field to SOCKS master Config. Added verbose logging for listener startup, client connections, method negotiation, CONNECT/ASSOCIATE requests, and connection closure. Updated master handler to pass Logger when creating SOCKS Config. All tests pass.
   - **Files**:
     - `pkg/handler/socks/master/server.go`:
       - Log listener startup: `cfg.Logger.VerboseMsg("SOCKS proxy: listening on %s", addr)`
