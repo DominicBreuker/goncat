@@ -30,11 +30,10 @@ func Pipe(ctx context.Context, conn net.Conn, verbose bool, deps *config.Depende
 
 	// Acquire semaphore slot before starting I/O
 	if err := stdio.AcquireSlot(ctx); err != nil {
-		if verbose {
-			log.ErrorMsg("Failed to acquire connection slot: %s\n", err)
-		}
+		log.ErrorMsg("Failed to acquire connection slot: %s\n", err)
 		return
 	}
+	log.InfoMsg("Connection slot acquired\n")
 
 	pipeio.Pipe(ctx, stdio, conn, func(err error) {
 		if verbose {
