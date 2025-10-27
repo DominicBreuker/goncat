@@ -37,6 +37,7 @@ type Config struct {
 	RemoteHost string        // Remote host to forward connections to
 	RemotePort int           // Remote port to forward connections to
 	Timeout    time.Duration // Timeout for operations (used for UDP session cleanup)
+	Logger     *log.Logger   // Logger for verbose messages
 }
 
 // ServerControlSession represents the interface for communicating over
@@ -89,6 +90,9 @@ func (srv *Server) Handle() error {
 // and forwarding them through yamux streams.
 func (srv *Server) handleTCP() error {
 	addr := format.Addr(srv.cfg.LocalHost, srv.cfg.LocalPort)
+	remoteAddr := format.Addr(srv.cfg.RemoteHost, srv.cfg.RemotePort)
+
+	srv.cfg.Logger.VerboseMsg("Port forwarding: listening on %s (forwarding to %s)", addr, remoteAddr)
 
 	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
@@ -97,11 +101,13 @@ func (srv *Server) handleTCP() error {
 
 	l, err := srv.tcpListenerFn("tcp", tcpAddr)
 	if err != nil {
+		srv.cfg.Logger.VerboseMsg("Port forwarding error: failed to listen on %s: %v", addr, err)
 		return fmt.Errorf("listen(tcp, %s): %w", addr, err)
 	}
 
 	go func() {
 		<-srv.ctx.Done()
+		srv.cfg.Logger.VerboseMsg("Port forwarding: context cancelled, closing listener on %s", addr)
 		l.Close()
 	}()
 
@@ -117,10 +123,13 @@ func (srv *Server) handleTCP() error {
 				return nil
 			}
 
+			srv.cfg.Logger.VerboseMsg("Port forwarding error: Accept() on %s: %v", addr, err)
 			log.ErrorMsg("Port forwarding %s: Accept(): %w", srv.cfg, err)
 			time.Sleep(100 * time.Millisecond) // tiny backoff to avoid a tight loop
 			continue
 		}
+
+		srv.cfg.Logger.VerboseMsg("Port forwarding: accepted connection from %s", conn.RemoteAddr())
 
 		if tc, ok := conn.(*net.TCPConn); ok {
 			_ = tc.SetKeepAlive(true)
@@ -128,6 +137,7 @@ func (srv *Server) handleTCP() error {
 
 		go func() {
 			defer func() {
+				srv.cfg.Logger.VerboseMsg("Port forwarding: connection from %s closed", conn.RemoteAddr())
 				_ = conn.Close()
 				if r := recover(); r != nil {
 					log.ErrorMsg("Port forwarding %s: handler panic: %v\n", srv.cfg, r)
@@ -172,6 +182,9 @@ func (srv *Server) acceptWithContext(l net.Listener) (net.Conn, error) {
 }
 
 func (srv *Server) handleTCPConn(connLocal net.Conn) error {
+	remoteAddr := format.Addr(srv.cfg.RemoteHost, srv.cfg.RemotePort)
+	srv.cfg.Logger.VerboseMsg("Port forwarding: creating forwarding stream for %s to %s", connLocal.RemoteAddr(), remoteAddr)
+
 	m := msg.Connect{
 		Protocol:   "tcp",
 		RemoteHost: srv.cfg.RemoteHost,
@@ -180,10 +193,12 @@ func (srv *Server) handleTCPConn(connLocal net.Conn) error {
 
 	connRemote, err := srv.sessCtl.SendAndGetOneChannelContext(srv.ctx, m)
 	if err != nil {
+		srv.cfg.Logger.VerboseMsg("Port forwarding error: failed to create stream for %s: %v", connLocal.RemoteAddr(), err)
 		return fmt.Errorf("SendAndGetOneChannel() for conn: %w", err)
 	}
 	defer connRemote.Close()
 
+	srv.cfg.Logger.VerboseMsg("Port forwarding: piping data for %s", connLocal.RemoteAddr())
 	pipeio.Pipe(srv.ctx, connLocal, connRemote, func(err error) {
 		log.ErrorMsg("port forwarding %s: pipe error: %s\n", srv.cfg, err)
 	})
@@ -196,6 +211,9 @@ func (srv *Server) handleTCPConn(connLocal net.Conn) error {
 // to yamux streams to route responses back to the correct client.
 func (srv *Server) handleUDP() error {
 	addr := format.Addr(srv.cfg.LocalHost, srv.cfg.LocalPort)
+	remoteAddr := format.Addr(srv.cfg.RemoteHost, srv.cfg.RemotePort)
+
+	srv.cfg.Logger.VerboseMsg("Port forwarding UDP: listening on %s (forwarding to %s)", addr, remoteAddr)
 
 	udpAddr, err := net.ResolveUDPAddr("udp", addr)
 	if err != nil {
@@ -204,6 +222,7 @@ func (srv *Server) handleUDP() error {
 
 	conn, err := srv.udpListenerFn("udp", udpAddr)
 	if err != nil {
+		srv.cfg.Logger.VerboseMsg("Port forwarding UDP error: failed to listen on %s: %v", addr, err)
 		return fmt.Errorf("listen(udp, %s): %w", addr, err)
 	}
 
@@ -211,6 +230,7 @@ func (srv *Server) handleUDP() error {
 
 	go func() {
 		<-srv.ctx.Done()
+		srv.cfg.Logger.VerboseMsg("Port forwarding UDP: context cancelled, closing listener on %s", addr)
 		conn.Close()
 	}()
 
@@ -238,6 +258,7 @@ func (srv *Server) handleUDP() error {
 				now := time.Now()
 				for addr, sess := range sessions {
 					if now.Sub(sess.lastActive) > timeout {
+						srv.cfg.Logger.VerboseMsg("Port forwarding UDP: cleaned up session for %s (idle timeout)", addr)
 						sess.cancel()
 						sess.stream.Close()
 						delete(sessions, addr)
@@ -277,6 +298,7 @@ func (srv *Server) handleUDP() error {
 			sessionsMu.Lock()
 			sess, exists := sessions[sessionKey]
 			if !exists {
+				srv.cfg.Logger.VerboseMsg("Port forwarding UDP: creating session for %s", clientAddr)
 				// Create new session for this client
 				ctx, cancel := context.WithCancel(srv.ctx)
 				sess = &udpSession{
@@ -295,6 +317,7 @@ func (srv *Server) handleUDP() error {
 				if err != nil {
 					sessionsMu.Unlock()
 					cancel()
+					srv.cfg.Logger.VerboseMsg("Port forwarding UDP error: failed to open stream for %s: %v", clientAddr, err)
 					log.ErrorMsg("UDP port forwarding %s: failed to open stream for %s: %s\n", srv.cfg, clientAddr, err)
 					return
 				}

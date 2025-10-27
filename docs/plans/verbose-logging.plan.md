@@ -21,7 +21,7 @@ The implementation will:
 
 ## Implementation plan
 
-- [X] Step 1: Refactor log package to support stateful logger
+- [V] Step 1: Refactor log package to support stateful logger
   - **Task**: Modify `pkg/log/log.go` to support a logger struct that can be initialized with verbose settings and passed through the config. The logger should avoid package-level state while maintaining backward compatibility with existing `ErrorMsg()` and `InfoMsg()` calls.
   - **Completed**: Added Logger struct with verbose field, NewLogger constructor, VerboseMsg method (nil-safe, no-op when verbose=false), and ErrorMsg/InfoMsg methods on Logger. Maintained backward compatibility with package-level ErrorMsg/InfoMsg functions via defaultLogger. Added comprehensive unit tests for all new functionality. All tests pass.
   - **Files**:
@@ -68,7 +68,7 @@ The implementation will:
     - Unit test added in `pkg/log/log_test.go` validating VerboseMsg behavior
     - All existing tests pass
 
-- [X] Step 2: Add Logger to config.Shared
+- [V] Step 2: Add Logger to config.Shared
   - **Task**: Add a `Logger *log.Logger` field to `config.Shared` so it can be passed throughout the application. Initialize the logger in CLI command handlers based on the `--verbose` flag.
   - **Completed**: Added Logger field to config.Shared. Initialized Logger in all 4 CLI command handlers (masterlisten, masterconnect, slaveconnect, slavelisten) using log.NewLogger(cmd.Bool(shared.VerboseFlag)). All unit tests pass.
   - **Files**:
@@ -84,7 +84,7 @@ The implementation will:
     - Logger initialization uses the Verbose flag value
     - All existing tests pass (integration tests may need updates to set Logger in mock configs)
 
-- [X] Step 3: Add verbose logging to connection establishment (client & server)
+- [V] Step 3: Add verbose logging to connection establishment (client & server)
   - **Task**: Add verbose logging to client and server connection setup to trace connection attempts, protocol selection, and TLS handshakes.
   - **Completed**: Added verbose logging to server.go (listener creation, TLS cert generation, TLS handshake) and client.go (dialing, connection establishment, TLS upgrade). Updated client_test.go to handle new logger parameter. All tests pass.
   - **Files**:
@@ -107,7 +107,7 @@ The implementation will:
     - Logs include enough context (address, protocol) to understand what's happening
     - Manual verification: Start master with `--verbose`, connect slave with `--verbose`, observe verbose output shows connection establishment steps
 
-- [X] Step 4: Add verbose logging to master/slave handler lifecycle
+- [V] Step 4: Add verbose logging to master/slave handler lifecycle
   - **Task**: Add verbose logging to master and slave handler code to trace session setup, handshake, control message exchanges, and session teardown.
   - **Completed**: Added verbose logging to master.go (yamux session creation, Hello sending/receiving, handshake errors) and slave.go (yamux session acceptance, Hello sending/receiving, handshake errors). All tests pass.
   - **Files**:
@@ -128,8 +128,9 @@ The implementation will:
     - Logs capture handshake, control messages, and task initiation
     - Manual verification: Run basic shell session with `--verbose` on both sides, observe detailed logs showing session lifecycle
 
-- [ ] Step 5: Add verbose logging to port forwarding
+- [X] Step 5: Add verbose logging to port forwarding
   - **Task**: Add verbose logging to port forwarding server and client to trace listener startup, connection acceptance, forwarding stream creation, and connection cleanup.
+  - **Completed**: Added Logger field to portfwd.Config. Added verbose logging to TCP and UDP port forwarding for listener startup, connection acceptance, stream creation, connection closure, and session cleanup. Updated master and slave handlers to pass Logger when creating portfwd.Config. All tests pass.
   - **Files**:
     - `pkg/handler/portfwd/server.go`:
       - Log listener startup: `cfg.Logger.VerboseMsg("Port forwarding: listening on %s (forwarding to %s)", localAddr, remoteAddr)`

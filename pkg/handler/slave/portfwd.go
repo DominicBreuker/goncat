@@ -31,6 +31,7 @@ func (slv *slave) handlePortFwdAsync(ctx context.Context, m msg.PortFwd) {
 			RemoteHost: m.LocalHost,
 			RemotePort: m.LocalPort,
 			Timeout:    slv.cfg.Timeout,
+			Logger:     slv.cfg.Logger,
 		}
 
 		h := portfwd.NewServer(ctx, cfg, slv.sess, slv.cfg.Deps)
