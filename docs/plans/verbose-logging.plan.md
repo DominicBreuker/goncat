@@ -107,8 +107,9 @@ The implementation will:
     - Logs include enough context (address, protocol) to understand what's happening
     - Manual verification: Start master with `--verbose`, connect slave with `--verbose`, observe verbose output shows connection establishment steps
 
-- [ ] Step 4: Add verbose logging to master/slave handler lifecycle
+- [X] Step 4: Add verbose logging to master/slave handler lifecycle
   - **Task**: Add verbose logging to master and slave handler code to trace session setup, handshake, control message exchanges, and session teardown.
+  - **Completed**: Added verbose logging to master.go (yamux session creation, Hello sending/receiving, handshake errors) and slave.go (yamux session acceptance, Hello sending/receiving, handshake errors). All tests pass.
   - **Files**:
     - `pkg/handler/master/master.go`:
       - Log session creation: `cfg.Logger.VerboseMsg("Opening yamux session with %s", remoteAddr)`

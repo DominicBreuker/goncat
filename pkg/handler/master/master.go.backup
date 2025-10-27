@@ -81,11 +81,9 @@ cfg.Logger.VerboseMsg("Waiting for Hello response from slave")
 		m, err := mst.sess.ReceiveContext(helloCtx)
 		if err != nil {
 			if err == io.EOF {
-cfg.Logger.VerboseMsg("Handshake failed: peer closed connection")
 				return fmt.Errorf("handshake: peer closed")
 			}
 			if helloCtx.Err() != nil || ctx.Err() != nil {
-cfg.Logger.VerboseMsg("Handshake timeout: %v", helloCtx.Err())
 				return fmt.Errorf("handshake: %w", helloCtx.Err())
 			}
 			// Common transient/timeout errors during early handshake; keep waiting within helloCtx
@@ -104,7 +102,6 @@ cfg.Logger.VerboseMsg("Handshake timeout: %v", helloCtx.Err())
 		case msg.Hello:
 			mst.remoteID = message.ID
 			log.InfoMsg("Session with %s established (%s)\n", mst.remoteAddr, mst.remoteID)
-cfg.Logger.VerboseMsg("Received Hello from slave %s (ID: %s)", mst.remoteAddr, mst.remoteID)
 			helloSeen = true
 		default:
 			// Ignore any other messages until hello is completed.

@@ -1,0 +1,16 @@
+--- pkg/handler/master/master.go
++++ pkg/handler/master/master.go
+@@ -64,11 +64,13 @@ func Handle(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn
+ defer cancel()
+ 
+ // 1) Perform handshake: send Hello and wait for Hello
++cfg.Logger.VerboseMsg("Sending Hello message to slave")
+ if err := mst.sess.SendContext(ctx, msg.Hello{ID: mst.cfg.ID}); err != nil {
+ // Treat handshake send failure as terminal
++cfg.Logger.VerboseMsg("Failed to send Hello message: %v", err)
+ return fmt.Errorf("sending hello to slave: %w", err)
+ }
+ 
+ // Give the peer a bounded time to respond to Hello
+ helloCtx, helloCancel := context.WithTimeout(ctx, mst.cfg.Timeout)
+ defer helloCancel()
