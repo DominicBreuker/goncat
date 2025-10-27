@@ -6,6 +6,7 @@ import (
 	"dominicbreuker/goncat/pkg/transport"
 	"fmt"
 	"net"
+	"sync"
 	"testing"
 	"time"
 )
@@ -110,7 +111,7 @@ func TestListener_Serve(t *testing.T) {
 	}
 }
 
-func TestListener_SingleConnection(t *testing.T) {
+func TestListener_ConcurrentConnections(t *testing.T) {
 	// Use mock TCP network
 	mockNet := mocks_tcp.NewMockTCPNetwork()
 	deps := &config.Dependencies{
@@ -125,13 +126,16 @@ func TestListener_SingleConnection(t *testing.T) {
 	defer l.Close()
 
 	addr := l.nl.Addr().String()
-	handlerCount := 0
-	handlerCh := make(chan bool)
-	handlerStarted := make(chan bool)
+	var handlerCount int
+	var mu sync.Mutex
+	handlerCh := make(chan bool, 10) // Buffered to allow multiple handlers
+	handlerStarted := make(chan bool, 10)
 
 	handler := func(conn net.Conn) error {
 		defer conn.Close()
+		mu.Lock()
 		handlerCount++
+		mu.Unlock()
 		handlerStarted <- true
 		<-handlerCh // Block until we signal
 		return nil
@@ -147,39 +151,43 @@ func TestListener_SingleConnection(t *testing.T) {
 		t.Fatalf("Listener not ready: %v", err)
 	}
 
-	// Connect first connection
+	// Connect multiple connections (test with 5 concurrent connections)
+	const numConns = 5
+	conns := make([]net.Conn, numConns)
 	tcpAddr, _ := net.ResolveTCPAddr("tcp", addr)
-	conn1, err := mockNet.DialTCP("tcp", nil, tcpAddr)
-	if err != nil {
-		t.Fatalf("Failed to connect: %v", err)
+
+	for i := 0; i < numConns; i++ {
+		conn, err := mockNet.DialTCP("tcp", nil, tcpAddr)
+		if err != nil {
+			t.Fatalf("Failed to connect %d: %v", i, err)
+		}
+		conns[i] = conn
+		defer conn.Close()
+
+		// Wait for handler to start processing
+		select {
+		case <-handlerStarted:
+			// Handler started
+		case <-time.After(500 * time.Millisecond):
+			t.Fatalf("Handler %d did not start", i)
+		}
 	}
-	defer conn1.Close()
 
-	// Wait for handler to start processing
-	<-handlerStarted
-
-	// Try second connection - should be rejected since first is still active
-	conn2, err := mockNet.DialTCP("tcp", nil, tcpAddr)
-	if err != nil {
-		t.Fatalf("Failed to connect: %v", err)
+	// All handlers should be running concurrently
+	mu.Lock()
+	count := handlerCount
+	mu.Unlock()
+	if count != numConns {
+		t.Errorf("Expected %d concurrent handlers, got %d", numConns, count)
 	}
 
-	// Second connection should be closed immediately
-	buf := make([]byte, 1)
-	conn2.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
-	_, _ = conn2.Read(buf) // Intentionally ignoring error - we're checking if connection closes
-	conn2.Close()
+	// Signal all handlers to finish
+	for i := 0; i < numConns; i++ {
+		handlerCh <- true
+	}
 
-	// Signal first handler to finish
-	handlerCh <- true
-
-	// Wait briefly for handler to complete
+	// Wait briefly for handlers to complete
 	<-time.After(100 * time.Millisecond)
-
-	// Verify only one handler was called
-	if handlerCount != 1 {
-		t.Errorf("Expected 1 handler call, got %d", handlerCount)
-	}
 }
 
 func TestListener_HandlerError(t *testing.T) {

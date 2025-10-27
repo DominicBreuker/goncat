@@ -12,10 +12,10 @@ import (
 )
 
 // Listener implements the transport.Listener interface for TCP connections.
-// It ensures only one connection is handled at a time via a semaphore.
+// It allows up to 100 concurrent connections to prevent resource exhaustion.
 type Listener struct {
 	nl  net.Listener
-	sem chan struct{} // capacity 1 -> allows a single active handler
+	sem chan struct{} // capacity 100 -> allows up to 100 concurrent handlers
 }
 
 // NewListener creates a new TCP listener on the specified address.
@@ -35,15 +35,17 @@ func NewListener(addr string, deps *config.Dependencies) (*Listener, error) {
 
 	l := &Listener{
 		nl:  nl,
-		sem: make(chan struct{}, 1),
+		sem: make(chan struct{}, 100),
 	}
-	// initially allow one active connection
-	l.sem <- struct{}{}
+	// initially allow 100 active connections
+	for i := 0; i < 100; i++ {
+		l.sem <- struct{}{}
+	}
 	return l, nil
 }
 
 // Serve accepts and handles incoming connections using the provided handler.
-// Only one connection is handled at a time; additional connections are closed if received.
+// Up to 100 connections can be handled concurrently; additional connections are closed.
 func (l *Listener) Serve(handle transport.Handler) error {
 	for {
 		conn, err := l.nl.Accept()
@@ -60,7 +62,7 @@ func (l *Listener) Serve(handle transport.Handler) error {
 			return fmt.Errorf("Accept(): %w", err)
 		}
 
-		// Try to acquire the single slot. If busy, drop the new connection.
+		// Try to acquire a slot. If all 100 slots busy, drop the new connection.
 		select {
 		case <-l.sem: // acquired
 			go func(c net.Conn) {
@@ -82,7 +84,7 @@ func (l *Listener) Serve(handle transport.Handler) error {
 			}(conn)
 
 		default:
-			// Already handling one: politely close the extra connection.
+			// All 100 slots busy: politely close the extra connection.
 			_ = conn.Close()
 			// continue accepting
 		}

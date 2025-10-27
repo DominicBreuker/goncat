@@ -91,8 +91,9 @@ This improves UX by allowing multiple concurrent command executions on listening
     - Timeouts work correctly
     - No race conditions detected
 
-- [ ] **Step 2: Update transport layer semaphores to N=100**
+- [X] **Step 2: Update transport layer semaphores to N=100**
   - **Task**: Increase semaphore capacity in transport listeners from 1 to 100 to allow multiple concurrent connections at the transport level. This prevents a single misbehaving connection from blocking all new connections during handshakes.
+  - **Completed**: Updated all three transport listeners (tcp, ws, udp) to use N=100 semaphores. Updated test to verify concurrent connections work. All tests pass with race detection.
   - **Files**:
     - `pkg/transport/tcp/listener.go`: Change line 38 from `make(chan struct{}, 1)` to `make(chan struct{}, 100)`, and line 41 to fill all 100 slots initially. Update comments to reflect the new capacity (lines 15, 18, 46).
     - `pkg/transport/ws/listener.go`: Change line 55 from `make(chan struct{}, 1)` to `make(chan struct{}, 100)`, and line 58 to fill all 100 slots. Update comments (lines 21, 26, 81).
