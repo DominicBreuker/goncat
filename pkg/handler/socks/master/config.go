@@ -5,6 +5,7 @@ package master
 
 import (
 	"dominicbreuker/goncat/pkg/config"
+	"dominicbreuker/goncat/pkg/log"
 	"fmt"
 )
 
@@ -13,6 +14,7 @@ type Config struct {
 	LocalHost string               // Local host address to bind the SOCKS5 server to
 	LocalPort int                  // Local port to bind the SOCKS5 server to
 	Deps      *config.Dependencies // Dependencies for testing and customization
+	Logger    *log.Logger          // Logger for verbose messages
 }
 
 func (cfg Config) String() string {

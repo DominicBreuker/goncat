@@ -41,15 +41,20 @@ func Handle(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn n
 	}
 	var err error
 
+	cfg.Logger.VerboseMsg("Master handler starting for connection from %s", conn.RemoteAddr())
+
 	// let user know about connection status
 	defer func() {
 		if mst.remoteID != "" {
 			log.InfoMsg("Session with %s closed (%s)\n", mst.remoteAddr, mst.remoteID)
+			cfg.Logger.VerboseMsg("Closing session with %s (%s)", mst.remoteAddr, mst.remoteID)
 		}
 	}()
 
+	cfg.Logger.VerboseMsg("Opening yamux session with %s", mst.remoteAddr)
 	mst.sess, err = mux.OpenSessionContext(ctx, conn, cfg.Timeout)
 	if err != nil {
+		cfg.Logger.VerboseMsg("Failed to open yamux session: %v", err)
 		return fmt.Errorf("mux.OpenSession(conn): %s", err)
 	}
 	defer func() { _ = mst.sess.Close() }()
@@ -59,8 +64,10 @@ func Handle(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn n
 	defer cancel()
 
 	// 1) Perform handshake: send Hello and wait for Hello
+	cfg.Logger.VerboseMsg("Sending Hello message to slave")
 	if err := mst.sess.SendContext(ctx, msg.Hello{ID: mst.cfg.ID}); err != nil {
 		// Treat handshake send failure as terminal
+		cfg.Logger.VerboseMsg("Failed to send Hello message: %v", err)
 		return fmt.Errorf("sending hello to slave: %w", err)
 	}
 
@@ -68,14 +75,17 @@ func Handle(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn n
 	helloCtx, helloCancel := context.WithTimeout(ctx, mst.cfg.Timeout)
 	defer helloCancel()
 
+	cfg.Logger.VerboseMsg("Waiting for Hello response from slave")
 	helloSeen := false
 	for !helloSeen {
 		m, err := mst.sess.ReceiveContext(helloCtx)
 		if err != nil {
 			if err == io.EOF {
+				cfg.Logger.VerboseMsg("Handshake failed: peer closed connection")
 				return fmt.Errorf("handshake: peer closed")
 			}
 			if helloCtx.Err() != nil || ctx.Err() != nil {
+				cfg.Logger.VerboseMsg("Handshake timeout: %v", helloCtx.Err())
 				return fmt.Errorf("handshake: %w", helloCtx.Err())
 			}
 			// Common transient/timeout errors during early handshake; keep waiting within helloCtx
@@ -94,6 +104,7 @@ func Handle(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn n
 		case msg.Hello:
 			mst.remoteID = message.ID
 			log.InfoMsg("Session with %s established (%s)\n", mst.remoteAddr, mst.remoteID)
+			cfg.Logger.VerboseMsg("Received Hello from slave %s (ID: %s)", mst.remoteAddr, mst.remoteID)
 			helloSeen = true
 		default:
 			// Ignore any other messages until hello is completed.

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/x509"
 	"dominicbreuker/goncat/pkg/config"
+	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/transport"
 	"errors"
 	"net"
@@ -146,7 +147,7 @@ func TestConnect_TCPDialerCreation(t *testing.T) {
 			t.Error("newWSDialer should not be called for TCP protocol")
 			return nil
 		},
-		tlsUpgrader: func(conn net.Conn, key string, timeout time.Duration) (net.Conn, error) {
+		tlsUpgrader: func(conn net.Conn, key string, timeout time.Duration, logger *log.Logger) (net.Conn, error) {
 			t.Error("tlsUpgrader should not be called when SSL is false")
 			return nil, nil
 		},
@@ -185,7 +186,7 @@ func TestConnect_TCPDialerCreationError(t *testing.T) {
 			t.Error("newWSDialer should not be called for TCP protocol")
 			return nil
 		},
-		tlsUpgrader: func(conn net.Conn, key string, timeout time.Duration) (net.Conn, error) {
+		tlsUpgrader: func(conn net.Conn, key string, timeout time.Duration, logger *log.Logger) (net.Conn, error) {
 			t.Error("tlsUpgrader should not be called when dialer creation fails")
 			return nil, nil
 		},
@@ -224,7 +225,7 @@ func TestConnect_TCPDialError(t *testing.T) {
 			t.Error("newWSDialer should not be called for TCP protocol")
 			return nil
 		},
-		tlsUpgrader: func(conn net.Conn, key string, timeout time.Duration) (net.Conn, error) {
+		tlsUpgrader: func(conn net.Conn, key string, timeout time.Duration, logger *log.Logger) (net.Conn, error) {
 			t.Error("tlsUpgrader should not be called when dial fails")
 			return nil, nil
 		},
@@ -284,7 +285,7 @@ func TestConnect_WSDialerCreation(t *testing.T) {
 					}
 					return fakeDialer
 				},
-				tlsUpgrader: func(conn net.Conn, key string, timeout time.Duration) (net.Conn, error) {
+				tlsUpgrader: func(conn net.Conn, key string, timeout time.Duration, logger *log.Logger) (net.Conn, error) {
 					t.Error("tlsUpgrader should not be called when SSL is false")
 					return nil, nil
 				},
@@ -326,7 +327,7 @@ func TestConnect_WSDialError(t *testing.T) {
 		newWSDialer: func(ctx context.Context, addr string, proto config.Protocol) transport.Dialer {
 			return fakeDialer
 		},
-		tlsUpgrader: func(conn net.Conn, key string, timeout time.Duration) (net.Conn, error) {
+		tlsUpgrader: func(conn net.Conn, key string, timeout time.Duration, logger *log.Logger) (net.Conn, error) {
 			t.Error("tlsUpgrader should not be called when dial fails")
 			return nil, nil
 		},
@@ -369,7 +370,7 @@ func TestConnect_TLSUpgrade(t *testing.T) {
 			t.Error("newWSDialer should not be called for TCP protocol")
 			return nil
 		},
-		tlsUpgrader: func(conn net.Conn, key string, timeout time.Duration) (net.Conn, error) {
+		tlsUpgrader: func(conn net.Conn, key string, timeout time.Duration, logger *log.Logger) (net.Conn, error) {
 			if conn != plainConn {
 				t.Error("tlsUpgrader got wrong connection")
 			}
@@ -419,7 +420,7 @@ func TestConnect_TLSUpgradeError(t *testing.T) {
 			t.Error("newWSDialer should not be called for TCP protocol")
 			return nil
 		},
-		tlsUpgrader: func(conn net.Conn, key string, timeout time.Duration) (net.Conn, error) {
+		tlsUpgrader: func(conn net.Conn, key string, timeout time.Duration, logger *log.Logger) (net.Conn, error) {
 			return nil, tlsErr
 		},
 	}
@@ -462,7 +463,7 @@ func TestConnect_TLSUpgradeWithMTLS(t *testing.T) {
 			t.Error("newWSDialer should not be called for TCP protocol")
 			return nil
 		},
-		tlsUpgrader: func(conn net.Conn, key string, timeout time.Duration) (net.Conn, error) {
+		tlsUpgrader: func(conn net.Conn, key string, timeout time.Duration, logger *log.Logger) (net.Conn, error) {
 			if conn != plainConn {
 				t.Error("tlsUpgrader got wrong connection")
 			}
@@ -547,7 +548,8 @@ func TestUpgradeToTLS_HandshakeTimeout(t *testing.T) {
 		handshakeErr: errors.New("handshake timeout"),
 	}
 
-	_, err := upgradeToTLS(conn, "", 1*time.Second)
+	logger := log.NewLogger(false) // Use a logger with verbose disabled for tests
+	_, err := upgradeToTLS(conn, "", 1*time.Second, logger)
 	if err == nil {
 		t.Fatal("upgradeToTLS() error = nil, want error")
 	}

@@ -28,12 +28,19 @@ func GetCommand() *cli.Command {
 
 			shared.SetupSignalHandling(cancel)
 
+			// Initialize logger early for cleanup logging
+			logger := log.NewLogger(cmd.Bool(shared.VerboseFlag))
+
 			if cmd.Bool(shared.CleanupFlag) {
+				logger.VerboseMsg("Cleanup enabled: executable will be deleted on exit")
 				delFunc, err := clean.EnsureDeletion(ctx)
 				if err != nil {
 					return fmt.Errorf("clean.EnsureDeletion(): %s", err)
 				}
-				defer delFunc()
+				defer func() {
+					logger.VerboseMsg("Executing cleanup: deleting executable")
+					delFunc()
+				}()
 			}
 
 			args := cmd.Args()
@@ -57,7 +64,9 @@ func GetCommand() *cli.Command {
 				SSL:      cmd.Bool(shared.SSLFlag),
 				Key:      cmd.String(shared.KeyFlag),
 				Verbose:  cmd.Bool(shared.VerboseFlag),
-				Timeout:  time.Duration(cmd.Int(shared.TimeoutFlag)) * time.Millisecond,
+				Timeout:  time.Duration(cmd.Int(shared.TimeoutFlag)) * time.Second,
+				Deps:     nil,
+				Logger:   logger,
 			}
 
 			if errs := config.Validate(cfg); len(errs) > 0 {

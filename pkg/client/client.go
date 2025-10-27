@@ -25,7 +25,7 @@ type dependencies struct {
 	newTCPDialer func(string, *config.Dependencies) (transport.Dialer, error)
 	newWSDialer  func(context.Context, string, config.Protocol) transport.Dialer
 	newUDPDialer func(string, time.Duration) (transport.Dialer, error)
-	tlsUpgrader  func(net.Conn, string, time.Duration) (net.Conn, error)
+	tlsUpgrader  func(net.Conn, string, time.Duration, *log.Logger) (net.Conn, error)
 }
 
 // Client manages a network connection with support for multiple transport protocols
@@ -84,6 +84,7 @@ func (c *Client) connect(deps *dependencies) error {
 	addr := format.Addr(c.cfg.Host, c.cfg.Port)
 
 	log.InfoMsg("Connecting to %s\n", addr)
+	c.cfg.Logger.VerboseMsg("Dialing %s using protocol %s", addr, c.cfg.Protocol)
 
 	var d transport.Dialer
 	var err error
@@ -95,28 +96,35 @@ func (c *Client) connect(deps *dependencies) error {
 		// Application-level TLS (--ssl) will be applied after connection if needed
 		d, err = deps.newUDPDialer(addr, c.cfg.Timeout)
 		if err != nil {
+			c.cfg.Logger.VerboseMsg("Failed to create UDP dialer: %v", err)
 			return fmt.Errorf("create udp dialer: %w", err)
 		}
 	default:
 		d, err = deps.newTCPDialer(addr, c.cfg.Deps)
 		if err != nil {
+			c.cfg.Logger.VerboseMsg("Failed to create TCP dialer: %v", err)
 			return fmt.Errorf("create dialer: %w", err)
 		}
 	}
 
 	c.conn, err = d.Dial(c.ctx)
 	if err != nil {
+		c.cfg.Logger.VerboseMsg("Connection failed: %v", err)
 		return fmt.Errorf("dial: %w", err)
 	}
+	c.cfg.Logger.VerboseMsg("Connection established to %s", addr)
 
 	// Apply application-level TLS upgrade if --ssl is set
 	// This happens for all transports: TCP, WS, WSS, and UDP
 	// (WS and UDP already have transport-level TLS, but app-level TLS is separate)
 	if c.cfg.SSL {
-		c.conn, err = deps.tlsUpgrader(c.conn, c.cfg.GetKey(), c.cfg.Timeout)
+		c.cfg.Logger.VerboseMsg("Upgrading connection to TLS")
+		c.conn, err = deps.tlsUpgrader(c.conn, c.cfg.GetKey(), c.cfg.Timeout, c.cfg.Logger)
 		if err != nil {
+			c.cfg.Logger.VerboseMsg("TLS upgrade failed: %v", err)
 			return fmt.Errorf("upgrade to tls: %w", err)
 		}
+		c.cfg.Logger.VerboseMsg("TLS upgrade completed")
 	}
 
 	return nil
@@ -125,13 +133,14 @@ func (c *Client) connect(deps *dependencies) error {
 // upgradeToTLS wraps the given connection with TLS encryption.
 // If a key is provided, it enables mutual authentication using generated certificates.
 // The function configures TLS 1.3 as the minimum version.
-func upgradeToTLS(conn net.Conn, key string, timeout time.Duration) (net.Conn, error) {
+func upgradeToTLS(conn net.Conn, key string, timeout time.Duration, logger *log.Logger) (net.Conn, error) {
 	cfg := &tls.Config{
 		MinVersion:         tls.VersionTLS13,
 		InsecureSkipVerify: true, // custom verification below
 	}
 
 	if key != "" {
+		logger.VerboseMsg("Generating TLS client certificates for mutual authentication")
 		caCert, cert, err := crypto.GenerateCertificates(key)
 		if err != nil {
 			return nil, fmt.Errorf("generate certificates: %w", err)
@@ -141,6 +150,7 @@ func upgradeToTLS(conn net.Conn, key string, timeout time.Duration) (net.Conn, e
 		cfg.VerifyPeerCertificate = func(rawCerts [][]byte, _ [][]*x509.Certificate) error {
 			return customVerifier(caCert, rawCerts)
 		}
+		logger.VerboseMsg("TLS mutual authentication configured")
 	}
 
 	tlsConn := tls.Client(conn, cfg)
@@ -150,10 +160,13 @@ func upgradeToTLS(conn net.Conn, key string, timeout time.Duration) (net.Conn, e
 		_ = tlsConn.SetDeadline(time.Now().Add(timeout))
 		defer func() { _ = tlsConn.SetDeadline(time.Time{}) }()
 	}
+	logger.VerboseMsg("Starting TLS client handshake")
 	if err := tlsConn.Handshake(); err != nil {
+		logger.VerboseMsg("TLS client handshake failed: %v", err)
 		_ = tlsConn.Close()
 		return nil, fmt.Errorf("tls handshake: %w", err)
 	}
+	logger.VerboseMsg("TLS client handshake completed successfully")
 
 	return tlsConn, nil
 }

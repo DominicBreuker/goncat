@@ -42,6 +42,7 @@ func slaveConnect(
 	select {
 	case <-ctx.Done():
 		// Cancellation: close and wait for Handle to exit
+		cfg.Logger.VerboseMsg("Slave connect: context cancelled, closing connection")
 		closeClient()
 		err := <-errCh
 		// Treat cancel/close as benign

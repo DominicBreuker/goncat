@@ -56,6 +56,7 @@ func masterListen(
 	select {
 	case <-ctx.Done():
 		// our context got canceled (parent canceled or defer cancel on return)
+		cfg.Logger.VerboseMsg("Master listen: context cancelled, shutting down server")
 		closeServer()
 		// wait for Serve to exit
 		err := <-errCh
