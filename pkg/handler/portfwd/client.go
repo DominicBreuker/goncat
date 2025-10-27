@@ -95,6 +95,7 @@ func (h *Client) handleTCP() error {
 // handleUDP handles UDP port forwarding by establishing a UDP connection
 // and forwarding datagrams bidirectionally through the yamux stream.
 func (h *Client) handleUDP() error {
+
 	connRemote, err := h.sessCtl.GetOneChannelContext(h.ctx)
 	if err != nil {
 		return fmt.Errorf("GetOneChannelContext(): %w", err)
@@ -113,6 +114,7 @@ func (h *Client) handleUDP() error {
 		return fmt.Errorf("dial(udp, %s): %w", addr, err)
 	}
 	defer connLocal.Close()
+
 
 	// Create channels for coordinating goroutines
 	done := make(chan struct{})
@@ -138,6 +140,7 @@ func (h *Client) handleUDP() error {
 				errCh <- fmt.Errorf("read from stream: %w", err)
 				return
 			}
+
 
 			// Use WriteTo for compatibility with both connected and unconnected UDP sockets
 			_, err = connLocal.WriteTo(buffer[:n], udpAddr)
@@ -168,6 +171,7 @@ func (h *Client) handleUDP() error {
 				errCh <- fmt.Errorf("read from UDP: %w", err)
 				return
 			}
+
 
 			_, err = connRemote.Write(buffer[:n])
 			if err != nil {

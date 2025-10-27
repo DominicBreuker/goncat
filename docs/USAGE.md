@@ -300,14 +300,22 @@ goncat master listen 'tcp://*:12345' --exec /bin/bash --pty
 
 ### Port Forwarding
 
+goncat supports both TCP and UDP port forwarding. Use the protocol prefix (`T:` or `U:`) to specify the protocol explicitly.
+
 #### Local Port Forwarding
 
 Opens a port on the **master** side that forwards connections through the slave:
 
 ```bash
-# Format: -L [local-host:]<local-port>:<remote-host>:<remote-port>
+# TCP forwarding (implicit - backward compatible)
 goncat master listen 'tcp://*:12345' --exec /bin/sh -L 8443:google.com:443
 goncat master listen 'tcp://*:12345' --exec /bin/sh -L localhost:8080:192.168.1.50:80
+
+# Explicit TCP forwarding
+goncat master listen 'tcp://*:12345' --exec /bin/sh -L T:8080:web-server:80
+
+# UDP forwarding (new!)
+goncat master listen 'tcp://*:12345' --exec /bin/sh -L U:5353:dns-server:53
 ```
 
 **Use case**: Access services on the slave's network from your master machine.
@@ -319,25 +327,38 @@ goncat master listen 'tcp://*:12345' --exec /bin/sh -L localhost:8080:192.168.1.
 Opens a port on the **slave** side that forwards connections through the master:
 
 ```bash
-# Format: -R [remote-host:]<remote-port>:<local-host>:<local-port>
+# TCP forwarding (implicit)
 goncat master listen 'tcp://*:12345' --exec /bin/sh -R 8080:localhost:80
 goncat master listen 'tcp://*:12345' --exec /bin/sh -R 0.0.0.0:9000:192.168.1.10:3000
+
+# Explicit UDP forwarding
+goncat master listen 'tcp://*:12345' --exec /bin/sh -R U:8080:localhost:9000
 ```
 
 **Use case**: Expose services on the master's network to the slave.
 
 **Example**: Expose your local web server at `localhost:80` to the slave at port `8080`.
 
-#### Multiple Port Forwards
+#### Multiple Port Forwards (Mixed Protocols)
 
-You can specify multiple port forwards:
+You can specify multiple port forwards with different protocols:
 
 ```bash
 goncat master listen 'tcp://*:12345' --exec /bin/sh \
-  -L 8080:internal-app:80 \
+  -L T:8080:internal-app:80 \
+  -L U:5353:dns-server:53 \
   -L 5432:database:5432 \
-  -R 9090:localhost:8000
+  -R U:9090:localhost:8000
 ```
+
+#### UDP Port Forwarding Details
+
+For comprehensive examples and troubleshooting information about UDP port forwarding, see [UDP Port Forwarding Examples](examples/udp-port-forwarding.md).
+
+**Key points**:
+- Protocol prefix is case-insensitive (`U:` or `u:`, `T:` or `t:`)
+- UDP sessions are tracked per client address and automatically cleaned up after inactivity
+- Use `--timeout` flag to control UDP session lifetime (default: 60s)
 
 ### SOCKS Proxy
 

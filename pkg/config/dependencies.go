@@ -84,19 +84,15 @@ func GetTCPDialerFunc(deps *Dependencies) TCPDialerFunc {
 }
 
 // GetUDPDialerFunc returns the UDP dialer function from dependencies, or a default implementation.
-// If deps is nil or deps.UDPDialer is nil, returns a function that uses net.DialUDP.
+// If deps is nil or deps.UDPDialer is nil, returns a function that creates an unconnected UDP socket.
 func GetUDPDialerFunc(deps *Dependencies) UDPDialerFunc {
 	if deps != nil && deps.UDPDialer != nil {
 		return deps.UDPDialer
 	}
 	return func(ctx context.Context, network string, laddr, raddr *net.UDPAddr) (net.PacketConn, error) {
-		// Use net.Dialer with a reasonable default timeout so dials are cancelable.
-		d := &net.Dialer{Timeout: 10 * time.Second}
-		conn, err := d.DialContext(ctx, network, raddr.String())
-		if err != nil {
-			return nil, err
-		}
-		return conn.(*net.UDPConn), nil
+		// Create an unconnected UDP socket so we can use WriteTo()
+		// This is necessary because we need to send to a specific address
+		return net.ListenUDP(network, laddr)
 	}
 }
 
