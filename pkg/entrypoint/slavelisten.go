@@ -48,6 +48,7 @@ func slaveListen(
 
 	select {
 	case <-ctx.Done():
+		cfg.Logger.VerboseMsg("Slave listen: context cancelled, shutting down server")
 		closeServer()
 		err := <-errCh
 		if err == nil || isServerClosed(err) || errors.Is(err, context.Canceled) {

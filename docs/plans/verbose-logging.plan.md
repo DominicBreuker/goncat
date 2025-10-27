@@ -169,9 +169,14 @@ The implementation will:
     - Logs capture listener startup, client connections, protocol negotiation
     - Manual verification: Set up SOCKS proxy with `--verbose`, use curl through proxy, observe logs showing proxy activity
 
-- [ ] Step 7: Add verbose logging to context cancellation and timeouts
+- [X] Step 7: Add verbose logging to context cancellation and timeouts
   - **Task**: Add verbose logging when contexts are cancelled or deadlines are hit to help diagnose timeout issues and unexpected terminations.
+  - **Completed**: Added verbose logging to context cancellation points in all entrypoint files (masterlisten, masterconnect, slavelisten, slaveconnect). Logs now show when operations are cancelled due to context cancellation. Timeout logging was already present in master/slave handlers from previous steps.
   - **Files**:
+    - `pkg/entrypoint/masterlisten.go`: Log "context cancelled, shutting down server"
+    - `pkg/entrypoint/masterconnect.go`: Log "context cancelled, closing connection"
+    - `pkg/entrypoint/slavelisten.go`: Log "context cancelled, shutting down server"
+    - `pkg/entrypoint/slaveconnect.go`: Log "context cancelled, closing connection"
     - Review all locations using `ctx.Done()` or `context.WithTimeout()` and add verbose logging
     - `pkg/handler/master/master.go`, `pkg/handler/slave/slave.go`: Log when contexts are cancelled
     - `pkg/mux/master.go`, `pkg/mux/slave.go`: Log timeout-related errors
@@ -183,9 +188,12 @@ The implementation will:
     - Logs help identify where and why operations were terminated
     - Manual verification: Set up connection with short timeout, trigger timeout, observe verbose logs explaining cancellation
 
-- [ ] Step 8: Add verbose logging for cleanup operations
+- [X] Step 8: Add verbose logging for cleanup operations
   - **Task**: Add verbose logging to cleanup-related code to trace when resources are being released and binaries are being deleted.
+  - **Completed**: Added verbose logging for cleanup operations in slaveconnect and slavelisten commands. Logs now show when cleanup is enabled and when executable deletion occurs.
   - **Files**:
+    - `cmd/slaveconnect/slaveconnect.go`: Log "Cleanup enabled" and "Executing cleanup: deleting executable"
+    - `cmd/slavelisten/slavelisten.go`: Log "Cleanup enabled" and "Executing cleanup: deleting executable"
     - `pkg/clean/clean.go`: Log when cleanup is initiated, when signal handlers are set up, when deletion occurs
     - `pkg/server/server.go`, `pkg/client/client.go`: Log resource cleanup on Close()
   - **Dependencies**: Step 2

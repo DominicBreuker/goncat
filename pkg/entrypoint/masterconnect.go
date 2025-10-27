@@ -45,6 +45,7 @@ func masterConnect(
 	select {
 	case <-ctx.Done():
 		// Cancellation: close client/conn and wait for Handle to unwind.
+		cfg.Logger.VerboseMsg("Master connect: context cancelled, closing connection")
 		closeClient()
 		err := <-errCh
 		// Treat closure due to cancel/close as benign.
