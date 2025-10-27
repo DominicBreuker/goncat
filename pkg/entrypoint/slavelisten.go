@@ -4,6 +4,7 @@ import (
 	"context"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/handler/slave"
+	"dominicbreuker/goncat/pkg/semaphore"
 	"errors"
 	"fmt"
 	"net"
@@ -13,6 +14,13 @@ import (
 // uses interfaces/factories from internal.go (DI for testing)
 
 func SlaveListen(ctx context.Context, cfg *config.Shared) error {
+	// Create N=1 semaphore for limiting concurrent stdin/stdout connections.
+	// Slave listeners accept multiple command execution sessions but only one stdin/stdout piping session.
+	if cfg.Deps == nil {
+		cfg.Deps = &config.Dependencies{}
+	}
+	cfg.Deps.ConnSem = semaphore.New(1, cfg.Timeout)
+
 	return slaveListen(ctx, cfg, realServerFactory(), slave.Handle)
 }
 

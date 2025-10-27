@@ -83,7 +83,7 @@ func (mst *master) handleForgroundPty(ctx context.Context) error {
 		}
 	}
 
-	if err := terminal.PipeWithPTY(ctx, connPtyCtl, connData, mst.cfg.Verbose); err != nil {
+	if err := terminal.PipeWithPTY(ctx, connPtyCtl, connData, mst.cfg.Verbose, mst.cfg.Deps); err != nil {
 		return fmt.Errorf("terminal.PipeWithPTY(connCtl, connData): %s", err)
 	}
 

@@ -8,6 +8,7 @@ import (
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/pipeio"
 	"dominicbreuker/goncat/pkg/pty"
+	"dominicbreuker/goncat/pkg/semaphore"
 	"encoding/gob"
 	"fmt"
 	"net"
@@ -19,7 +20,23 @@ import (
 
 // Pipe establishes bidirectional I/O between standard I/O and a network connection.
 func Pipe(ctx context.Context, conn net.Conn, verbose bool, deps *config.Dependencies) {
-	pipeio.Pipe(ctx, pipeio.NewStdio(deps), conn, func(err error) {
+	// Extract semaphore from deps if available
+	var connSem *semaphore.ConnSemaphore
+	if deps != nil && deps.ConnSem != nil {
+		connSem = deps.ConnSem
+	}
+
+	stdio := pipeio.NewStdio(deps, connSem)
+
+	// Acquire semaphore slot before starting I/O
+	if err := stdio.AcquireSlot(ctx); err != nil {
+		if verbose {
+			log.ErrorMsg("Failed to acquire connection slot: %s\n", err)
+		}
+		return
+	}
+
+	pipeio.Pipe(ctx, stdio, conn, func(err error) {
 		if verbose {
 			log.ErrorMsg("Pipe(stdio, conn): %s\n", err)
 		}
@@ -29,7 +46,7 @@ func Pipe(ctx context.Context, conn net.Conn, verbose bool, deps *config.Depende
 // PipeWithPTY sets up a PTY-enabled connection between standard I/O and network connections.
 // It puts the terminal in raw mode, pipes data, and synchronizes terminal size changes
 // via connCtl. The terminal is restored to its original state when done.
-func PipeWithPTY(ctx context.Context, connCtl, connData net.Conn, verbose bool) error {
+func PipeWithPTY(ctx context.Context, connCtl, connData net.Conn, verbose bool, deps *config.Dependencies) error {
 	log.InfoMsg("Enabling raw mode\n")
 	oldState, err := term.MakeRaw(int(os.Stdin.Fd()))
 	if err != nil {
@@ -45,7 +62,7 @@ func PipeWithPTY(ctx context.Context, connCtl, connData net.Conn, verbose bool) 
 	ctx, cancel := context.WithCancel(ctx)
 	go syncTerminalSize(ctx, connCtl)
 
-	Pipe(ctx, connData, verbose, nil)
+	Pipe(ctx, connData, verbose, deps)
 	cancel()
 
 	return nil

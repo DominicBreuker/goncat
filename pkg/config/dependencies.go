@@ -2,6 +2,7 @@ package config
 
 import (
 	"context"
+	"dominicbreuker/goncat/pkg/semaphore"
 	"io"
 	"net"
 	"os"
@@ -20,6 +21,7 @@ type Dependencies struct {
 	Stdin          StdinFunc
 	Stdout         StdoutFunc
 	ExecCommand    ExecCommandFunc
+	ConnSem        *semaphore.ConnSemaphore // Connection semaphore for limiting concurrent stdin/stdout connections
 }
 
 // TCPDialerFunc is a function that dials a TCP connection using the provided context.

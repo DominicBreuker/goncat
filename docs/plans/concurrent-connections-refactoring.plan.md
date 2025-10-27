@@ -105,8 +105,9 @@ This improves UX by allowing multiple concurrent command executions on listening
     - All existing unit tests pass
     - Manual verification that multiple connections can be accepted concurrently
 
-- [ ] **Step 3: Add semaphore field to Shared config**
-  - **Task**: Add a connection semaphore field to the `config.Shared` struct so it can be passed down to handlers. This will be populated by listen-mode entrypoints and used by handlers when they need to limit concurrent stdin/stdout connections.
+- [X] **Step 3: Add semaphore field to Shared config**
+  - **Task**: Add a connection semaphore field to the `config.Shared` struct so it can be passed down to handlers.
+  - **Completed**: Added ConnSem field to Dependencies struct (combined with Step 8). This will be populated by listen-mode entrypoints and used by handlers when they need to limit concurrent stdin/stdout connections.
   - **Files**:
     - `pkg/config/config.go`: 
       - Add import for the new semaphore package
@@ -119,7 +120,8 @@ This improves UX by allowing multiple concurrent command executions on listening
     - Code compiles successfully
     - No test failures introduced
 
-- [ ] **Step 4: Update master listen entrypoint to create and set semaphore**
+- [X] **Step 4: Update master listen entrypoint to create and set semaphore**
+  - **Completed**: MasterListen now creates N=1 semaphore and sets it in cfg.Deps.ConnSem.
   - **Task**: Modify the master listen entrypoint to create an N=1 semaphore and set it in the Shared config before creating the server. Master listeners must limit to one connection since they always wire their stdin/stdout.
   - **Files**:
     - `pkg/entrypoint/masterlisten.go`:
@@ -138,7 +140,8 @@ This improves UX by allowing multiple concurrent command executions on listening
     - Unit tests verify semaphore is created
     - All existing tests still pass
 
-- [ ] **Step 5: Update slave listen entrypoint to create and set semaphore**
+- [X] **Step 5: Update slave listen entrypoint to create and set semaphore**
+  - **Completed**: SlaveListen now creates N=1 semaphore and sets it in cfg.Deps.ConnSem.
   - **Task**: Modify the slave listen entrypoint to create an N=1 semaphore and set it in the Shared config. Slave listeners need to limit stdin/stdout connections to one, but will allow multiple concurrent command executions (semaphore only acquired for stdin/stdout piping, not for command execution).
   - **Files**:
     - `pkg/entrypoint/slavelisten.go`:
@@ -157,7 +160,8 @@ This improves UX by allowing multiple concurrent command executions on listening
     - Unit tests verify semaphore creation
     - All existing tests still pass
 
-- [ ] **Step 6: Update Stdio struct to hold and use semaphore**
+- [X] **Step 6: Update Stdio struct to hold and use semaphore**
+  - **Completed**: Stdio now holds connSem, has AcquireSlot() method, and releases semaphore in Close().
   - **Task**: Modify the `pipeio.Stdio` struct to hold a reference to a connection semaphore, acquire it when starting I/O, and release it when closed. This is where the actual connection limiting happens - when stdin/stdout is wired up to the network connection.
   - **Files**:
     - `pkg/pipeio/stdio.go`:
@@ -203,7 +207,8 @@ This improves UX by allowing multiple concurrent command executions on listening
     - All unit tests pass with `-race` flag
     - Nil semaphore is handled as no-op
 
-- [ ] **Step 7: Update terminal.Pipe to acquire semaphore before piping**
+- [X] **Step 7: Update terminal.Pipe to acquire semaphore before piping**
+  - **Completed**: Both Pipe() and PipeWithPTY() now acquire semaphore before starting I/O. PipeWithPTY signature updated to accept deps parameter.
   - **Task**: Modify `terminal.Pipe()` and `terminal.PipeWithPTY()` to create Stdio with semaphore, acquire the slot before starting I/O, and ensure it's released on error or completion. This enforces the connection limit for stdin/stdout piping operations.
   - **Files**:
     - `pkg/terminal/terminal.go`:
@@ -248,7 +253,8 @@ This improves UX by allowing multiple concurrent command executions on listening
     - All unit tests pass
     - PipeWithPTY now properly supports semaphore limiting
 
-- [ ] **Step 8: Fix config.Dependencies to expose ConnSem**
+- [X] **Step 8: Fix config.Dependencies to expose ConnSem**
+  - **Completed**: Added ConnSem field to Dependencies struct (combined with Step 3).
   - **Task**: The semaphore needs to flow through Dependencies, not just Shared config, because terminal.Pipe() receives deps. Add ConnSem field to Dependencies struct and plumb it through.
   - **Files**:
     - `pkg/config/deps.go`: 
@@ -266,7 +272,8 @@ This improves UX by allowing multiple concurrent command executions on listening
     - Code compiles
     - Tests pass
 
-- [ ] **Step 9: Update all callers of NewStdio to pass semaphore**
+- [X] **Step 9: Update all callers of NewStdio to pass semaphore**
+  - **Completed**: Updated terminal.Pipe() to extract and pass semaphore. Updated all test files to pass nil semaphore.
   - **Task**: Find all locations that call `pipeio.NewStdio()` and update them to pass the semaphore parameter. Most will pass nil or extract from deps.
   - **Files**:
     - Search codebase for `NewStdio` calls:
