@@ -32,7 +32,7 @@ func TestListenAndServe_TCP_Success(t *testing.T) {
 
 	// Mock the transport functions
 	deps := &listenDependencies{
-		listenAndServeTCP: func(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, deps *config.Dependencies) error {
+		listenAndServeTCP: func(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, logger *log.Logger, deps *config.Dependencies) error {
 			<-ctx.Done()
 			return nil
 		},
@@ -62,7 +62,7 @@ func TestListenAndServe_ListenerFails(t *testing.T) {
 
 	expectedErr := errors.New("listener failed")
 	deps := &listenDependencies{
-		listenAndServeTCP: func(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, deps *config.Dependencies) error {
+		listenAndServeTCP: func(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, logger *log.Logger, deps *config.Dependencies) error {
 			return expectedErr
 		},
 	}
@@ -92,7 +92,7 @@ func TestListenAndServe_WebSocket_Success(t *testing.T) {
 	}
 
 	deps := &listenDependencies{
-		listenAndServeWS: func(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler) error {
+		listenAndServeWS: func(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, logger *log.Logger) error {
 			<-ctx.Done()
 			return nil
 		},
@@ -123,7 +123,7 @@ func TestListenAndServe_WebSocketSecure_Success(t *testing.T) {
 	}
 
 	deps := &listenDependencies{
-		listenAndServeWSS: func(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler) error {
+		listenAndServeWSS: func(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, logger *log.Logger) error {
 			<-ctx.Done()
 			return nil
 		},
@@ -154,7 +154,7 @@ func TestListenAndServe_UDP_Success(t *testing.T) {
 	}
 
 	deps := &listenDependencies{
-		listenAndServeUDP: func(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler) error {
+		listenAndServeUDP: func(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, logger *log.Logger) error {
 			<-ctx.Done()
 			return nil
 		},
@@ -183,7 +183,7 @@ func TestListenAndServe_ContextCancellation(t *testing.T) {
 	}
 
 	deps := &listenDependencies{
-		listenAndServeTCP: func(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, deps *config.Dependencies) error {
+		listenAndServeTCP: func(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, logger *log.Logger, deps *config.Dependencies) error {
 			<-ctx.Done()
 			return nil
 		},

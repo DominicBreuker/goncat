@@ -5,7 +5,6 @@ import (
 
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/format"
-	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/transport"
 )
 
@@ -35,7 +34,7 @@ func listenAndServe(ctx context.Context, cfg *config.Shared, handler transport.H
 	addr := format.Addr(cfg.Host, cfg.Port)
 	cfg.Logger.VerboseMsg("Creating listener for protocol %s at %s", cfg.Protocol, addr)
 
-	log.InfoMsg("Listening on %s\n", addr)
+	cfg.Logger.InfoMsg("Listening on %s\n", addr)
 	cfg.Logger.VerboseMsg("Server ready, waiting for connections")
 
 	// Serve with transport-specific function

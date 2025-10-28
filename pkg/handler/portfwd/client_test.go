@@ -4,6 +4,7 @@ import (
 	"context"
 	mocks_tcp "dominicbreuker/goncat/mocks/tcp"
 	"dominicbreuker/goncat/pkg/config"
+	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"errors"
 	"net"
@@ -34,7 +35,7 @@ func TestNewClient(t *testing.T) {
 		RemotePort: 443,
 	}
 
-	client := NewClient(ctx, m, nil, nil)
+	client := NewClient(ctx, m, nil, log.NewLogger(false), nil)
 
 	if client == nil {
 		t.Fatal("NewClient() returned nil")
@@ -62,7 +63,7 @@ func TestNewClient_AllFields(t *testing.T) {
 	}
 
 	sessCtl := &fakeClientControlSession{}
-	client := NewClient(ctx, m, sessCtl, nil)
+	client := NewClient(ctx, m, sessCtl, log.NewLogger(false), nil)
 
 	if client.ctx != ctx {
 		t.Error("Client context not set correctly")
@@ -101,7 +102,7 @@ func TestNewClient_DifferentPorts(t *testing.T) {
 				RemotePort: tc.port,
 			}
 
-			client := NewClient(ctx, m, nil, nil)
+			client := NewClient(ctx, m, nil, log.NewLogger(false), nil)
 
 			if client == nil {
 				t.Fatal("NewClient() returned nil")
@@ -133,7 +134,7 @@ func TestClient_Handle_GetChannelError(t *testing.T) {
 		},
 	}
 
-	client := NewClient(ctx, m, sessCtl, nil)
+	client := NewClient(ctx, m, sessCtl, log.NewLogger(false), nil)
 	err := client.Handle()
 
 	if err == nil {
@@ -162,7 +163,7 @@ func TestClient_Handle_InvalidAddress(t *testing.T) {
 		},
 	}
 
-	client := NewClient(ctx, m, sessCtl, nil)
+	client := NewClient(ctx, m, sessCtl, log.NewLogger(false), nil)
 	err := client.Handle()
 
 	if err == nil {
@@ -197,7 +198,7 @@ func TestClient_Handle_DialError(t *testing.T) {
 		},
 	}
 
-	client := NewClient(ctx, m, sessCtl, deps)
+	client := NewClient(ctx, m, sessCtl, log.NewLogger(false), deps)
 	err := client.Handle()
 
 	if err == nil {
@@ -274,7 +275,7 @@ func TestClient_Handle_TableDriven(t *testing.T) {
 				channelFn: tc.channelFn,
 			}
 
-			client := NewClient(ctx, tc.msg, sessCtl, tc.deps)
+			client := NewClient(ctx, tc.msg, sessCtl, log.NewLogger(false), tc.deps)
 			err := client.Handle()
 
 			if (err != nil) != tc.wantErr {
@@ -305,7 +306,7 @@ func TestClient_ContextCancellation(t *testing.T) {
 		},
 	}
 
-	client := NewClient(ctx, m, sessCtl, nil)
+	client := NewClient(ctx, m, sessCtl, log.NewLogger(false), nil)
 
 	// Cancel context immediately to test cancellation path
 	cancel()
@@ -360,7 +361,7 @@ func TestClient_Handle_SuccessfulConnection(t *testing.T) {
 		}
 	}()
 
-	client := NewClient(ctx, m, sessCtl, deps)
+	client := NewClient(ctx, m, sessCtl, log.NewLogger(false), deps)
 
 	// Run Handle in goroutine since it blocks
 	done := make(chan error, 1)

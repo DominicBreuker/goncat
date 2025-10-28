@@ -33,7 +33,7 @@ func GetCommand() *cli.Command {
 
 			if cmd.Bool(shared.CleanupFlag) {
 				logger.VerboseMsg("Cleanup enabled: executable will be deleted on exit")
-				delFunc, err := clean.EnsureDeletion(ctx)
+				delFunc, err := clean.EnsureDeletion(ctx, logger)
 				if err != nil {
 					return fmt.Errorf("clean.EnsureDeletion(): %s", err)
 				}
@@ -66,9 +66,9 @@ func GetCommand() *cli.Command {
 			}
 
 			if errs := config.Validate(cfg); len(errs) > 0 {
-				log.ErrorMsg("Argument validation errors:")
+				cfg.Logger.ErrorMsg("Argument validation errors:")
 				for _, err := range errs {
-					log.ErrorMsg(" - %s", err)
+					cfg.Logger.ErrorMsg(" - %s", err)
 				}
 				return fmt.Errorf("exiting")
 			}

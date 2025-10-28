@@ -3,7 +3,6 @@ package slave
 import (
 	"context"
 	"dominicbreuker/goncat/pkg/handler/portfwd"
-	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
 )
 
@@ -11,9 +10,9 @@ import (
 // It establishes a connection to the requested destination and pipes data.
 func (slv *slave) handleConnectAsync(ctx context.Context, m msg.Connect) {
 	go func() {
-		h := portfwd.NewClient(ctx, m, slv.sess, slv.cfg.Deps)
+		h := portfwd.NewClient(ctx, m, slv.sess, slv.cfg.Logger, slv.cfg.Deps)
 		if err := h.Handle(); err != nil {
-			log.ErrorMsg("Running connect job: %s", err)
+			slv.cfg.Logger.ErrorMsg("Running connect job: %s", err)
 		}
 	}()
 }
@@ -36,7 +35,7 @@ func (slv *slave) handlePortFwdAsync(ctx context.Context, m msg.PortFwd) {
 
 		h := portfwd.NewServer(ctx, cfg, slv.sess, slv.cfg.Deps)
 		if err := h.Handle(); err != nil {
-			log.ErrorMsg("Remote port forwarding: %s: %s\n", cfg, err)
+			slv.cfg.Logger.ErrorMsg("Remote port forwarding: %s: %s\n", cfg, err)
 		}
 	}()
 }

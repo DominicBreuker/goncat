@@ -4,7 +4,6 @@ import (
 	"context"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/handler/portfwd"
-	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"sync"
 )
@@ -28,7 +27,7 @@ func (mst *master) startLocalPortFwdJob(ctx context.Context, wg *sync.WaitGroup,
 		}
 		h := portfwd.NewServer(ctx, cfg, mst.sess, mst.cfg.Deps)
 		if err := h.Handle(); err != nil {
-			log.ErrorMsg("Local port forwarding: %s: %s\n", lpf, err)
+			mst.cfg.Logger.ErrorMsg("Local port forwarding: %s: %s\n", lpf, err)
 		}
 	}()
 }
@@ -50,7 +49,7 @@ func (mst *master) startRemotePortFwdJob(ctx context.Context, wg *sync.WaitGroup
 		}
 
 		if err := mst.sess.SendContext(ctx, m); err != nil {
-			log.ErrorMsg("Setting up remote port forwarding: %s: %s\n", rpf, err)
+			mst.cfg.Logger.ErrorMsg("Setting up remote port forwarding: %s: %s\n", rpf, err)
 		}
 	}()
 }
@@ -59,9 +58,9 @@ func (mst *master) startRemotePortFwdJob(ctx context.Context, wg *sync.WaitGroup
 // This is used for remote port forwarding when the slave forwards a connection back to the master.
 func (mst *master) handleConnectAsync(ctx context.Context, m msg.Connect) {
 	go func() {
-		h := portfwd.NewClient(ctx, m, mst.sess, mst.cfg.Deps)
+		h := portfwd.NewClient(ctx, m, mst.sess, mst.cfg.Logger, mst.cfg.Deps)
 		if err := h.Handle(); err != nil {
-			log.ErrorMsg("Running connect job: %s", err)
+			mst.cfg.Logger.ErrorMsg("Running connect job: %s", err)
 		}
 	}()
 }

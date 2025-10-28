@@ -19,6 +19,7 @@ type Client struct {
 	sessCtl     ClientControlSession
 	tcpDialerFn config.TCPDialerFunc
 	udpDialerFn config.UDPDialerFunc
+	logger      *log.Logger
 }
 
 // ClientControlSession represents the interface for obtaining a channel
@@ -30,13 +31,14 @@ type ClientControlSession interface {
 // NewClient creates a new port forwarding client that will connect to
 // the destination specified in the message.
 // The deps parameter is optional and can be nil to use default implementations.
-func NewClient(ctx context.Context, m msg.Connect, sessCtl ClientControlSession, deps *config.Dependencies) *Client {
+func NewClient(ctx context.Context, m msg.Connect, sessCtl ClientControlSession, logger *log.Logger, deps *config.Dependencies) *Client {
 	return &Client{
 		ctx:         ctx,
 		m:           m,
 		sessCtl:     sessCtl,
 		tcpDialerFn: config.GetTCPDialerFunc(deps),
 		udpDialerFn: config.GetUDPDialerFunc(deps),
+		logger:      logger,
 	}
 }
 
@@ -86,7 +88,7 @@ func (h *Client) handleTCP() error {
 	}
 
 	pipeio.Pipe(h.ctx, connRemote, connLocal, func(err error) {
-		log.ErrorMsg("Handling connect to %s: %w", addr, err)
+		h.logger.ErrorMsg("Handling connect to %s: %w", addr, err)
 	})
 
 	return nil

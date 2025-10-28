@@ -19,7 +19,7 @@ import (
 //
 // The handler function is called for each accepted connection in a separate goroutine.
 // The connection is automatically closed when the handler returns.
-func ListenAndServe(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, deps *config.Dependencies) error {
+func ListenAndServe(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, logger *log.Logger, deps *config.Dependencies) error {
 	// Create listener
 	listener, err := createListener(addr, deps)
 	if err != nil {
@@ -31,7 +31,7 @@ func ListenAndServe(ctx context.Context, addr string, timeout time.Duration, han
 	sem := createConnectionSemaphore(100)
 
 	// Serve connections with context handling
-	return serveConnections(ctx, listener, handler, sem)
+	return serveConnections(ctx, listener, handler, logger, sem)
 }
 
 // createListener creates a TCP listener on the specified address.
@@ -62,13 +62,13 @@ func createConnectionSemaphore(capacity int) chan struct{} {
 }
 
 // serveConnections accepts and handles connections until context is cancelled.
-func serveConnections(ctx context.Context, listener net.Listener, handler transport.Handler, sem chan struct{}) error {
+func serveConnections(ctx context.Context, listener net.Listener, handler transport.Handler, logger *log.Logger, sem chan struct{}) error {
 	// Channel for accept loop errors
 	errCh := make(chan error, 1)
 
 	// Run accept loop in goroutine
 	go func() {
-		errCh <- acceptLoop(listener, handler, sem)
+		errCh <- acceptLoop(listener, handler, logger, sem)
 	}()
 
 	// Wait for either context cancellation or accept loop error
@@ -93,7 +93,7 @@ func serveConnections(ctx context.Context, listener net.Listener, handler transp
 }
 
 // acceptLoop accepts connections and spawns handlers.
-func acceptLoop(listener net.Listener, handler transport.Handler, sem chan struct{}) error {
+func acceptLoop(listener net.Listener, handler transport.Handler, logger *log.Logger, sem chan struct{}) error {
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -113,7 +113,7 @@ func acceptLoop(listener net.Listener, handler transport.Handler, sem chan struc
 		select {
 		case <-sem:
 			// Acquired slot - handle connection
-			go handleConnection(conn, handler, sem)
+			go handleConnection(conn, handler, logger, sem)
 		default:
 			// All slots busy - reject connection
 			_ = conn.Close()
@@ -122,7 +122,7 @@ func acceptLoop(listener net.Listener, handler transport.Handler, sem chan struc
 }
 
 // handleConnection processes a single connection.
-func handleConnection(conn net.Conn, handler transport.Handler, sem chan struct{}) {
+func handleConnection(conn net.Conn, handler transport.Handler, logger *log.Logger, sem chan struct{}) {
 	// Always release slot and close connection
 	defer func() {
 		_ = conn.Close()
@@ -132,12 +132,12 @@ func handleConnection(conn net.Conn, handler transport.Handler, sem chan struct{
 	// Prevent panic from leaking the slot
 	defer func() {
 		if r := recover(); r != nil {
-			log.ErrorMsg("Handler panic: %v\n", r)
+			logger.ErrorMsg("Handler panic: %v\n", r)
 		}
 	}()
 
 	if err := handler(conn); err != nil {
-		log.ErrorMsg("Handling connection: %s\n", err)
+		logger.ErrorMsg("Handling connection: %s\n", err)
 	}
 }
 

@@ -124,7 +124,7 @@ func (srv *Server) handleTCP() error {
 			}
 
 			srv.cfg.Logger.VerboseMsg("Port forwarding error: Accept() on %s: %v", addr, err)
-			log.ErrorMsg("Port forwarding %s: Accept(): %w", srv.cfg, err)
+			srv.cfg.Logger.ErrorMsg("Port forwarding %s: Accept(): %w", srv.cfg, err)
 			time.Sleep(100 * time.Millisecond) // tiny backoff to avoid a tight loop
 			continue
 		}
@@ -140,11 +140,11 @@ func (srv *Server) handleTCP() error {
 				srv.cfg.Logger.VerboseMsg("Port forwarding: connection from %s closed", conn.RemoteAddr())
 				_ = conn.Close()
 				if r := recover(); r != nil {
-					log.ErrorMsg("Port forwarding %s: handler panic: %v\n", srv.cfg, r)
+					srv.cfg.Logger.ErrorMsg("Port forwarding %s: handler panic: %v\n", srv.cfg, r)
 				}
 			}()
 			if err := srv.handleTCPConn(conn); err != nil {
-				log.ErrorMsg("Port forwarding %s: handling connection: %s\n", srv.cfg, err)
+				srv.cfg.Logger.ErrorMsg("Port forwarding %s: handling connection: %s\n", srv.cfg, err)
 			}
 		}()
 	}
@@ -200,7 +200,7 @@ func (srv *Server) handleTCPConn(connLocal net.Conn) error {
 
 	srv.cfg.Logger.VerboseMsg("Port forwarding: piping data for %s", connLocal.RemoteAddr())
 	pipeio.Pipe(srv.ctx, connLocal, connRemote, func(err error) {
-		log.ErrorMsg("port forwarding %s: pipe error: %s\n", srv.cfg, err)
+		srv.cfg.Logger.ErrorMsg("port forwarding %s: pipe error: %s\n", srv.cfg, err)
 	})
 
 	return nil
@@ -283,7 +283,7 @@ func (srv *Server) handleUDP() error {
 			if errors.Is(err, net.ErrClosed) || strings.Contains(err.Error(), "use of closed network connection") {
 				return nil
 			}
-			log.ErrorMsg("UDP port forwarding %s: ReadFrom(): %s\n", srv.cfg, err)
+			srv.cfg.Logger.ErrorMsg("UDP port forwarding %s: ReadFrom(): %s\n", srv.cfg, err)
 			time.Sleep(100 * time.Millisecond)
 			continue
 		}
@@ -318,7 +318,7 @@ func (srv *Server) handleUDP() error {
 					sessionsMu.Unlock()
 					cancel()
 					srv.cfg.Logger.VerboseMsg("Port forwarding UDP error: failed to open stream for %s: %v", clientAddr, err)
-					log.ErrorMsg("UDP port forwarding %s: failed to open stream for %s: %s\n", srv.cfg, clientAddr, err)
+					srv.cfg.Logger.ErrorMsg("UDP port forwarding %s: failed to open stream for %s: %s\n", srv.cfg, clientAddr, err)
 					return
 				}
 
@@ -348,7 +348,7 @@ func (srv *Server) handleUDP() error {
 						// Send response back to client
 						_, err = conn.WriteTo(respBuffer[:n], clientAddr)
 						if err != nil {
-							log.ErrorMsg("UDP port forwarding %s: WriteTo(%s): %s\n", srv.cfg, clientAddr, err)
+							srv.cfg.Logger.ErrorMsg("UDP port forwarding %s: WriteTo(%s): %s\n", srv.cfg, clientAddr, err)
 							return
 						}
 
@@ -368,7 +368,7 @@ func (srv *Server) handleUDP() error {
 			// Forward datagram to remote through yamux stream
 			_, err := stream.Write(data)
 			if err != nil {
-				log.ErrorMsg("UDP port forwarding %s: Write to stream for %s: %s\n", srv.cfg, clientAddr, err)
+				srv.cfg.Logger.ErrorMsg("UDP port forwarding %s: Write to stream for %s: %s\n", srv.cfg, clientAddr, err)
 				sessionsMu.Lock()
 				if s, ok := sessions[sessionKey]; ok {
 					s.cancel()

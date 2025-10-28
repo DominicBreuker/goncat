@@ -3,7 +3,6 @@ package master
 import (
 	"context"
 	socksmaster "dominicbreuker/goncat/pkg/handler/socks/master"
-	"dominicbreuker/goncat/pkg/log"
 	"fmt"
 	"sync"
 )
@@ -28,7 +27,7 @@ func (mst *master) startSocksProxyJob(ctx context.Context, wg *sync.WaitGroup) e
 		defer wg.Done()
 
 		if err := srv.Serve(); err != nil {
-			log.ErrorMsg("SOCKS: %s: %s\n", cfg, err)
+			mst.cfg.Logger.ErrorMsg("SOCKS: %s: %s\n", cfg, err)
 		}
 	}()
 

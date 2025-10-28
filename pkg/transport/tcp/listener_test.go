@@ -4,6 +4,7 @@ import (
 	"context"
 	mocks_tcp "dominicbreuker/goncat/mocks/tcp"
 	"dominicbreuker/goncat/pkg/config"
+	"dominicbreuker/goncat/pkg/log"
 	"fmt"
 	"net"
 	"sync"
@@ -56,7 +57,7 @@ func TestListenAndServe_Basic(t *testing.T) {
 
 			errCh := make(chan error, 1)
 			go func() {
-				errCh <- ListenAndServe(ctx, tc.addr, 10*time.Second, handler, deps)
+				errCh <- ListenAndServe(ctx, tc.addr, 10*time.Second, handler, log.NewLogger(false), deps)
 			}()
 
 			// Give it a moment to start or fail
@@ -101,7 +102,7 @@ func TestListenAndServe_HandlerCalled(t *testing.T) {
 	// Start server
 	serveDone := make(chan error, 1)
 	go func() {
-		serveDone <- ListenAndServe(ctx, "127.0.0.1:12345", 10*time.Second, handler, deps)
+		serveDone <- ListenAndServe(ctx, "127.0.0.1:12345", 10*time.Second, handler, log.NewLogger(false), deps)
 	}()
 
 	// Wait for listener to be ready
@@ -159,7 +160,7 @@ func TestListenAndServe_ConcurrentConnections(t *testing.T) {
 
 	// Start server
 	go func() {
-		ListenAndServe(ctx, "127.0.0.1:12346", 10*time.Second, handler, deps)
+		ListenAndServe(ctx, "127.0.0.1:12346", 10*time.Second, handler, log.NewLogger(false), deps)
 	}()
 
 	// Wait for listener to be ready
@@ -228,7 +229,7 @@ func TestListenAndServe_HandlerError(t *testing.T) {
 
 	// Start server
 	go func() {
-		ListenAndServe(ctx, "127.0.0.1:12347", 10*time.Second, handler, deps)
+		ListenAndServe(ctx, "127.0.0.1:12347", 10*time.Second, handler, log.NewLogger(false), deps)
 	}()
 
 	// Wait for listener to be ready
@@ -279,7 +280,7 @@ func TestListenAndServe_ContextCancellation(t *testing.T) {
 
 	serveDone := make(chan error, 1)
 	go func() {
-		serveDone <- ListenAndServe(ctx, "127.0.0.1:12348", 10*time.Second, handler, deps)
+		serveDone <- ListenAndServe(ctx, "127.0.0.1:12348", 10*time.Second, handler, log.NewLogger(false), deps)
 	}()
 
 	// Wait for listener to be ready

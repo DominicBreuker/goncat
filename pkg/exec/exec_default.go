@@ -20,7 +20,7 @@ import (
 // RunWithPTY executes the specified program in a PTY (pseudo-terminal) on Unix systems.
 // It uses two connections: connCtl for terminal size synchronization and connData for I/O.
 // The function blocks until both the program exits AND all I/O copying is complete.
-func RunWithPTY(ctx context.Context, connCtl, connData net.Conn, program string, verbose bool) error {
+func RunWithPTY(ctx context.Context, connCtl, connData net.Conn, program string, verbose bool, logger *log.Logger) error {
 	cmd := exec.Command(program)
 
 	pty, tty, err := pty.NewPty()
@@ -52,12 +52,12 @@ func RunWithPTY(ctx context.Context, connCtl, connData net.Conn, program string,
 		close(cmdDone)
 	}()
 
-	go syncTerminalSize(pty, connCtl, verbose)
+	go syncTerminalSize(pty, connCtl, verbose, logger)
 
 	go func() {
 		pipeio.Pipe(ctx, pty, connData, func(err error) {
 			if verbose {
-				log.ErrorMsg("Pipe(pty, conn): %s\n", err)
+				logger.ErrorMsg("Pipe(pty, conn): %s\n", err)
 			}
 		})
 		cmd.Process.Kill()
@@ -74,7 +74,7 @@ func RunWithPTY(ctx context.Context, connCtl, connData net.Conn, program string,
 
 // syncTerminalSize continuously reads terminal size updates from connCtl
 // and applies them to the PTY file descriptor.
-func syncTerminalSize(ptyFd *os.File, connCtl net.Conn, verbose bool) {
+func syncTerminalSize(ptyFd *os.File, connCtl net.Conn, verbose bool, logger *log.Logger) {
 	dec := gob.NewDecoder(connCtl)
 
 	for {
@@ -86,14 +86,14 @@ func syncTerminalSize(ptyFd *os.File, connCtl net.Conn, verbose bool) {
 			}
 
 			if verbose {
-				log.ErrorMsg("can't decode new Terminal size: %s", err)
+				logger.ErrorMsg("can't decode new Terminal size: %s", err)
 			}
 		}
 
 		err = pty.SetTerminalSize(ptyFd, *size)
 		if err != nil {
 			if verbose {
-				log.ErrorMsg("can't identify terminal size: %s", err)
+				logger.ErrorMsg("can't identify terminal size: %s", err)
 			}
 		}
 	}

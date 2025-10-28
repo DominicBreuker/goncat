@@ -3,7 +3,6 @@ package master
 import (
 	"context"
 	"dominicbreuker/goncat/pkg/config"
-	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"dominicbreuker/goncat/pkg/socks"
 	"encoding/gob"
@@ -29,11 +28,14 @@ type UDPRelay struct {
 
 	ClientIP   netip.Addr
 	ClientPort uint16
+
+	// Server reference for logger access
+	srv *Server
 }
 
 // NewUDPRelay creates a new UDP relay for handling SOCKS5 UDP ASSOCIATE requests.
 // It binds a local UDP port and sets up communication with the remote end.
-func NewUDPRelay(ctx context.Context, addr string, sr *socks.Request, connRemote net.Conn, deps *config.Dependencies) (*UDPRelay, error) {
+func NewUDPRelay(ctx context.Context, addr string, sr *socks.Request, connRemote net.Conn, srv *Server, deps *config.Dependencies) (*UDPRelay, error) {
 	udpAddr, err := net.ResolveUDPAddr("udp", addr+":")
 	if err != nil {
 		return nil, fmt.Errorf("net.ResolveUDPAddr(udp, %s:): %s", addr, err)
@@ -74,7 +76,7 @@ func (r *UDPRelay) Close() error {
 
 // LogError logs an error message with a prefix to indicate where it comes from
 func (r *UDPRelay) LogError(format string, a ...interface{}) {
-	log.ErrorMsg("UDP Relay: "+format, a...)
+	r.srv.cfg.Logger.ErrorMsg("UDP Relay: "+format, a...)
 }
 
 // RemoteToLocal reads UDP datagrams received from the remote and and sends them to the local client
@@ -95,7 +97,7 @@ func (r *UDPRelay) RemoteToLocal() {
 					return // cancelled
 				}
 
-				log.ErrorMsg("Receiving next datagram: %s\n", err)
+				r.srv.cfg.Logger.ErrorMsg("Receiving next datagram: %s\n", err)
 				return
 			}
 
@@ -112,7 +114,7 @@ func (r *UDPRelay) RemoteToLocal() {
 				return
 			}
 			if err := r.sendToLocal(p); err != nil {
-				log.ErrorMsg("SOCKS error: sending packet to local end: %s\n", err)
+				r.srv.cfg.Logger.ErrorMsg("SOCKS error: sending packet to local end: %s\n", err)
 				return
 			}
 		}
@@ -160,7 +162,7 @@ func (r *UDPRelay) sendToLocal(data *msg.SocksDatagram) error {
 			return fmt.Errorf("writing to local conn: %s", err)
 		}
 	} else {
-		log.InfoMsg("Received datagram but not sent data back to local client since address not known\n", data.Data)
+		r.srv.cfg.Logger.InfoMsg("Received datagram but not sent data back to local client since address not known\n", data.Data)
 	}
 
 	return nil
@@ -258,7 +260,7 @@ func (r *UDPRelay) LocalToRemote() {
 					return // errors expected since we closed connection
 				}
 
-				log.ErrorMsg("SOCKS UDP Relay: reading from local conn: %s\n", err)
+				r.srv.cfg.Logger.ErrorMsg("SOCKS UDP Relay: reading from local conn: %s\n", err)
 				return
 			}
 		}
@@ -274,7 +276,7 @@ func (r *UDPRelay) LocalToRemote() {
 			}
 
 			if err := r.sendToRemote(b); err != nil {
-				log.ErrorMsg("SOCKS UDP Relay: sending to remote end: %s\n", err)
+				r.srv.cfg.Logger.ErrorMsg("SOCKS UDP Relay: sending to remote end: %s\n", err)
 				return
 			}
 		}
@@ -287,7 +289,7 @@ func (r *UDPRelay) sendToRemote(buf []byte) error {
 	if err != nil {
 		// no support for optional FRAG, see https://datatracker.ietf.org/doc/html/rfc1928#section-7
 		if errors.Is(err, socks.ErrFragmentationNotSupported) {
-			log.InfoMsg("SOCKS UDP Relay: datagram dropped since fragmentation was requested but is not supported")
+			r.srv.cfg.Logger.InfoMsg("SOCKS UDP Relay: datagram dropped since fragmentation was requested but is not supported")
 			return nil
 		}
 

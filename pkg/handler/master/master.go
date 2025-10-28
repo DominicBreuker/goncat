@@ -6,7 +6,6 @@ package master
 import (
 	"context"
 	"dominicbreuker/goncat/pkg/config"
-	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"errors"
@@ -46,7 +45,7 @@ func Handle(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn n
 	// let user know about connection status
 	defer func() {
 		if mst.remoteID != "" {
-			log.InfoMsg("Session with %s closed (%s)\n", mst.remoteAddr, mst.remoteID)
+			cfg.Logger.InfoMsg("Session with %s closed (%s)\n", mst.remoteAddr, mst.remoteID)
 			cfg.Logger.VerboseMsg("Closing session with %s (%s)", mst.remoteAddr, mst.remoteID)
 		}
 	}()
@@ -103,7 +102,7 @@ func Handle(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn n
 		switch message := m.(type) {
 		case msg.Hello:
 			mst.remoteID = message.ID
-			log.InfoMsg("Session with %s established (%s)\n", mst.remoteAddr, mst.remoteID)
+			cfg.Logger.InfoMsg("Session with %s established (%s)\n", mst.remoteAddr, mst.remoteID)
 			cfg.Logger.VerboseMsg("Received Hello from slave %s (ID: %s)", mst.remoteAddr, mst.remoteID)
 			helloSeen = true
 		default:
@@ -121,7 +120,7 @@ func Handle(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn n
 	}
 	if mst.mCfg.IsSocksEnabled() {
 		if err := mst.startSocksProxyJob(ctx, &wg); err != nil {
-			log.ErrorMsg("Starting SOCKS proxy: %s", err)
+			cfg.Logger.ErrorMsg("Starting SOCKS proxy: %s", err)
 		}
 	}
 
@@ -143,7 +142,7 @@ func Handle(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn n
 				if ne, ok := err.(net.Error); ok && ne.Timeout() {
 					continue
 				}
-				log.ErrorMsg("Receiving next command: %s\n", err)
+				cfg.Logger.ErrorMsg("Receiving next command: %s\n", err)
 				continue
 			}
 
@@ -151,7 +150,7 @@ func Handle(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn n
 			case msg.Connect:
 				// Validate RPF destination
 				if !mst.mCfg.IsAllowedRemotePortForwardingDestination(message.RemoteHost, message.RemotePort) {
-					log.ErrorMsg("Remote port forwarding: slave requested unexpected destination: %s:%d\n",
+					cfg.Logger.ErrorMsg("Remote port forwarding: slave requested unexpected destination: %s:%d\n",
 						message.RemoteHost, message.RemotePort)
 					continue
 				}
@@ -160,7 +159,7 @@ func Handle(ctx context.Context, cfg *config.Shared, mCfg *config.Master, conn n
 			case msg.Hello:
 				// Duplicate hello after handshake: harmless; ignore.
 			default:
-				log.ErrorMsg("Received unsupported message type '%s', this is a bug\n", m.MsgType())
+				cfg.Logger.ErrorMsg("Received unsupported message type '%s', this is a bug\n", m.MsgType())
 			}
 		}
 	}()

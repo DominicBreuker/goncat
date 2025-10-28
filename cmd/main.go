@@ -25,6 +25,7 @@ func main() {
 	}
 
 	if err := app.Run(context.Background(), os.Args); err != nil {
-		log.ErrorMsg("Run: %s\n", err)
+		logger := log.NewLogger(false)
+		logger.ErrorMsg("Run: %s\n", err)
 	}
 }

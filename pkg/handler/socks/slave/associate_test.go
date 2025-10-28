@@ -2,6 +2,7 @@ package slave
 
 import (
 	"context"
+	"dominicbreuker/goncat/pkg/log"
 	"encoding/gob"
 	"errors"
 	"net"
@@ -30,7 +31,7 @@ func TestNewUDPRelay_Success(t *testing.T) {
 		},
 	}
 
-	relay, err := NewUDPRelay(ctx, sessCtl, nil)
+	relay, err := NewUDPRelay(ctx, sessCtl, log.NewLogger(false), nil)
 	if err != nil {
 		t.Fatalf("NewUDPRelay() returned error: %v", err)
 	}
@@ -61,7 +62,7 @@ func TestNewUDPRelay_GetChannelError(t *testing.T) {
 		},
 	}
 
-	relay, err := NewUDPRelay(ctx, sessCtl, nil)
+	relay, err := NewUDPRelay(ctx, sessCtl, log.NewLogger(false), nil)
 	if err == nil {
 		if relay != nil {
 			relay.Close()
@@ -87,7 +88,7 @@ func TestUDPRelay_Close(t *testing.T) {
 		},
 	}
 
-	relay, err := NewUDPRelay(ctx, sessCtl, nil)
+	relay, err := NewUDPRelay(ctx, sessCtl, log.NewLogger(false), nil)
 	if err != nil {
 		t.Fatalf("NewUDPRelay() returned error: %v", err)
 	}
@@ -124,7 +125,7 @@ func TestUDPRelay_LogError(t *testing.T) {
 		},
 	}
 
-	relay, err := NewUDPRelay(ctx, sessCtl, nil)
+	relay, err := NewUDPRelay(ctx, sessCtl, log.NewLogger(false), nil)
 	if err != nil {
 		t.Fatalf("NewUDPRelay() returned error: %v", err)
 	}
@@ -152,7 +153,7 @@ func TestUDPRelay_SendToDst_WhenClosed(t *testing.T) {
 		},
 	}
 
-	relay, err := NewUDPRelay(ctx, sessCtl, nil)
+	relay, err := NewUDPRelay(ctx, sessCtl, log.NewLogger(false), nil)
 	if err != nil {
 		t.Fatalf("NewUDPRelay() returned error: %v", err)
 	}
@@ -184,7 +185,7 @@ func TestUDPRelay_SendToDst_InvalidAddr(t *testing.T) {
 		},
 	}
 
-	relay, err := NewUDPRelay(ctx, sessCtl, nil)
+	relay, err := NewUDPRelay(ctx, sessCtl, log.NewLogger(false), nil)
 	if err != nil {
 		t.Fatalf("NewUDPRelay() returned error: %v", err)
 	}
@@ -215,7 +216,7 @@ func TestUDPRelay_ContextPropagation(t *testing.T) {
 		},
 	}
 
-	relay, err := NewUDPRelay(ctx, sessCtl, nil)
+	relay, err := NewUDPRelay(ctx, sessCtl, log.NewLogger(false), nil)
 	if err != nil {
 		t.Fatalf("NewUDPRelay() returned error: %v", err)
 	}
@@ -253,7 +254,7 @@ func TestServeReturnsWhenRemoteCloses(t *testing.T) {
 		getOneChannelFn: func() (net.Conn, error) { return rConn, nil },
 	}
 
-	relay, err := NewUDPRelay(ctx, sessCtl, nil)
+	relay, err := NewUDPRelay(ctx, sessCtl, log.NewLogger(false), nil)
 	if err != nil {
 		t.Fatalf("NewUDPRelay() error: %v", err)
 	}
@@ -298,7 +299,7 @@ func TestSendToDstWritesDatagram(t *testing.T) {
 	sess := &fakeClientControlSession{getOneChannelFn: func() (net.Conn, error) { return c1, nil }}
 	d := &config.Dependencies{PacketListener: func(network, address string) (net.PacketConn, error) { return pc, nil }}
 
-	relay, err := NewUDPRelay(context.Background(), sess, d)
+	relay, err := NewUDPRelay(context.Background(), sess, log.NewLogger(false), d)
 	if err != nil {
 		t.Fatalf("NewUDPRelay: %v", err)
 	}
@@ -342,7 +343,7 @@ func TestLocalToRemoteEncodesDatagram(t *testing.T) {
 	sess := &fakeClientControlSession{getOneChannelFn: func() (net.Conn, error) { return rConn, nil }}
 	d := &config.Dependencies{PacketListener: func(network, address string) (net.PacketConn, error) { return pc, nil }}
 
-	relay, err := NewUDPRelay(context.Background(), sess, d)
+	relay, err := NewUDPRelay(context.Background(), sess, log.NewLogger(false), d)
 	if err != nil {
 		t.Fatalf("NewUDPRelay: %v", err)
 	}

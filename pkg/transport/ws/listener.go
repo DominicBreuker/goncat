@@ -22,8 +22,8 @@ import (
 //
 // The handler function is called for each accepted WebSocket connection.
 // All cleanup and resource management is handled internally.
-func ListenAndServeWS(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler) error {
-	return listenAndServeWebSocket(ctx, addr, timeout, handler, false)
+func ListenAndServeWS(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, logger *log.Logger) error {
+	return listenAndServeWebSocket(ctx, addr, timeout, handler, logger, false)
 }
 
 // ListenAndServeWSS creates a WebSocket Secure listener (HTTPS/TLS) and serves connections.
@@ -33,12 +33,12 @@ func ListenAndServeWS(ctx context.Context, addr string, timeout time.Duration, h
 // TLS is enabled at the transport layer with an ephemeral self-signed certificate.
 // The handler function is called for each accepted WebSocket connection.
 // All cleanup and resource management is handled internally.
-func ListenAndServeWSS(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler) error {
-	return listenAndServeWebSocket(ctx, addr, timeout, handler, true)
+func ListenAndServeWSS(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, logger *log.Logger) error {
+	return listenAndServeWebSocket(ctx, addr, timeout, handler, logger, true)
 }
 
 // listenAndServeWebSocket is the internal implementation for both ws and wss.
-func listenAndServeWebSocket(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, useTLS bool) error {
+func listenAndServeWebSocket(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, logger *log.Logger, useTLS bool) error {
 	// Create network listener
 	listener, err := createNetListener(addr, useTLS)
 	if err != nil {
@@ -50,7 +50,7 @@ func listenAndServeWebSocket(ctx context.Context, addr string, timeout time.Dura
 	sem := createConnectionSemaphore(100)
 
 	// Create HTTP server
-	server := createHTTPServer(ctx, handler, sem)
+	server := createHTTPServer(ctx, handler, logger, sem)
 
 	// Serve with context handling
 	return serveWithContext(ctx, server, listener)
@@ -106,9 +106,9 @@ func createConnectionSemaphore(capacity int) chan struct{} {
 }
 
 // createHTTPServer creates an HTTP server that upgrades connections to WebSocket.
-func createHTTPServer(ctx context.Context, handler transport.Handler, sem chan struct{}) *http.Server {
+func createHTTPServer(ctx context.Context, handler transport.Handler, logger *log.Logger, sem chan struct{}) *http.Server {
 	return &http.Server{
-		Handler: createWebSocketHandler(ctx, handler, sem),
+		Handler: createWebSocketHandler(ctx, handler, logger, sem),
 
 		// Timeouts for long-lived tunnel connections
 		ReadHeaderTimeout: 10 * time.Second,
@@ -119,7 +119,7 @@ func createHTTPServer(ctx context.Context, handler transport.Handler, sem chan s
 }
 
 // createWebSocketHandler creates an HTTP handler that upgrades to WebSocket.
-func createWebSocketHandler(ctx context.Context, handler transport.Handler, sem chan struct{}) http.HandlerFunc {
+func createWebSocketHandler(ctx context.Context, handler transport.Handler, logger *log.Logger, sem chan struct{}) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Try to acquire a slot
 		select {
@@ -127,7 +127,7 @@ func createWebSocketHandler(ctx context.Context, handler transport.Handler, sem 
 			// Acquired - handle connection
 			defer func() { sem <- struct{}{} }()
 
-			handleWebSocketUpgrade(ctx, w, r, handler)
+			handleWebSocketUpgrade(ctx, w, r, handler, logger)
 
 		default:
 			// All slots busy - reject with 503
@@ -137,19 +137,19 @@ func createWebSocketHandler(ctx context.Context, handler transport.Handler, sem 
 }
 
 // handleWebSocketUpgrade upgrades the HTTP connection to WebSocket and handles it.
-func handleWebSocketUpgrade(ctx context.Context, w http.ResponseWriter, r *http.Request, handler transport.Handler) {
+func handleWebSocketUpgrade(ctx context.Context, w http.ResponseWriter, r *http.Request, handler transport.Handler, logger *log.Logger) {
 	// Accept WebSocket upgrade
 	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
 		Subprotocols: []string{"bin"},
 	})
 	if err != nil {
-		log.ErrorMsg("websocket.Accept(): %s\n", err)
+		logger.ErrorMsg("websocket.Accept(): %s\n", err)
 		return
 	}
 
 	// Wrap as net.Conn
 	conn := websocket.NetConn(ctx, c, websocket.MessageBinary)
-	log.InfoMsg("New WS connection from %s\n", conn.RemoteAddr())
+	logger.InfoMsg("New WS connection from %s\n", conn.RemoteAddr())
 
 	// Ensure connection is closed
 	defer func() { _ = conn.Close() }()
@@ -157,13 +157,13 @@ func handleWebSocketUpgrade(ctx context.Context, w http.ResponseWriter, r *http.
 	// Prevent panic from leaking resources
 	defer func() {
 		if r := recover(); r != nil {
-			log.ErrorMsg("Handler panic: %v\n", r)
+			logger.ErrorMsg("Handler panic: %v\n", r)
 		}
 	}()
 
 	// Handle the connection
 	if err := handler(conn); err != nil {
-		log.ErrorMsg("handle websocket.NetConn: %s\n", err)
+		logger.ErrorMsg("handle websocket.NetConn: %s\n", err)
 	}
 }
 
