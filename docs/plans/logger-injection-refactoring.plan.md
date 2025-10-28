@@ -158,6 +158,17 @@ This refactoring will:
     ```
   - **Dependencies**: Step 4 (understand how config flows through transport layer)
   - **Definition of done**: All transport logging uses logger parameter, error messages still appear, tests pass
+  - **Status**: IN PROGRESS - Transport functions refactored, need to update all test files
+  - **Completed**:
+    - TCP listener: Added logger parameter to ListenAndServe, serveConnections, acceptLoop, handleConnection
+    - WS listener: Added logger parameter to ListenAndServeWS, ListenAndServeWSS, listenAndServeWebSocket, createHTTPServer, createWebSocketHandler, handleWebSocketUpgrade
+    - UDP listener: Added logger parameter to ListenAndServe, serveQUICConnections, acceptQUICLoop, handleQUICConnection
+    - pkg/net/listen_internal.go: Updated function signatures and calls
+    - pkg/transport/tcp/listener_test.go: Updated test calls
+  - **Remaining**:
+    - Fix pkg/net/listen_test.go (6 test function signatures)
+    - Run full test suite
+    - Verify all transport tests pass
 
 - [ ] Step 6: Refactor pkg/terminal Package
   - **Task**: Replace 6 call sites in pkg/terminal/ with logger parameter

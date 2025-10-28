@@ -33,7 +33,7 @@ import (
 // Application-level TLS (--ssl, --key) is handled separately by the caller.
 //
 // QUIC streams require an init byte to activate - this is handled internally.
-func ListenAndServe(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler) error {
+func ListenAndServe(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, logger *log.Logger) error {
 	// Create UDP listener with SO_REUSEADDR
 	udpConn, err := createUDPListener(ctx, addr)
 	if err != nil {
@@ -56,7 +56,7 @@ func ListenAndServe(ctx context.Context, addr string, timeout time.Duration, han
 
 	// Serve connections with semaphore, passing timeout through
 	sem := createConnectionSemaphore(100)
-	return serveQUICConnections(ctx, quicListener, handler, sem, timeout)
+	return serveQUICConnections(ctx, quicListener, handler, logger, sem, timeout)
 }
 
 // createUDPListener creates a UDP socket with SO_REUSEADDR for rapid port reuse.
@@ -140,11 +140,11 @@ func createConnectionSemaphore(capacity int) chan struct{} {
 
 // serveQUICConnections accepts and handles QUIC connections.
 // It respects context cancellation and propagates the timeout to stream operations.
-func serveQUICConnections(ctx context.Context, quicListener *quic.Listener, handler transport.Handler, sem chan struct{}, timeout time.Duration) error {
+func serveQUICConnections(ctx context.Context, quicListener *quic.Listener, handler transport.Handler, logger *log.Logger, sem chan struct{}, timeout time.Duration) error {
 	// Run accept loop in goroutine
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- acceptQUICLoop(ctx, quicListener, handler, sem, timeout)
+		errCh <- acceptQUICLoop(ctx, quicListener, handler, logger, sem, timeout)
 	}()
 
 	// Wait for either context cancellation or accept loop error
@@ -170,7 +170,7 @@ func serveQUICConnections(ctx context.Context, quicListener *quic.Listener, hand
 
 // acceptQUICLoop accepts QUIC connections and spawns handlers.
 // It uses the caller's context for Accept operations to support graceful cancellation.
-func acceptQUICLoop(ctx context.Context, quicListener *quic.Listener, handler transport.Handler, sem chan struct{}, timeout time.Duration) error {
+func acceptQUICLoop(ctx context.Context, quicListener *quic.Listener, handler transport.Handler, logger *log.Logger, sem chan struct{}, timeout time.Duration) error {
 	for {
 		// Accept QUIC connection using caller's context
 		conn, err := quicListener.Accept(ctx)
@@ -189,7 +189,7 @@ func acceptQUICLoop(ctx context.Context, quicListener *quic.Listener, handler tr
 		// Try to acquire a slot
 		select {
 		case <-sem:
-			go handleQUICConnection(ctx, conn, handler, sem, timeout)
+			go handleQUICConnection(ctx, conn, handler, logger, sem, timeout)
 		default:
 			// All slots busy
 			_ = conn.CloseWithError(0x42, "server busy")
@@ -198,13 +198,13 @@ func acceptQUICLoop(ctx context.Context, quicListener *quic.Listener, handler tr
 }
 
 // handleQUICConnection processes a single QUIC connection.
-func handleQUICConnection(ctx context.Context, conn *quic.Conn, handler transport.Handler, sem chan struct{}, timeout time.Duration) {
+func handleQUICConnection(ctx context.Context, conn *quic.Conn, handler transport.Handler, logger *log.Logger, sem chan struct{}, timeout time.Duration) {
 	defer func() {
 		sem <- struct{}{} // Release slot
 	}()
 	defer func() {
 		if r := recover(); r != nil {
-			log.ErrorMsg("Handler panic: %v\n", r)
+			logger.ErrorMsg("Handler panic: %v\n", r)
 		}
 	}()
 
@@ -220,7 +220,7 @@ func handleQUICConnection(ctx context.Context, conn *quic.Conn, handler transpor
 	defer streamConn.Close()
 
 	if err := handler(streamConn); err != nil {
-		log.ErrorMsg("Handling connection: %s\n", err)
+		logger.ErrorMsg("Handling connection: %s\n", err)
 	}
 }
 

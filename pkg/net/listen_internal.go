@@ -18,27 +18,27 @@ import (
 
 // listenDependencies holds injectable dependencies for testing.
 type listenDependencies struct {
-	listenAndServeTCP func(context.Context, string, time.Duration, transport.Handler, *config.Dependencies) error
-	listenAndServeWS  func(context.Context, string, time.Duration, transport.Handler) error
-	listenAndServeWSS func(context.Context, string, time.Duration, transport.Handler) error
-	listenAndServeUDP func(context.Context, string, time.Duration, transport.Handler) error
+	listenAndServeTCP func(context.Context, string, time.Duration, transport.Handler, *log.Logger, *config.Dependencies) error
+	listenAndServeWS  func(context.Context, string, time.Duration, transport.Handler, *log.Logger) error
+	listenAndServeWSS func(context.Context, string, time.Duration, transport.Handler, *log.Logger) error
+	listenAndServeUDP func(context.Context, string, time.Duration, transport.Handler, *log.Logger) error
 }
 
 // Real implementations for production use.
-func realListenAndServeTCP(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, deps *config.Dependencies) error {
-	return tcp.ListenAndServe(ctx, addr, timeout, handler, deps)
+func realListenAndServeTCP(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, logger *log.Logger, deps *config.Dependencies) error {
+	return tcp.ListenAndServe(ctx, addr, timeout, handler, logger, deps)
 }
 
-func realListenAndServeWS(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler) error {
-	return ws.ListenAndServeWS(ctx, addr, timeout, handler)
+func realListenAndServeWS(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, logger *log.Logger) error {
+	return ws.ListenAndServeWS(ctx, addr, timeout, handler, logger)
 }
 
-func realListenAndServeWSS(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler) error {
-	return ws.ListenAndServeWSS(ctx, addr, timeout, handler)
+func realListenAndServeWSS(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, logger *log.Logger) error {
+	return ws.ListenAndServeWSS(ctx, addr, timeout, handler, logger)
 }
 
-func realListenAndServeUDP(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler) error {
-	return udp.ListenAndServe(ctx, addr, timeout, handler)
+func realListenAndServeUDP(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, logger *log.Logger) error {
+	return udp.ListenAndServe(ctx, addr, timeout, handler, logger)
 }
 
 // serveWithTransport calls the appropriate transport's ListenAndServe function.
@@ -53,16 +53,16 @@ func serveWithTransport(ctx context.Context, cfg *config.Shared, handler transpo
 
 	switch cfg.Protocol {
 	case config.ProtoWS:
-		return deps.listenAndServeWS(ctx, addr, cfg.Timeout, wrappedHandler)
+		return deps.listenAndServeWS(ctx, addr, cfg.Timeout, wrappedHandler, cfg.Logger)
 	case config.ProtoWSS:
-		return deps.listenAndServeWSS(ctx, addr, cfg.Timeout, wrappedHandler)
+		return deps.listenAndServeWSS(ctx, addr, cfg.Timeout, wrappedHandler, cfg.Logger)
 	case config.ProtoUDP:
 		// UDP/QUIC handles transport-level TLS internally
 		// Application-level TLS (--ssl) is applied via handler wrapper
-		return deps.listenAndServeUDP(ctx, addr, cfg.Timeout, wrappedHandler)
+		return deps.listenAndServeUDP(ctx, addr, cfg.Timeout, wrappedHandler, cfg.Logger)
 	default:
 		// Default to TCP
-		return deps.listenAndServeTCP(ctx, addr, cfg.Timeout, wrappedHandler, cfg.Deps)
+		return deps.listenAndServeTCP(ctx, addr, cfg.Timeout, wrappedHandler, cfg.Logger, cfg.Deps)
 	}
 }
 
