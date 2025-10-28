@@ -25,6 +25,9 @@ import (
 // The function blocks until the context is cancelled or an error occurs.
 // Up to 100 concurrent connections are allowed; additional connections are rejected.
 //
+// The timeout parameter controls stream accept operations (from the --timeout flag).
+// QUIC MaxIdleTimeout is set to 3x timeout (minimum 30s) for connection keep-alive.
+//
 // QUIC provides built-in TLS 1.3 encryption at the transport layer.
 // An ephemeral certificate is generated for the transport layer TLS.
 // Application-level TLS (--ssl, --key) is handled separately by the caller.
@@ -51,9 +54,9 @@ func ListenAndServe(ctx context.Context, addr string, timeout time.Duration, han
 	}
 	defer quicListener.Close()
 
-	// Serve connections with semaphore
+	// Serve connections with semaphore, passing timeout through
 	sem := createConnectionSemaphore(100)
-	return serveQUICConnections(ctx, quicListener, handler, sem)
+	return serveQUICConnections(ctx, quicListener, handler, sem, timeout)
 }
 
 // createUDPListener creates a UDP socket with SO_REUSEADDR for rapid port reuse.
@@ -136,11 +139,12 @@ func createConnectionSemaphore(capacity int) chan struct{} {
 }
 
 // serveQUICConnections accepts and handles QUIC connections.
-func serveQUICConnections(ctx context.Context, quicListener *quic.Listener, handler transport.Handler, sem chan struct{}) error {
+// It respects context cancellation and propagates the timeout to stream operations.
+func serveQUICConnections(ctx context.Context, quicListener *quic.Listener, handler transport.Handler, sem chan struct{}, timeout time.Duration) error {
 	// Run accept loop in goroutine
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- acceptQUICLoop(quicListener, handler, sem)
+		errCh <- acceptQUICLoop(ctx, quicListener, handler, sem, timeout)
 	}()
 
 	// Wait for either context cancellation or accept loop error
@@ -165,11 +169,16 @@ func serveQUICConnections(ctx context.Context, quicListener *quic.Listener, hand
 }
 
 // acceptQUICLoop accepts QUIC connections and spawns handlers.
-func acceptQUICLoop(quicListener *quic.Listener, handler transport.Handler, sem chan struct{}) error {
+// It uses the caller's context for Accept operations to support graceful cancellation.
+func acceptQUICLoop(ctx context.Context, quicListener *quic.Listener, handler transport.Handler, sem chan struct{}, timeout time.Duration) error {
 	for {
-		// Accept QUIC connection
-		conn, err := quicListener.Accept(context.Background())
+		// Accept QUIC connection using caller's context
+		conn, err := quicListener.Accept(ctx)
 		if err != nil {
+			// Check if context was cancelled
+			if ctx.Err() != nil {
+				return nil // Graceful shutdown
+			}
 			// Check for clean shutdown
 			if isClosedError(err) {
 				return nil
@@ -180,7 +189,7 @@ func acceptQUICLoop(quicListener *quic.Listener, handler transport.Handler, sem 
 		// Try to acquire a slot
 		select {
 		case <-sem:
-			go handleQUICConnection(conn, handler, sem)
+			go handleQUICConnection(ctx, conn, handler, sem, timeout)
 		default:
 			// All slots busy
 			_ = conn.CloseWithError(0x42, "server busy")
@@ -189,7 +198,7 @@ func acceptQUICLoop(quicListener *quic.Listener, handler transport.Handler, sem 
 }
 
 // handleQUICConnection processes a single QUIC connection.
-func handleQUICConnection(conn *quic.Conn, handler transport.Handler, sem chan struct{}) {
+func handleQUICConnection(ctx context.Context, conn *quic.Conn, handler transport.Handler, sem chan struct{}, timeout time.Duration) {
 	defer func() {
 		sem <- struct{}{} // Release slot
 	}()
@@ -200,7 +209,7 @@ func handleQUICConnection(conn *quic.Conn, handler transport.Handler, sem chan s
 	}()
 
 	// Accept stream and read init byte
-	stream, err := acceptStreamAndActivate(conn)
+	stream, err := acceptStreamAndActivate(ctx, conn, timeout)
 	if err != nil {
 		_ = conn.CloseWithError(0, err.Error())
 		return
@@ -217,12 +226,13 @@ func handleQUICConnection(conn *quic.Conn, handler transport.Handler, sem chan s
 
 // acceptStreamAndActivate accepts a stream and reads the init byte.
 // The client sends an init byte to activate the stream immediately.
-func acceptStreamAndActivate(conn *quic.Conn) (*quic.Stream, error) {
-	// Accept first bidirectional stream with timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+// Uses the provided timeout from the --timeout flag for stream acceptance.
+func acceptStreamAndActivate(ctx context.Context, conn *quic.Conn, timeout time.Duration) (*quic.Stream, error) {
+	// Accept first bidirectional stream with user-provided timeout
+	acceptCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	stream, err := conn.AcceptStream(ctx)
+	stream, err := conn.AcceptStream(acceptCtx)
 	if err != nil {
 		return nil, fmt.Errorf("no stream")
 	}
