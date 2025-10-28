@@ -170,7 +170,7 @@ This refactoring will:
     - Run full test suite
     - Verify all transport tests pass
 
-- [X] Step 6: Refactor pkg/terminal Package
+- [V] Step 6: Refactor pkg/terminal Package
   - **Task**: Replace 6 call sites in pkg/terminal/ with logger parameter
   - **Files**:
     - `pkg/terminal/terminal.go`: Lines 33, 36, 40, 49, 56, 82, 87 (7 calls)
@@ -193,7 +193,7 @@ This refactoring will:
   - **Definition of done**: All terminal logging uses logger parameter, PTY still works correctly
   - **Completed**: Refactored Pipe(), PipeWithPTY(), and syncTerminalSize(). Updated callers in handler/slave and handler/master.
 
-- [X] Step 7: Refactor pkg/exec Package
+- [V] Step 7: Refactor pkg/exec Package
   - **Task**: Replace 6 call sites in pkg/exec/ with logger parameter
   - **Files**:
     - `pkg/exec/exec.go`: Line 54 (1 call)
@@ -217,7 +217,7 @@ This refactoring will:
   - **Definition of done**: All exec logging uses logger parameter, command execution still works
   - **Completed**: Refactored Run(), RunWithPTY(), and syncTerminalSize() for both Unix and Windows. Updated callers.
 
-- [X] Step 8: Refactor pkg/handler/slave Package
+- [V] Step 8: Refactor pkg/handler/slave Package
   - **Task**: Replace 8 call sites in pkg/handler/slave/ with logger from handler struct
   - **Files**:
     - `pkg/handler/slave/slave.go`: Lines 42, 110, 131 (3 calls)
@@ -248,7 +248,7 @@ This refactoring will:
   - **Definition of done**: All slave handler logging uses handler logger, slave mode works correctly
   - **Completed**: All 9 call sites refactored to use slv.cfg.Logger. No struct changes needed since cfg already has Logger.
 
-- [X] Step 9: Refactor pkg/handler/master Package
+- [V] Step 9: Refactor pkg/handler/master Package
   - **Task**: Replace 8 call sites in pkg/handler/master/ with logger from handler struct
   - **Files**:
     - `pkg/handler/master/master.go`: Lines 49, 106, 124, 146, 154, 163 (6 calls)
@@ -274,7 +274,7 @@ This refactoring will:
   - **Dependencies**: Step 8 (same pattern as slave handler)
   - **Definition of done**: All master handler logging uses handler logger, master mode works correctly
 
-- [X] Step 10: Refactor pkg/handler/portfwd Package
+- [V] Step 10: Refactor pkg/handler/portfwd Package
   - **Task**: Replace 7 call sites in pkg/handler/portfwd/ with logger parameter
   - **Files**:
     - `pkg/handler/portfwd/server.go`: Lines 127, 143, 147, 203, 286, 321, 351, 371 (8 calls)
@@ -298,7 +298,7 @@ This refactoring will:
   - **Dependencies**: Steps 8-9 (called from handlers)
   - **Definition of done**: All port forwarding logging uses logger, forwarding still works
 
-- [X] Step 11: Refactor pkg/handler/socks Package
+- [V] Step 11: Refactor pkg/handler/socks Package
   - **Task**: Replace 11 call sites in pkg/handler/socks/ with logger parameter
   - **Files**:
     - `pkg/handler/socks/slave/connect.go`: Line 105 (1 call)

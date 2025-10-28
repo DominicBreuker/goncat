@@ -1,6 +1,7 @@
 package slave
 
 import (
+	"dominicbreuker/goncat/pkg/log"
 	"context"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"errors"
@@ -51,7 +52,7 @@ func TestNewTCPRelay(t *testing.T) {
 	}
 	sessCtl := &fakeClientControlSession{}
 
-	relay := NewTCPRelay(ctx, m, sessCtl, nil)
+	relay := NewTCPRelay(ctx, m, sessCtl, log.NewLogger(false), nil)
 
 	if relay == nil {
 		t.Fatal("NewTCPRelay() returned nil")
@@ -112,7 +113,7 @@ func TestNewTCPRelay_DifferentHosts(t *testing.T) {
 			}
 			sessCtl := &fakeClientControlSession{}
 
-			relay := NewTCPRelay(ctx, m, sessCtl, nil)
+			relay := NewTCPRelay(ctx, m, sessCtl, log.NewLogger(false), nil)
 
 			if relay == nil {
 				t.Fatal("NewTCPRelay() returned nil")
@@ -143,7 +144,7 @@ func TestTCPRelay_Handle_GetChannelError(t *testing.T) {
 		},
 	}
 
-	relay := NewTCPRelay(ctx, m, sessCtl, nil)
+	relay := NewTCPRelay(ctx, m, sessCtl, log.NewLogger(false), nil)
 	err := relay.Handle()
 
 	if err == nil {
