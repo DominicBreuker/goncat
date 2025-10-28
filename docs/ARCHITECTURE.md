@@ -58,20 +58,20 @@ Organized into distinct layers and concerns:
 - **Purpose**: Top-level entry functions for the four operation modes
 - **Files**: `masterconnect.go`, `masterlisten.go`, `slaveconnect.go`, `slavelisten.go`
 - **Responsibility**: Create server/client instances and pass handlers to them
-- **Pattern**: Accept `config.Shared` and `config.Master/Slave`, delegate to `pkg/server` or `pkg/client` with handlers from `pkg/handler`
-- **Key insight**: Entrypoint does NOT directly use transport or mux - those are abstracted by server/client
+- **Pattern**: Accept `config.Shared` and `config.Master/Slave`, use `pkg/net` for connections with handlers from `pkg/handler`
+- **Key insight**: Entrypoint does NOT directly use transport or mux - those are abstracted by pkg/net
 
-#### Server and Client (`pkg/server`, `pkg/client`)
-- **Purpose**: Abstraction layer between entrypoint and transport protocols
-- **`server/`**: Creates listeners, handles TLS wrapping, delegates to transport implementations
-  - Chooses transport based on protocol (TCP vs WebSocket)
-  - Wraps connections in TLS if `--ssl` enabled
-  - Accepts handler function and passes connections to it
-- **`client/`**: Creates dialers, handles TLS upgrade, delegates to transport implementations
-  - Chooses transport based on protocol (TCP vs WebSocket)
-  - Upgrades connection to TLS if `--ssl` enabled
-  - Returns connection for handler to use
-- **Key insight**: Server and client are the ones that know about `pkg/transport` and `pkg/crypto`, not entrypoint
+#### Network Connection API (`pkg/net`)
+- **Purpose**: Simplified abstraction layer between entrypoint and transport protocols
+- **API**:
+  - `Dial(ctx, cfg) (net.Conn, error)` - Establishes connection and returns it directly
+  - `ListenAndServe(ctx, cfg, handler) error` - Creates listener and serves connections until done
+- **Features**:
+  - Chooses transport based on protocol (TCP vs WebSocket vs UDP)
+  - Handles TLS encryption and mutual authentication if `--ssl` enabled
+  - Manages connection lifecycle, timeouts, and cleanup internally
+  - Clears deadlines after operations to prevent premature connection termination
+- **Key insight**: pkg/net knows about `pkg/transport` and `pkg/crypto`, but entrypoint only needs the simple Dial/ListenAndServe API
 
 #### Transport Layer (`pkg/transport`, `pkg/transport/tcp`, `pkg/transport/ws`)
 - **Purpose**: Protocol abstraction for network connections
@@ -102,7 +102,7 @@ Organized into distinct layers and concerns:
   - If seed (password) provided: deterministic certificate generation for mutual auth
   - Empty seed generates random certificates (encryption only, no auth)
   - CA certificate validity: 1970 to 2063 (effectively permanent)
-- **Used by**: `pkg/server` wraps connections in `tls.Server()`, `pkg/client` uses `tls.Client()` and custom verifier
+- **Used by**: `pkg/net` wraps connections in `tls.Server()` or `tls.Client()` and uses custom certificate verifier
 - **Special handling**: `dRand` works around Go's non-deterministic certificate generation for reproducible certs
 
 #### Multiplexing Layer (`pkg/mux`)
@@ -264,12 +264,12 @@ Three-tier testing strategy with different scopes and mocking approaches:
 
 ### Layering Rules
 
-1. **CLI → Entrypoint → Server/Client → Transport/Crypto**: `cmd/` packages call `pkg/entrypoint`, which creates `pkg/server` or `pkg/client` instances and passes handlers from `pkg/handler`. Server/Client then choose transport implementations from `pkg/transport` and handle TLS via `pkg/crypto`.
+1. **CLI → Entrypoint → Net → Transport/Crypto**: `cmd/` packages call `pkg/entrypoint`, which uses `pkg/net.Dial` or `pkg/net.ListenAndServe` and passes handlers from `pkg/handler`. pkg/net then chooses transport implementations from `pkg/transport` and handles TLS via `pkg/crypto`.
 
 2. **No Reverse Dependencies**: Lower layers never depend on higher layers:
-   - `pkg/transport` does not know about `pkg/server` or `pkg/client`
-   - `pkg/server` and `pkg/client` do not know about `pkg/entrypoint`
-   - `pkg/crypto` is used by `pkg/server` and `pkg/client`, not by entrypoint
+   - `pkg/transport` does not know about `pkg/net`
+   - `pkg/net` does not know about `pkg/entrypoint`
+   - `pkg/crypto` is used by `pkg/net`, not by entrypoint
    - `pkg/mux` is used by `pkg/handler`, not by entrypoint
    - `pkg/exec` and `pkg/pty` do not know about `pkg/handler`
 
@@ -450,9 +450,9 @@ flowchart TB
         SC[SlaveConnect]
     end
     
-    subgraph SERVERCLIENT["pkg/server + pkg/client - Connection Layer"]
-        SERVER[server/<br/>Server]
-        CLIENT[client/<br/>Client]
+    subgraph NET["pkg/net - Connection API"]
+        DIAL[Dial<br/>Function]
+        LISTEN[ListenAndServe<br/>Function]
     end
     
     subgraph TRANSPORT["pkg/transport - Network Protocols"]
@@ -502,24 +502,23 @@ flowchart TB
     SLAVE --> SL
     SLAVE --> SC
     
-    ML --> SERVER
-    MC --> CLIENT
-    SL --> SERVER
-    SC --> CLIENT
+    ML --> LISTEN
+    MC --> DIAL
+    SL --> LISTEN
+    SC --> DIAL
     
     ML -.passes handler.-> HMASTER
     MC -.passes handler.-> HMASTER
     SL -.passes handler.-> HSLAVE
     SC -.passes handler.-> HSLAVE
     
-    SERVER --> TRANS
-    CLIENT --> TRANS
+    LISTEN --> TCP
+    LISTEN --> WS
+    DIAL --> TCP
+    DIAL --> WS
     
-    TRANS --> TCP
-    TRANS --> WS
-    
-    SERVER --> TLS
-    CLIENT --> TLS
+    LISTEN --> TLS
+    DIAL --> TLS
     
     TLS --> CERT
     TLS --> RAND
@@ -564,17 +563,17 @@ flowchart TB
 
 1. **CLI Layer**: User invokes `goncat master|slave listen|connect` with flags
 2. **Command Layer**: `cmd/` parses arguments into `config.Shared`, `config.Master/Slave`
-3. **Entrypoint Layer**: `pkg/entrypoint` functions create `pkg/server` or `pkg/client` instances, pass handlers from `pkg/handler`
-4. **Server/Client Layer**: Choose transport implementation (TCP or WebSocket) and handle TLS encryption via `pkg/crypto`
+3. **Entrypoint Layer**: `pkg/entrypoint` functions use `pkg/net.Dial` or `pkg/net.ListenAndServe`, pass handlers from `pkg/handler`
+4. **Connection Layer**: `pkg/net` functions choose transport implementation (TCP/WebSocket/UDP) and handle TLS encryption via `pkg/crypto`
 5. **Transport Layer**: Establish network connections using protocol-specific implementations
-6. **Handler Layer**: Receive connections from server/client, create yamux sessions, orchestrate (master) or execute (slave)
+6. **Handler Layer**: Receive connections from pkg/net, create yamux sessions, orchestrate (master) or execute (slave)
 7. **Multiplexing Layer**: Create control streams and data streams over single connection
 8. **Execution Layer**: Slave spawns shell/command with optional PTY
 9. **Supporting Layers**: Logging, I/O piping, terminal control throughout
 
 **Data Flows:**
 
-- **Main data stream**: User input ↔ PTY/exec ↔ yamux ↔ handler ↔ server/client ↔ TLS ↔ transport ↔ network
+- **Main data stream**: User input ↔ PTY/exec ↔ yamux ↔ handler ↔ pkg/net ↔ TLS ↔ transport ↔ network
 - **Control messages**: Master sends (exec, pty, forward configs) via `ctlClientToServer` stream
 - **Status messages**: Slave sends (errors, confirmations) via `ctlServerToClient` stream
 - **Port forwarding**: Additional yamux streams for each forwarded connection

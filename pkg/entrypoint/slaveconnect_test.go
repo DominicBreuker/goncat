@@ -23,7 +23,7 @@ func TestSlaveConnect_Success(t *testing.T) {
 	}
 
 	fakeConn := &fakeConn{}
-	
+
 	dial := func(ctx context.Context, cfg *config.Shared) (net.Conn, error) {
 		return fakeConn, nil
 	}
@@ -50,7 +50,7 @@ func TestSlaveConnect_DialError(t *testing.T) {
 	}
 
 	dialErr := errors.New("connection failed")
-	
+
 	dial := func(ctx context.Context, cfg *config.Shared) (net.Conn, error) {
 		return nil, dialErr
 	}
@@ -78,7 +78,7 @@ func TestSlaveConnect_HandleError(t *testing.T) {
 	}
 
 	fakeConn := &fakeConn{}
-	
+
 	dial := func(ctx context.Context, cfg *config.Shared) (net.Conn, error) {
 		return fakeConn, nil
 	}
@@ -110,7 +110,7 @@ func TestSlaveConnect_ContextCancellation(t *testing.T) {
 	fakeConn := &fakeConn{
 		closeCh: make(chan struct{}),
 	}
-	
+
 	dial := func(ctx context.Context, cfg *config.Shared) (net.Conn, error) {
 		return fakeConn, nil
 	}

@@ -1,9 +1,9 @@
 package entrypoint
 
 import (
-"context"
-"dominicbreuker/goncat/pkg/config"
-"net"
+	"context"
+	"dominicbreuker/goncat/pkg/config"
+	"net"
 )
 
 // masterHandler is the master handler function.

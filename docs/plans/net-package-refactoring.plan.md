@@ -452,7 +452,7 @@ The new API keeps all implementation details (structs, timeout management, clean
     - No regressions detected
     - Build succeeds: `make build-linux`
 
-- [ ] **Step 8: Manual verification - basic functionality**
+- [X] **Step 8: Manual verification - basic functionality**
   - **Task**: Manually verify that the tool still works correctly with the new implementation. Test the most common use cases to ensure the refactoring hasn't introduced subtle bugs that automated tests might miss.
   - **Test scenarios** (from `docs/TROUBLESHOOT.md`):
     1. **Basic reverse shell (TCP)**:
@@ -522,7 +522,7 @@ The new API keeps all implementation details (structs, timeout management, clean
     - **CRITICAL**: If ANY test fails, the implementation must be fixed before proceeding
     - **EMPHASIZE**: Agent is **NOT ALLOWED** to skip this step - if tests don't work, report to user clearly!
 
-- [ ] **Step 9: Remove old pkg/client and pkg/server packages**
+- [X] **Step 9: Remove old pkg/client and pkg/server packages**
   - **Task**: Remove the old `pkg/client` and `pkg/server` packages since they've been fully replaced by `pkg/net`. This cleanup step ensures we don't have duplicate code in the repository.
   - **Files**:
     - Delete: `pkg/client/client.go`
@@ -543,7 +543,7 @@ The new API keeps all implementation details (structs, timeout management, clean
     - All tests still pass: `go test ./...`
     - No references to old packages remain: `grep -r "pkg/client" . && grep -r "pkg/server" .` (should only find documentation or this plan)
 
-- [ ] **Step 10: Update documentation**
+- [X] **Step 10: Update documentation**
   - **Task**: Update all documentation to reflect the new `pkg/net` package and the simplified API. This ensures future developers understand the new architecture.
   - **Files**:
     - `docs/ARCHITECTURE.md`:
