@@ -11,7 +11,6 @@ import (
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/crypto"
 	"dominicbreuker/goncat/pkg/log"
-	"dominicbreuker/goncat/pkg/transport"
 	"dominicbreuker/goncat/pkg/transport/tcp"
 	"dominicbreuker/goncat/pkg/transport/udp"
 	"dominicbreuker/goncat/pkg/transport/ws"
@@ -19,66 +18,54 @@ import (
 
 // dialDependencies holds injectable dependencies for testing.
 type dialDependencies struct {
-	newTCPDialer func(string, *config.Dependencies) (transport.Dialer, error)
-	newWSDialer  func(context.Context, string, config.Protocol) transport.Dialer
-	newUDPDialer func(string, time.Duration) (transport.Dialer, error)
+	dialTCP func(context.Context, string, time.Duration, *config.Dependencies) (net.Conn, error)
+	dialWS  func(context.Context, string, time.Duration) (net.Conn, error)
+	dialWSS func(context.Context, string, time.Duration) (net.Conn, error)
+	dialUDP func(context.Context, string, time.Duration) (net.Conn, error)
 }
 
 // Real implementations for production use.
-func realNewTCPDialer(addr string, deps *config.Dependencies) (transport.Dialer, error) {
-	return tcp.NewDialer(addr, deps)
+func realDialTCP(ctx context.Context, addr string, timeout time.Duration, deps *config.Dependencies) (net.Conn, error) {
+	return tcp.Dial(ctx, addr, timeout, deps)
 }
 
-func realNewWSDialer(ctx context.Context, addr string, proto config.Protocol) transport.Dialer {
-	return ws.NewDialer(ctx, addr, proto)
+func realDialWS(ctx context.Context, addr string, timeout time.Duration) (net.Conn, error) {
+	return ws.DialWS(ctx, addr, timeout)
 }
 
-func realNewUDPDialer(addr string, timeout time.Duration) (transport.Dialer, error) {
-	return udp.NewDialer(addr, timeout)
+func realDialWSS(ctx context.Context, addr string, timeout time.Duration) (net.Conn, error) {
+	return ws.DialWSS(ctx, addr, timeout)
 }
 
-// createDialer creates the appropriate transport dialer based on protocol.
-func createDialer(ctx context.Context, cfg *config.Shared, deps *dialDependencies) (transport.Dialer, error) {
+func realDialUDP(ctx context.Context, addr string, timeout time.Duration) (net.Conn, error) {
+	return udp.Dial(ctx, addr, timeout)
+}
+
+// establishConnection dials using the appropriate transport based on protocol.
+// CRITICAL: Transports now handle timeout management internally.
+func establishConnection(ctx context.Context, cfg *config.Shared, deps *dialDependencies) (net.Conn, error) {
 	addr := cfg.Host + ":" + fmt.Sprint(cfg.Port)
 
+	var conn net.Conn
+	var err error
+
 	switch cfg.Protocol {
-	case config.ProtoWS, config.ProtoWSS:
-		return deps.newWSDialer(ctx, addr, cfg.Protocol), nil
-
+	case config.ProtoWS:
+		conn, err = deps.dialWS(ctx, addr, cfg.Timeout)
+	case config.ProtoWSS:
+		conn, err = deps.dialWSS(ctx, addr, cfg.Timeout)
 	case config.ProtoUDP:
-		// UDP/QUIC handles transport-level TLS internally (like WebSocket wss)
+		// UDP/QUIC handles transport-level TLS internally
 		// Application-level TLS (--ssl) will be applied after connection if needed
-		dialer, err := deps.newUDPDialer(addr, cfg.Timeout)
-		if err != nil {
-			cfg.Logger.VerboseMsg("Failed to create UDP dialer: %v", err)
-			return nil, fmt.Errorf("create UDP dialer: %w", err)
-		}
-		return dialer, nil
-
+		conn, err = deps.dialUDP(ctx, addr, cfg.Timeout)
 	default:
 		// Default to TCP
-		dialer, err := deps.newTCPDialer(addr, cfg.Deps)
-		if err != nil {
-			cfg.Logger.VerboseMsg("Failed to create TCP dialer: %v", err)
-			return nil, fmt.Errorf("create TCP dialer: %w", err)
-		}
-		return dialer, nil
+		conn, err = deps.dialTCP(ctx, addr, cfg.Timeout, cfg.Deps)
 	}
-}
 
-// establishConnection dials using the provided dialer with timeout handling.
-// CRITICAL: Sets deadline before dial, clears it immediately after success.
-func establishConnection(ctx context.Context, dialer transport.Dialer, cfg *config.Shared) (net.Conn, error) {
-	conn, err := dialer.Dial(ctx)
 	if err != nil {
 		cfg.Logger.VerboseMsg("Connection failed: %v", err)
 		return nil, fmt.Errorf("dial failed: %w", err)
-	}
-
-	// Clear any deadlines set by the dialer to ensure healthy connection
-	// This is critical - lingering deadlines can kill healthy connections later
-	if cfg.Timeout > 0 {
-		_ = conn.SetDeadline(time.Time{})
 	}
 
 	cfg.Logger.VerboseMsg("Connection established")

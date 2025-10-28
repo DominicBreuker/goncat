@@ -195,7 +195,7 @@ go.sum           - Go dependency checksums
 - `cmd/main.go` - Entry point, CLI app with master/slave subcommands
 - `pkg/config/config.go` - Config structs, protocol constants (ProtoTCP/WS/WSS)
 - `cmd/shared/shared.go` - CLI flag definitions
-- `pkg/transport/` - Transport interface and implementations (tcp, ws)
+- `pkg/transport/` - Transport implementations (tcp, ws, udp) with function-based API
 - `pkg/pty/pty_unix.go`, `pkg/pty/pty_windows.go` - Platform-specific PTY
 - `pkg/exec/exec_windows.go` - Windows-specific execution
 
@@ -302,7 +302,7 @@ Before committing changes, always follow these steps:
 ## Common Tasks
 
 **CLI flag:** Add to `cmd/shared/shared.go`, update `pkg/config/`, add tests to `cmd/shared/parsers_test.go`
-**Transport protocol:** Create `pkg/transport/newproto/`, implement Transport interface, add to `pkg/config/config.go`
+**Transport protocol:** Create `pkg/transport/newproto/`, add `Dial()` and `ListenAndServe()` functions matching the pattern, update `pkg/net/`
 **PTY changes:** Edit `pkg/pty/pty_unix.go` (Unix) or `pkg/pty/pty_windows.go` (Windows) - platform-specific
 
 **Manual testing:**
@@ -333,11 +333,13 @@ make build-linux
 
 ## Architecture
 
-**Flow:** CLI (urfave/cli) → cmd/main.go → cmd/master or cmd/slave → pkg/transport (tcp/ws) → pkg/mux (yamux) → pkg/handler → pkg/exec or pkg/pty
+**Flow:** CLI (urfave/cli) → cmd/main.go → cmd/master or cmd/slave → pkg/net → pkg/transport (tcp/ws/udp with function-based API) → pkg/mux (yamux) → pkg/handler → pkg/exec or pkg/pty
 
 **Master vs Slave:** Master controls params (exec, pty, logs, forwarding); Slave executes instructions. Both can listen or connect (4 combos).
 
 **TLS:** Ephemeral certs per run, optional password-based mutual auth (`pkg/crypto/ca.go`)
+
+**Transport API:** Simple function calls - `Dial(ctx, addr, timeout)` and `ListenAndServe(ctx, addr, timeout, handler)` replace old interface-based API
 
 **For a comprehensive overview** of the system design, package relationships, architectural invariants, and data flow diagrams, see [`docs/ARCHITECTURE.md`](../docs/ARCHITECTURE.md).
 

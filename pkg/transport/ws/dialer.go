@@ -3,43 +3,69 @@ package ws
 import (
 	"context"
 	"crypto/tls"
-	"dominicbreuker/goncat/pkg/config"
 	"fmt"
 	"net"
 	"net/http"
+	"time"
 
 	"github.com/coder/websocket"
 )
 
-type Dialer struct {
-	ctx stringCtx
-	url string
+// DialWS establishes a WebSocket connection (plain HTTP).
+// Returns the connection wrapped as net.Conn or an error.
+//
+// The timeout parameter is used for the HTTP connection establishment.
+// After the connection is established, the timeout is cleared to prevent
+// affecting subsequent operations.
+func DialWS(ctx context.Context, addr string, timeout time.Duration) (net.Conn, error) {
+	url := formatURL("ws", addr)
+	return dialWebSocket(ctx, url, timeout, false)
 }
 
-type stringCtx = context.Context
+// DialWSS establishes a WebSocket Secure connection (HTTPS/TLS).
+// Returns the connection wrapped as net.Conn or an error.
+//
+// The timeout parameter is used for the HTTP connection establishment.
+// After the connection is established, the timeout is cleared to prevent
+// affecting subsequent operations.
+func DialWSS(ctx context.Context, addr string, timeout time.Duration) (net.Conn, error) {
+	url := formatURL("wss", addr)
+	return dialWebSocket(ctx, url, timeout, true)
+}
 
-func NewDialer(ctx context.Context, addr string, proto config.Protocol) *Dialer {
-	return &Dialer{
-		ctx: ctx,
-		url: fmt.Sprintf("%s://%s", proto.String(), addr),
+// formatURL creates a WebSocket URL from protocol and address.
+func formatURL(protocol, addr string) string {
+	return fmt.Sprintf("%s://%s", protocol, addr)
+}
+
+// dialWebSocket establishes a WebSocket connection with optional TLS.
+func dialWebSocket(ctx context.Context, url string, timeout time.Duration, useTLS bool) (net.Conn, error) {
+	opts := createDialOptions(useTLS)
+
+	c, _, err := websocket.Dial(ctx, url, opts)
+	if err != nil {
+		return nil, fmt.Errorf("websocket.Dial(%s): %w", url, err)
 	}
+
+	// Wrap WebSocket connection as net.Conn
+	return websocket.NetConn(ctx, c, websocket.MessageBinary), nil
 }
 
-func (d *Dialer) Dial(ctx context.Context) (net.Conn, error) {
+// createDialOptions creates WebSocket dial options with TLS configuration.
+func createDialOptions(useTLS bool) *websocket.DialOptions {
 	opts := &websocket.DialOptions{
 		Subprotocols: []string{"bin"},
 	}
+
 	// For wss, skip verification; inner TLS (app layer) is authoritative.
-	// Leaving it enabled for ws is harmless.
-	opts.HTTPClient = &http.Client{
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
-		},
+	// For ws, this is harmless but included for consistency.
+	if useTLS {
+		opts.HTTPClient = &http.Client{
+			Transport: &http.Transport{
+				TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			},
+		}
 	}
 
-	c, _, err := websocket.Dial(ctx, d.url, opts)
-	if err != nil {
-		return nil, fmt.Errorf("websocket.Dial(%s): %w", d.url, err)
-	}
-	return websocket.NetConn(ctx, c, websocket.MessageBinary), nil
+	return opts
 }

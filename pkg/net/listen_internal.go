@@ -16,45 +16,62 @@ import (
 	"dominicbreuker/goncat/pkg/transport/ws"
 )
 
-// Real implementations for production use.
-func realCreateListener(ctx context.Context, cfg *config.Shared) (transport.Listener, error) {
-	addr := cfg.Host + ":" + fmt.Sprint(cfg.Port)
-
-	var (
-		listener transport.Listener
-		err      error
-	)
-
-	switch cfg.Protocol {
-	case config.ProtoWS, config.ProtoWSS:
-		listener, err = ws.NewListener(ctx, addr, cfg.Protocol == config.ProtoWSS)
-		if err != nil {
-			cfg.Logger.VerboseMsg("Failed to create WebSocket listener: %v", err)
-			return nil, fmt.Errorf("create WebSocket listener: %w", err)
-		}
-
-	case config.ProtoUDP:
-		// UDP/QUIC handles transport-level TLS internally (like WebSocket wss)
-		// Application-level TLS (--ssl) is applied via handler wrapper
-		listener, err = udp.NewListener(ctx, addr, cfg.Timeout)
-		if err != nil {
-			cfg.Logger.VerboseMsg("Failed to create UDP listener: %v", err)
-			return nil, fmt.Errorf("create UDP listener: %w", err)
-		}
-
-	default:
-		// Default to TCP
-		listener, err = tcp.NewListener(addr, cfg.Deps)
-		if err != nil {
-			cfg.Logger.VerboseMsg("Failed to create TCP listener: %v", err)
-			return nil, fmt.Errorf("create TCP listener: %w", err)
-		}
-	}
-
-	return listener, nil
+// listenDependencies holds injectable dependencies for testing.
+type listenDependencies struct {
+	listenAndServeTCP func(context.Context, string, time.Duration, transport.Handler, *config.Dependencies) error
+	listenAndServeWS  func(context.Context, string, time.Duration, transport.Handler) error
+	listenAndServeWSS func(context.Context, string, time.Duration, transport.Handler) error
+	listenAndServeUDP func(context.Context, string, time.Duration, transport.Handler) error
 }
 
-func realWrapWithTLS(handler transport.Handler, cfg *config.Shared) (transport.Handler, error) {
+// Real implementations for production use.
+func realListenAndServeTCP(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, deps *config.Dependencies) error {
+	return tcp.ListenAndServe(ctx, addr, timeout, handler, deps)
+}
+
+func realListenAndServeWS(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler) error {
+	return ws.ListenAndServeWS(ctx, addr, timeout, handler)
+}
+
+func realListenAndServeWSS(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler) error {
+	return ws.ListenAndServeWSS(ctx, addr, timeout, handler)
+}
+
+func realListenAndServeUDP(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler) error {
+	return udp.ListenAndServe(ctx, addr, timeout, handler)
+}
+
+// serveWithTransport calls the appropriate transport's ListenAndServe function.
+func serveWithTransport(ctx context.Context, cfg *config.Shared, handler transport.Handler, deps *listenDependencies) error {
+	addr := cfg.Host + ":" + fmt.Sprint(cfg.Port)
+
+	// Wrap handler with TLS if requested
+	wrappedHandler, err := wrapHandlerWithTLS(handler, cfg)
+	if err != nil {
+		return fmt.Errorf("preparing handler: %w", err)
+	}
+
+	switch cfg.Protocol {
+	case config.ProtoWS:
+		return deps.listenAndServeWS(ctx, addr, cfg.Timeout, wrappedHandler)
+	case config.ProtoWSS:
+		return deps.listenAndServeWSS(ctx, addr, cfg.Timeout, wrappedHandler)
+	case config.ProtoUDP:
+		// UDP/QUIC handles transport-level TLS internally
+		// Application-level TLS (--ssl) is applied via handler wrapper
+		return deps.listenAndServeUDP(ctx, addr, cfg.Timeout, wrappedHandler)
+	default:
+		// Default to TCP
+		return deps.listenAndServeTCP(ctx, addr, cfg.Timeout, wrappedHandler, cfg.Deps)
+	}
+}
+
+// wrapHandlerWithTLS wraps the handler with TLS if SSL is enabled.
+func wrapHandlerWithTLS(handler transport.Handler, cfg *config.Shared) (transport.Handler, error) {
+	if !cfg.SSL {
+		return handler, nil
+	}
+
 	// Build TLS configuration
 	tlsConfig, err := buildServerTLSConfig(cfg.GetKey(), cfg.Logger)
 	if err != nil {

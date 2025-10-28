@@ -4,7 +4,7 @@ import (
 	"testing"
 )
 
-func TestNewDialer(t *testing.T) {
+func TestDial_AddressParsing(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -43,15 +43,10 @@ func TestNewDialer(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			d, err := NewDialer(tc.addr, nil)
+			// Test address parsing by calling resolveTCPAddress directly
+			_, err := resolveTCPAddress(tc.addr)
 			if (err != nil) != tc.wantErr {
-				t.Errorf("NewDialer(%q) error = %v, wantErr %v", tc.addr, err, tc.wantErr)
-			}
-			if !tc.wantErr && d == nil {
-				t.Error("NewDialer() returned nil dialer")
-			}
-			if !tc.wantErr && d.tcpAddr == nil {
-				t.Error("NewDialer() dialer has nil tcpAddr")
+				t.Errorf("resolveTCPAddress(%q) error = %v, wantErr %v", tc.addr, err, tc.wantErr)
 			}
 		})
 	}

@@ -1,6 +1,7 @@
 package tcp
 
 import (
+	"context"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/transport"
@@ -11,16 +12,30 @@ import (
 	"time"
 )
 
-// Listener implements the transport.Listener interface for TCP connections.
-// It allows up to 100 concurrent connections to prevent resource exhaustion.
-type Listener struct {
-	nl  net.Listener
-	sem chan struct{} // capacity 100 -> allows up to 100 concurrent handlers
+// ListenAndServe creates a TCP listener and serves connections until context is cancelled.
+// Up to 100 concurrent connections are allowed; additional connections are rejected.
+// The function blocks until the context is cancelled or an error occurs.
+// All cleanup and resource management is handled internally.
+//
+// The handler function is called for each accepted connection in a separate goroutine.
+// The connection is automatically closed when the handler returns.
+func ListenAndServe(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, deps *config.Dependencies) error {
+	// Create listener
+	listener, err := createListener(addr, deps)
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+
+	// Create semaphore for connection limiting
+	sem := createConnectionSemaphore(100)
+
+	// Serve connections with context handling
+	return serveConnections(ctx, listener, handler, sem)
 }
 
-// NewListener creates a new TCP listener on the specified address.
-// The deps parameter is optional and can be nil to use default implementations.
-func NewListener(addr string, deps *config.Dependencies) (*Listener, error) {
+// createListener creates a TCP listener on the specified address.
+func createListener(addr string, deps *config.Dependencies) (net.Listener, error) {
 	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %w", addr, err)
@@ -33,28 +48,60 @@ func NewListener(addr string, deps *config.Dependencies) (*Listener, error) {
 		return nil, fmt.Errorf("listen(tcp, %s): %w", addr, err)
 	}
 
-	l := &Listener{
-		nl:  nl,
-		sem: make(chan struct{}, 100),
-	}
-	// initially allow 100 active connections
-	for i := 0; i < 100; i++ {
-		l.sem <- struct{}{}
-	}
-	return l, nil
+	return nl, nil
 }
 
-// Serve accepts and handles incoming connections using the provided handler.
-// Up to 100 connections can be handled concurrently; additional connections are closed.
-func (l *Listener) Serve(handle transport.Handler) error {
+// createConnectionSemaphore creates a buffered channel to limit concurrent connections.
+func createConnectionSemaphore(capacity int) chan struct{} {
+	sem := make(chan struct{}, capacity)
+	// Initially allow 'capacity' active connections
+	for i := 0; i < capacity; i++ {
+		sem <- struct{}{}
+	}
+	return sem
+}
+
+// serveConnections accepts and handles connections until context is cancelled.
+func serveConnections(ctx context.Context, listener net.Listener, handler transport.Handler, sem chan struct{}) error {
+	// Channel for accept loop errors
+	errCh := make(chan error, 1)
+
+	// Run accept loop in goroutine
+	go func() {
+		errCh <- acceptLoop(listener, handler, sem)
+	}()
+
+	// Wait for either context cancellation or accept loop error
+	select {
+	case <-ctx.Done():
+		// Context cancelled - close listener and wait for accept loop to exit
+		_ = listener.Close()
+		err := <-errCh
+		// Treat closure due to context cancellation as graceful
+		if err == nil || isListenerClosed(err) {
+			return nil
+		}
+		return fmt.Errorf("serving after cancellation: %w", err)
+
+	case err := <-errCh:
+		// Accept loop exited on its own
+		if err == nil || isListenerClosed(err) {
+			return nil
+		}
+		return fmt.Errorf("serving: %w", err)
+	}
+}
+
+// acceptLoop accepts connections and spawns handlers.
+func acceptLoop(listener net.Listener, handler transport.Handler, sem chan struct{}) error {
 	for {
-		conn, err := l.nl.Accept()
+		conn, err := listener.Accept()
 		if err != nil {
-			// Treat listener closed as clean shutdown.
-			if errors.Is(err, net.ErrClosed) || strings.Contains(err.Error(), "use of closed network connection") {
+			// Treat listener closed as clean shutdown
+			if isListenerClosed(err) {
 				return nil
 			}
-			// Retry on timeouts with a short backoff.
+			// Retry on timeouts with a short backoff
 			if ne, ok := err.(net.Error); ok && ne.Timeout() {
 				time.Sleep(100 * time.Millisecond)
 				continue
@@ -62,36 +109,44 @@ func (l *Listener) Serve(handle transport.Handler) error {
 			return fmt.Errorf("Accept(): %w", err)
 		}
 
-		// Try to acquire a slot. If all 100 slots busy, drop the new connection.
+		// Try to acquire a slot
 		select {
-		case <-l.sem: // acquired
-			go func(c net.Conn) {
-				// Always release the slot and close the connection when done.
-				defer func() {
-					_ = c.Close()
-					l.sem <- struct{}{} // release slot
-				}()
-				// Prevent a panic from leaking the slot.
-				defer func() {
-					if r := recover(); r != nil {
-						log.ErrorMsg("Handler panic: %v\n", r)
-					}
-				}()
-
-				if err := handle(c); err != nil {
-					log.ErrorMsg("Handling connection: %s\n", err)
-				}
-			}(conn)
-
+		case <-sem:
+			// Acquired slot - handle connection
+			go handleConnection(conn, handler, sem)
 		default:
-			// All 100 slots busy: politely close the extra connection.
+			// All slots busy - reject connection
 			_ = conn.Close()
-			// continue accepting
 		}
 	}
 }
 
-// Close stops the listener.
-func (l *Listener) Close() error {
-	return l.nl.Close()
+// handleConnection processes a single connection.
+func handleConnection(conn net.Conn, handler transport.Handler, sem chan struct{}) {
+	// Always release slot and close connection
+	defer func() {
+		_ = conn.Close()
+		sem <- struct{}{} // Release slot
+	}()
+
+	// Prevent panic from leaking the slot
+	defer func() {
+		if r := recover(); r != nil {
+			log.ErrorMsg("Handler panic: %v\n", r)
+		}
+	}()
+
+	if err := handler(conn); err != nil {
+		log.ErrorMsg("Handling connection: %s\n", err)
+	}
+}
+
+// isListenerClosed checks if an error indicates a closed listener.
+func isListenerClosed(err error) bool {
+	if err == nil {
+		return false
+	}
+	return errors.Is(err, net.ErrClosed) ||
+		strings.Contains(err.Error(), "use of closed network connection") ||
+		strings.Contains(err.Error(), "listener closed")
 }

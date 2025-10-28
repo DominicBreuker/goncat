@@ -16,26 +16,53 @@ import (
 	"github.com/coder/websocket"
 )
 
-// Listener implements the transport.Listener interface for WebSocket connections.
-// It wraps an HTTP server that upgrades incoming requests to WebSocket connections.
-// Up to 100 connections can be handled concurrently; additional connections receive HTTP 503.
-type Listener struct {
-	ctx context.Context
-	nl  net.Listener
-
-	// semaphore (cap=100) to allow up to 100 concurrent connections
-	sem chan struct{}
+// ListenAndServeWS creates a WebSocket listener (plain HTTP) and serves connections.
+// The function blocks until the context is cancelled or an error occurs.
+// Up to 100 concurrent connections are allowed; additional connections receive HTTP 503.
+//
+// The handler function is called for each accepted WebSocket connection.
+// All cleanup and resource management is handled internally.
+func ListenAndServeWS(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler) error {
+	return listenAndServeWebSocket(ctx, addr, timeout, handler, false)
 }
 
-// NewListener creates a new WebSocket listener on the specified address.
-// If useTLS is true, the listener will use TLS with an ephemeral self-signed certificate.
-func NewListener(ctx context.Context, addr string, useTLS bool) (*Listener, error) {
+// ListenAndServeWSS creates a WebSocket Secure listener (HTTPS/TLS) and serves connections.
+// The function blocks until the context is cancelled or an error occurs.
+// Up to 100 concurrent connections are allowed; additional connections receive HTTP 503.
+//
+// TLS is enabled at the transport layer with an ephemeral self-signed certificate.
+// The handler function is called for each accepted WebSocket connection.
+// All cleanup and resource management is handled internally.
+func ListenAndServeWSS(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler) error {
+	return listenAndServeWebSocket(ctx, addr, timeout, handler, true)
+}
+
+// listenAndServeWebSocket is the internal implementation for both ws and wss.
+func listenAndServeWebSocket(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler, useTLS bool) error {
+	// Create network listener
+	listener, err := createNetListener(addr, useTLS)
+	if err != nil {
+		return err
+	}
+	defer listener.Close()
+
+	// Create semaphore for connection limiting
+	sem := createConnectionSemaphore(100)
+
+	// Create HTTP server
+	server := createHTTPServer(ctx, handler, sem)
+
+	// Serve with context handling
+	return serveWithContext(ctx, server, listener)
+}
+
+// createNetListener creates a TCP listener with optional TLS.
+func createNetListener(addr string, useTLS bool) (net.Listener, error) {
 	tcpAddr, err := net.ResolveTCPAddr("tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("net.ResolveTCPAddr(tcp, %s): %w", addr, err)
 	}
 
-	// Use the generic net.Listener interface (not *net.TCPListener)
 	var nl net.Listener
 	nl, err = net.ListenTCP("tcp", tcpAddr)
 	if err != nil {
@@ -43,95 +70,128 @@ func NewListener(ctx context.Context, addr string, useTLS bool) (*Listener, erro
 	}
 
 	if useTLS {
-		nl, err = getTLSListener(nl)
+		nl, err = wrapWithTLS(nl)
 		if err != nil {
-			return nil, fmt.Errorf("getTLSListener(): %w", err)
+			return nil, fmt.Errorf("wrap with TLS: %w", err)
 		}
 	}
 
-	l := &Listener{
-		ctx: ctx,
-		nl:  nl,
-		sem: make(chan struct{}, 100),
-	}
-	// initially allow 100 active connections
-	for i := 0; i < 100; i++ {
-		l.sem <- struct{}{}
-	}
-	return l, nil
+	return nl, nil
 }
 
-func getTLSListener(nl net.Listener) (net.Listener, error) {
-	// Ephemeral cert per process; clients skip-verify anyway.
-	// (If you need mTLS/pinning, you’re already doing TLS-in-TLS at the app layer.)
+// wrapWithTLS wraps a listener with TLS using an ephemeral certificate.
+func wrapWithTLS(nl net.Listener) (net.Listener, error) {
+	// Generate ephemeral certificate for transport-level TLS
 	key := rand.Text()
 	_, cert, err := crypto.GenerateCertificates(key)
 	if err != nil {
 		return nil, fmt.Errorf("crypto.GenerateCertificates(%s): %w", key, err)
 	}
+
 	tlsCfg := &tls.Config{
 		Certificates: []tls.Certificate{cert},
 		MinVersion:   tls.VersionTLS13,
 	}
+
 	return tls.NewListener(nl, tlsCfg), nil
 }
 
-// Serve starts the HTTP server and handles incoming WebSocket upgrade requests.
-func (l *Listener) Serve(handle transport.Handler) error {
-	s := &http.Server{
-		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Try to acquire a slot. If all 100 slots busy, reject.
-			select {
-			case <-l.sem:
-				// release on return
-				defer func() { l.sem <- struct{}{} }()
-
-				c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
-					Subprotocols: []string{"bin"},
-				})
-				if err != nil {
-					log.ErrorMsg("websocket.Accept(): %s\n", err)
-					// If upgrade fails, sem is already released by defer; nothing else to do.
-					return
-				}
-
-				conn := websocket.NetConn(l.ctx, c, websocket.MessageBinary)
-				log.InfoMsg("New WS connection from %s\n", conn.RemoteAddr())
-
-				// Make sure the connection is always closed, and don’t leak the handler slot on panic.
-				defer func() { _ = conn.Close() }()
-				defer func() {
-					if r := recover(); r != nil {
-						log.ErrorMsg("Handler panic: %v\n", r)
-					}
-				}()
-
-				if err := handle(conn); err != nil {
-					log.ErrorMsg("handle websocket.NetConn: %s\n", err)
-				}
-
-			default:
-				// All 100 slots busy: reject extra connections politely
-				http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
-				return
-			}
-		}),
-
-		// For long-lived tunnels, keep these generous; avoid spuriously killing idle conns.
-		ReadHeaderTimeout: 10 * time.Second,
-		ReadTimeout:       0,                // unlimited reads after headers
-		WriteTimeout:      0,                // don't kill slow writers; app layer handles deadlines if needed
-		IdleTimeout:       60 * time.Second, // typical default
+// createConnectionSemaphore creates a buffered channel to limit concurrent connections.
+func createConnectionSemaphore(capacity int) chan struct{} {
+	sem := make(chan struct{}, capacity)
+	for i := 0; i < capacity; i++ {
+		sem <- struct{}{}
 	}
-
-	// Serve will unblock when the underlying net.Listener is closed via Close().
-	if err := s.Serve(l.nl); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		return fmt.Errorf("http.Server.Serve(): %w", err)
-	}
-	return nil
+	return sem
 }
 
-// Close stops the listener (this unblocks Serve()).
-func (l *Listener) Close() error {
-	return l.nl.Close()
+// createHTTPServer creates an HTTP server that upgrades connections to WebSocket.
+func createHTTPServer(ctx context.Context, handler transport.Handler, sem chan struct{}) *http.Server {
+	return &http.Server{
+		Handler: createWebSocketHandler(ctx, handler, sem),
+
+		// Timeouts for long-lived tunnel connections
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       0,                // Unlimited after headers
+		WriteTimeout:      0,                // No write timeout
+		IdleTimeout:       60 * time.Second, // Standard idle timeout
+	}
+}
+
+// createWebSocketHandler creates an HTTP handler that upgrades to WebSocket.
+func createWebSocketHandler(ctx context.Context, handler transport.Handler, sem chan struct{}) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Try to acquire a slot
+		select {
+		case <-sem:
+			// Acquired - handle connection
+			defer func() { sem <- struct{}{} }()
+
+			handleWebSocketUpgrade(ctx, w, r, handler)
+
+		default:
+			// All slots busy - reject with 503
+			http.Error(w, http.StatusText(http.StatusServiceUnavailable), http.StatusServiceUnavailable)
+		}
+	}
+}
+
+// handleWebSocketUpgrade upgrades the HTTP connection to WebSocket and handles it.
+func handleWebSocketUpgrade(ctx context.Context, w http.ResponseWriter, r *http.Request, handler transport.Handler) {
+	// Accept WebSocket upgrade
+	c, err := websocket.Accept(w, r, &websocket.AcceptOptions{
+		Subprotocols: []string{"bin"},
+	})
+	if err != nil {
+		log.ErrorMsg("websocket.Accept(): %s\n", err)
+		return
+	}
+
+	// Wrap as net.Conn
+	conn := websocket.NetConn(ctx, c, websocket.MessageBinary)
+	log.InfoMsg("New WS connection from %s\n", conn.RemoteAddr())
+
+	// Ensure connection is closed
+	defer func() { _ = conn.Close() }()
+
+	// Prevent panic from leaking resources
+	defer func() {
+		if r := recover(); r != nil {
+			log.ErrorMsg("Handler panic: %v\n", r)
+		}
+	}()
+
+	// Handle the connection
+	if err := handler(conn); err != nil {
+		log.ErrorMsg("handle websocket.NetConn: %s\n", err)
+	}
+}
+
+// serveWithContext runs the HTTP server with context cancellation support.
+func serveWithContext(ctx context.Context, server *http.Server, listener net.Listener) error {
+	// Run server in goroutine
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- server.Serve(listener)
+	}()
+
+	// Wait for either context cancellation or server error
+	select {
+	case <-ctx.Done():
+		// Context cancelled - close listener
+		_ = listener.Close()
+		err := <-errCh
+		// Treat closure as graceful shutdown
+		if err == nil || errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return fmt.Errorf("serving after cancellation: %w", err)
+
+	case err := <-errCh:
+		// Server exited on its own
+		if err == nil || errors.Is(err, http.ErrServerClosed) {
+			return nil
+		}
+		return fmt.Errorf("http.Server.Serve(): %w", err)
+	}
 }
