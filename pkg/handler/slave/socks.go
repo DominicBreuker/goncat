@@ -3,7 +3,6 @@ package slave
 import (
 	"context"
 	socksslave "dominicbreuker/goncat/pkg/handler/socks/slave"
-	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
 )
 
@@ -13,7 +12,7 @@ func (slv *slave) handleSocksConnectAsync(ctx context.Context, m msg.SocksConnec
 	go func() {
 		tr := socksslave.NewTCPRelay(ctx, m, slv.sess, slv.cfg.Deps)
 		if err := tr.Handle(); err != nil {
-			log.ErrorMsg("Running SocksConnect job: %s\n", err)
+			slv.cfg.Logger.ErrorMsg("Running SocksConnect job: %s\n", err)
 		}
 	}()
 }
@@ -24,13 +23,13 @@ func (slv *slave) handleSocksAsociateAsync(ctx context.Context, _ msg.SocksAssoc
 	go func() {
 		relay, err := socksslave.NewUDPRelay(ctx, slv.sess, slv.cfg.Deps)
 		if err != nil {
-			log.ErrorMsg("Running SocksAssociate job: %s\n", err)
+			slv.cfg.Logger.ErrorMsg("Running SocksAssociate job: %s\n", err)
 			return
 		}
 		defer relay.Close()
 
 		if err := relay.Serve(); err != nil {
-			log.ErrorMsg("UDP Relay: %s\n", err)
+			slv.cfg.Logger.ErrorMsg("UDP Relay: %s\n", err)
 		}
 	}()
 }

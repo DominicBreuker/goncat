@@ -18,7 +18,7 @@ func (mst *master) startForegroundJob(ctx context.Context, wg *sync.WaitGroup, c
 		defer wg.Done()
 
 		if err := mst.handleForeground(ctx); err != nil {
-			log.ErrorMsg("Running foreground job: %s", err)
+			mst.cfg.Logger.ErrorMsg("Running foreground job: %s", err)
 		}
 	}()
 }

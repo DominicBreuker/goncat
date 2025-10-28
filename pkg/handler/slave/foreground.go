@@ -3,7 +3,6 @@ package slave
 import (
 	"context"
 	"dominicbreuker/goncat/pkg/exec"
-	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"dominicbreuker/goncat/pkg/terminal"
 	"fmt"
@@ -14,7 +13,7 @@ import (
 func (slv *slave) handleForegroundAsync(ctx context.Context, m msg.Foreground) {
 	go func() {
 		if err := slv.handleForeground(ctx, m); err != nil {
-			log.ErrorMsg("Running foreground job: %s", err)
+			slv.cfg.Logger.ErrorMsg("Running foreground job: %s", err)
 		}
 		slv.Close()
 	}()

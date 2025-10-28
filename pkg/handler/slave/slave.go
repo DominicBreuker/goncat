@@ -6,7 +6,6 @@ package slave
 import (
 	"context"
 	"dominicbreuker/goncat/pkg/config"
-	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"errors"
@@ -39,7 +38,7 @@ func Handle(ctx context.Context, cfg *config.Shared, conn net.Conn) error {
 	// let user know about connection status
 	defer func() {
 		if slv.remoteID != "" {
-			log.InfoMsg("Session with %s closed (%s)\n", slv.remoteAddr, slv.remoteID)
+			slv.cfg.Logger.InfoMsg("Session with %s closed (%s)\n", slv.remoteAddr, slv.remoteID)
 			slv.cfg.Logger.VerboseMsg("Closing session with %s (%s)", slv.remoteAddr, slv.remoteID)
 		}
 	}()
@@ -107,7 +106,7 @@ func (slv *slave) run() error {
 		if h, ok := m.(msg.Hello); ok {
 			slv.cfg.Logger.VerboseMsg("Received Hello from master %s (ID: %s)", slv.remoteAddr, h.ID)
 			slv.remoteID = h.ID
-			log.InfoMsg("Session with %s established (%s)\n", slv.remoteAddr, slv.remoteID)
+			slv.cfg.Logger.InfoMsg("Session with %s established (%s)\n", slv.remoteAddr, slv.remoteID)
 			break
 		}
 		// Ignore any other message types until Hello is seen (shouldn’t happen).
@@ -128,7 +127,7 @@ func (slv *slave) run() error {
 				continue
 			}
 
-			log.ErrorMsg("Receiving next command: %s\n", err)
+			slv.cfg.Logger.ErrorMsg("Receiving next command: %s\n", err)
 			continue
 		}
 

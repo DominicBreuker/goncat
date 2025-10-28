@@ -217,7 +217,7 @@ This refactoring will:
   - **Definition of done**: All exec logging uses logger parameter, command execution still works
   - **Completed**: Refactored Run(), RunWithPTY(), and syncTerminalSize() for both Unix and Windows. Updated callers.
 
-- [ ] Step 8: Refactor pkg/handler/slave Package
+- [X] Step 8: Refactor pkg/handler/slave Package
   - **Task**: Replace 8 call sites in pkg/handler/slave/ with logger from handler struct
   - **Files**:
     - `pkg/handler/slave/slave.go`: Lines 42, 110, 131 (3 calls)
@@ -246,8 +246,9 @@ This refactoring will:
     ```
   - **Dependencies**: Steps 6-7 (foreground calls exec which calls terminal)
   - **Definition of done**: All slave handler logging uses handler logger, slave mode works correctly
+  - **Completed**: All 9 call sites refactored to use slv.cfg.Logger. No struct changes needed since cfg already has Logger.
 
-- [ ] Step 9: Refactor pkg/handler/master Package
+- [X] Step 9: Refactor pkg/handler/master Package
   - **Task**: Replace 8 call sites in pkg/handler/master/ with logger from handler struct
   - **Files**:
     - `pkg/handler/master/master.go`: Lines 49, 106, 124, 146, 154, 163 (6 calls)
