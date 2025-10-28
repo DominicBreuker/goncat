@@ -1,168 +1,155 @@
 package entrypoint
 
 import (
-	"context"
-	"dominicbreuker/goncat/pkg/config"
-	"errors"
-	"testing"
-	"time"
+"context"
+"dominicbreuker/goncat/pkg/config"
+"errors"
+"net"
+"testing"
+"time"
 )
 
 // uses interfaces from internal.go and fakes from internal_test.go
 
-// it should close the client and master handler on success
+// it should close the connection and master handler on success
 func TestMasterConnect_Success(t *testing.T) {
-	t.Parallel()
+t.Parallel()
 
-	ctx := context.Background()
-	cfg := &config.Shared{
-		Protocol: config.ProtoTCP,
-		Host:     "localhost",
-		Port:     8080,
-	}
-	mCfg := &config.Master{}
+ctx := context.Background()
+cfg := &config.Shared{
+Protocol: config.ProtoTCP,
+Host:     "localhost",
+Port:     8080,
+}
+mCfg := &config.Master{}
 
-	fc := &fakeClient{
-		conn: &fakeConn{},
-	}
+fakeConn := &fakeConn{}
 
-	newClient := func(ctx context.Context, cfg *config.Shared) clientInterface {
-		return fc
-	}
-
-	// Inline fake master handler: returns nil (success)
-	err := masterConnect(ctx, cfg, mCfg, newClient, newFakeMasterHandle(nil, nil))
-	if err != nil {
-		t.Fatalf("masterConnect() error = %v, want nil", err)
-	}
-
-	if !fc.closed {
-		t.Error("client was not closed")
-	}
+dial := func(ctx context.Context, cfg *config.Shared) (net.Conn, error) {
+return fakeConn, nil
 }
 
-// it should return an error if connecting fails
-func TestMasterConnect_ConnectError(t *testing.T) {
-	t.Parallel()
+// Inline fake master handler: returns nil (success)
+err := masterConnect(ctx, cfg, mCfg, dial, newFakeMasterHandle(nil, nil))
+if err != nil {
+t.Fatalf("masterConnect() error = %v, want nil", err)
+}
 
-	ctx := context.Background()
-	cfg := &config.Shared{
-		Protocol: config.ProtoTCP,
-		Host:     "localhost",
-		Port:     8080,
-	}
-	mCfg := &config.Master{}
+if !fakeConn.closed {
+t.Error("connection was not closed")
+}
+}
 
-	connectErr := errors.New("connection failed")
-	fc := &fakeClient{
-		connectErr: connectErr,
-	}
+// it should return an error if dialing fails
+func TestMasterConnect_DialError(t *testing.T) {
+t.Parallel()
 
-	newClient := func(ctx context.Context, cfg *config.Shared) clientInterface {
-		return fc
-	}
+ctx := context.Background()
+cfg := &config.Shared{
+Protocol: config.ProtoTCP,
+Host:     "localhost",
+Port:     8080,
+}
+mCfg := &config.Master{}
 
-	err := masterConnect(ctx, cfg, mCfg, newClient, newFakeMasterHandle(nil, func() {
-		t.Error("newMaster should not be called when connect fails")
-	}))
-	if err == nil {
-		t.Fatal("masterConnect() error = nil, want error")
-	}
-	if !errors.Is(err, connectErr) && err.Error() != "connecting: connection failed" {
-		t.Errorf("masterConnect() error = %v, want wrapped connection error", err)
-	}
+dialErr := errors.New("connection failed")
 
-	if fc.closed {
-		t.Error("client should not be closed when connect fails")
-	}
+dial := func(ctx context.Context, cfg *config.Shared) (net.Conn, error) {
+return nil, dialErr
+}
+
+err := masterConnect(ctx, cfg, mCfg, dial, newFakeMasterHandle(nil, func() {
+t.Error("handler should not be called when dial fails")
+}))
+if err == nil {
+t.Fatal("masterConnect() error = nil, want error")
+}
+if !errors.Is(err, dialErr) && err.Error() != "dialing: connection failed" {
+t.Errorf("masterConnect() error = %v, want wrapped dial error", err)
+}
 }
 
 // it should return an error if handling fails
 func TestMasterConnect_HandleError(t *testing.T) {
-	t.Parallel()
+t.Parallel()
 
-	ctx := context.Background()
-	cfg := &config.Shared{
-		Protocol: config.ProtoTCP,
-		Host:     "localhost",
-		Port:     8080,
-	}
-	mCfg := &config.Master{}
+ctx := context.Background()
+cfg := &config.Shared{
+Protocol: config.ProtoTCP,
+Host:     "localhost",
+Port:     8080,
+}
+mCfg := &config.Master{}
 
-	fc := &fakeClient{
-		conn: &fakeConn{},
-	}
+fakeConn := &fakeConn{}
 
-	newClient := func(ctx context.Context, cfg *config.Shared) clientInterface {
-		return fc
-	}
-
-	handleErr := errors.New("handle failed")
-
-	err := masterConnect(ctx, cfg, mCfg, newClient, newFakeMasterHandle(handleErr, nil))
-	if err == nil {
-		t.Fatal("masterConnect() error = nil, want error")
-	}
-
-	// Client should be closed even on handle error. The master handler is
-	// executed by the factory and may handle its own cleanup; we only assert
-	// the client cleanup here.
-	if !fc.closed {
-		t.Error("client was not closed despite handle error")
-	}
+dial := func(ctx context.Context, cfg *config.Shared) (net.Conn, error) {
+return fakeConn, nil
 }
 
-// it should handle context cancellation by closing client and master handler
+handleErr := errors.New("handle failed")
+
+err := masterConnect(ctx, cfg, mCfg, dial, newFakeMasterHandle(handleErr, nil))
+if err == nil {
+t.Fatal("masterConnect() error = nil, want error")
+}
+
+// Connection should be closed even on handle error
+if !fakeConn.closed {
+t.Error("connection was not closed despite handle error")
+}
+}
+
+// it should handle context cancellation by closing connection and master handler
 func TestMasterConnect_ContextCancellation(t *testing.T) {
-	t.Parallel()
+t.Parallel()
 
-	ctx, cancel := context.WithCancel(context.Background())
-	cfg := &config.Shared{
-		Protocol: config.ProtoTCP,
-		Host:     "localhost",
-		Port:     8080,
-	}
-	mCfg := &config.Master{}
+ctx, cancel := context.WithCancel(context.Background())
+cfg := &config.Shared{
+Protocol: config.ProtoTCP,
+Host:     "localhost",
+Port:     8080,
+}
+mCfg := &config.Master{}
 
-	fc := &fakeClient{
-		conn:    &fakeConn{},
-		closeCh: make(chan struct{}),
-	}
+fakeConn := &fakeConn{
+closeCh: make(chan struct{}),
+}
 
-	// Master that blocks in Handle
-	handleCh := make(chan struct{})
+dial := func(ctx context.Context, cfg *config.Shared) (net.Conn, error) {
+return fakeConn, nil
+}
 
-	newClient := func(ctx context.Context, cfg *config.Shared) clientInterface {
-		return fc
-	}
+// Master that blocks in Handle
+handleCh := make(chan struct{})
 
-	// Run masterConnect in a goroutine
-	errCh := make(chan error, 1)
-	go func() {
-		errCh <- masterConnect(ctx, cfg, mCfg, newClient, newFakeMasterHandle(nil, func() {
-			<-handleCh
-		}))
-	}()
+// Run masterConnect in a goroutine
+errCh := make(chan error, 1)
+go func() {
+errCh <- masterConnect(ctx, cfg, mCfg, dial, newFakeMasterHandle(nil, func() {
+<-handleCh
+}))
+}()
 
-	// Cancel context
-	cancel()
+// Cancel context
+cancel()
 
-	// Client should be closed
-	select {
-	case <-fc.closeCh:
-		// Good, client was closed
-	case <-time.After(1 * time.Second):
-		t.Error("client Close was not called after context cancellation")
-	}
+// Connection should be closed
+select {
+case <-fakeConn.closeCh:
+// Good, connection was closed
+case <-time.After(1 * time.Second):
+t.Error("connection Close was not called after context cancellation")
+}
 
-	// Now signal handle to return
-	close(handleCh)
+// Now signal handle to return
+close(handleCh)
 
-	// Wait for completion
-	select {
-	case <-errCh:
-		// Function returned
-	case <-time.After(1 * time.Second):
-		t.Error("masterConnect did not return")
-	}
+// Wait for completion
+select {
+case <-errCh:
+// Function returned
+case <-time.After(1 * time.Second):
+t.Error("masterConnect did not return")
+}
 }
