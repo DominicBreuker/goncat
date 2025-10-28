@@ -73,22 +73,31 @@ Organized into distinct layers and concerns:
   - Clears deadlines after operations to prevent premature connection termination
 - **Key insight**: pkg/net knows about `pkg/transport` and `pkg/crypto`, but entrypoint only needs the simple Dial/ListenAndServe API
 
-#### Transport Layer (`pkg/transport`, `pkg/transport/tcp`, `pkg/transport/ws`)
+#### Transport Layer (`pkg/transport`, `pkg/transport/tcp`, `pkg/transport/ws`, `pkg/transport/udp`)
 - **Purpose**: Protocol abstraction for network connections
-- **Interface**: 
-  - `Dialer`: Establishes outbound connections via `Dial(ctx) (net.Conn, error)`
-  - `Listener`: Accepts inbound connections via `Serve(handler Handler) error` and `Close() error`
-  - `Handler`: Function type `func(net.Conn) error` for handling connections
+- **API Design**: Function-based (no interfaces, no structs to instantiate)
+  - `Dial(ctx, addr, timeout, [deps]) (net.Conn, error)` - Establishes connections
+  - `ListenAndServe(ctx, addr, timeout, handler, [deps]) error` - Serves connections, blocks until done
+  - All functions handle timeout management, context cancellation, and cleanup internally
 - **Implementations**: 
   - `tcp/`: Plain TCP connections with keep-alive enabled
-    - Uses `net.ResolveTCPAddr`, `net.ListenTCP`, configurable via `config.Dependencies`
-    - Listener uses semaphore (capacity 1) to handle only one connection at a time
+    - `Dial()` and `ListenAndServe()` with dependency injection support
+    - Listener uses semaphore (capacity 100) for connection limiting
+    - Timeouts set before operations, cleared immediately after to prevent killing healthy connections
   - `ws/`: WebSocket connections using `github.com/coder/websocket`
+    - Separate functions: `DialWS/DialWSS` and `ListenAndServeWS/ListenAndServeWSS`
     - Converts WebSocket to `net.Conn` via `websocket.NetConn()`
-    - WebSocket listener can optionally use TLS (wss://) with ephemeral certificates
-    - HTTP server-based, rejects additional connections with HTTP 503 when busy
+    - WSS uses transport-level TLS with ephemeral certificates
+    - HTTP server-based, rejects additional connections with HTTP 503 when capacity reached
+    - Listener uses semaphore (capacity 100) for connection limiting
+  - `udp/`: QUIC connections using `github.com/quic-go/quic-go`
+    - `Dial()` and `ListenAndServe()` for QUIC over UDP
+    - Built-in TLS 1.3 at transport layer (QUIC requirement)
+    - Init byte mechanism for stream activation (transparent to callers)
+    - Listener uses semaphore (capacity 100) for connection limiting
 - **Pattern**: All return `net.Conn` for uniform handling by higher layers
-- **Concurrency**: Both TCP and WebSocket listeners limit to one active connection using a semaphore
+- **Timeout handling**: Explicit set-before-operation / clear-after-operation pattern throughout
+- **Concurrency**: All listeners support up to 100 concurrent connections via semaphore
 
 #### Security Layer (`pkg/crypto`)
 - **Purpose**: TLS certificate generation and mutual authentication

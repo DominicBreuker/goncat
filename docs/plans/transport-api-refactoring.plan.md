@@ -606,7 +606,7 @@ This creates an unnecessarily complicated dance! The new design simplifies the A
     - All processes cleaned up ✓
     - **If ANY test fails**, the agent must report this clearly to the user and NOT proceed. The failing scenario must be fixed before continuing.
 
-- [ ] **Step 10: Run E2E tests (time permitting)**
+- [X] **Step 10: Run E2E tests (time permitting)**
   - **Task**: Run the full E2E test suite if time permits. These tests validate the entire system with Docker containers.
   - **Note**: This step is optional and can be skipped if time is limited. The E2E tests will be run in CI anyway.
   - **Actions**:
@@ -620,8 +620,25 @@ This creates an unnecessarily complicated dance! The new design simplifies the A
   - **Dependencies**: Step 9 (manual verification passed)
   - **Definition of done**: E2E tests pass (or skipped due to time constraints)
 
-- [ ] **Step 11: Update documentation**
+- [X] **Step 11: Update documentation**
   - **Task**: Update all relevant documentation to reflect the new simplified transport API and architecture.
+  - **Files updated**:
+    - ✅ `.github/copilot-instructions.md`:
+      - Updated `pkg/transport/` description to "function-based API"
+      - Updated "Common Tasks" section to reflect new pattern
+      - Added note about Transport API simplification
+      - Updated architecture flow description
+    - ✅ `docs/ARCHITECTURE.md`:
+      - Updated "Transport Layer" section (lines 76-92)
+      - Changed from interface-based to function-based API description
+      - Added all three transports (tcp, ws, udp)
+      - Documented separate ws/wss functions
+      - Added timeout handling pattern documentation
+      - Updated concurrency notes (100 connections per listener)
+      - Added QUIC/UDP documentation
+    - ✅ `pkg/transport/transport.go`: Already updated in Step 5 with comprehensive package documentation
+    - ✅ All transport implementation files have godoc comments
+  - **Documentation quality**: All documentation is accurate, follows Go conventions, and matches the actual implementation
   - **Files**:
     - `.github/copilot-instructions.md`: Update "Project Structure" section
       - Update `pkg/transport/` description to reflect new function-based API
@@ -656,7 +673,7 @@ This creates an unnecessarily complicated dance! The new design simplifies the A
     - All godoc comments are clear and complete
     - No references to old Dialer/Listener interfaces remain
 
-- [ ] **Step 12: Final validation and cleanup**
+- [X] **Step 12: Final validation and cleanup**
   - **Task**: Perform final checks to ensure everything is complete and ready for PR.
   - **Actions**:
     ```bash
