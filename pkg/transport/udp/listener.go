@@ -25,6 +25,9 @@ import (
 // The function blocks until the context is cancelled or an error occurs.
 // Up to 100 concurrent connections are allowed; additional connections are rejected.
 //
+// The timeout parameter controls stream accept operations (from the --timeout flag).
+// QUIC MaxIdleTimeout is set to 3x timeout (minimum 30s) for connection keep-alive.
+//
 // QUIC provides built-in TLS 1.3 encryption at the transport layer.
 // An ephemeral certificate is generated for the transport layer TLS.
 // Application-level TLS (--ssl, --key) is handled separately by the caller.
@@ -136,6 +139,7 @@ func createConnectionSemaphore(capacity int) chan struct{} {
 }
 
 // serveQUICConnections accepts and handles QUIC connections.
+// It respects context cancellation and propagates the timeout to stream operations.
 func serveQUICConnections(ctx context.Context, quicListener *quic.Listener, handler transport.Handler, sem chan struct{}, timeout time.Duration) error {
 	// Run accept loop in goroutine
 	errCh := make(chan error, 1)
@@ -165,6 +169,7 @@ func serveQUICConnections(ctx context.Context, quicListener *quic.Listener, hand
 }
 
 // acceptQUICLoop accepts QUIC connections and spawns handlers.
+// It uses the caller's context for Accept operations to support graceful cancellation.
 func acceptQUICLoop(ctx context.Context, quicListener *quic.Listener, handler transport.Handler, sem chan struct{}, timeout time.Duration) error {
 	for {
 		// Accept QUIC connection using caller's context
@@ -221,6 +226,7 @@ func handleQUICConnection(ctx context.Context, conn *quic.Conn, handler transpor
 
 // acceptStreamAndActivate accepts a stream and reads the init byte.
 // The client sends an init byte to activate the stream immediately.
+// Uses the provided timeout from the --timeout flag for stream acceptance.
 func acceptStreamAndActivate(ctx context.Context, conn *quic.Conn, timeout time.Duration) (*quic.Stream, error) {
 	// Accept first bidirectional stream with user-provided timeout
 	acceptCtx, cancel := context.WithTimeout(ctx, timeout)
