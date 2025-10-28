@@ -1,9 +1,9 @@
 package tcp
 
 import (
+	"context"
 	mocks_tcp "dominicbreuker/goncat/mocks/tcp"
 	"dominicbreuker/goncat/pkg/config"
-	"dominicbreuker/goncat/pkg/transport"
 	"fmt"
 	"net"
 	"sync"
@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func TestNewListener(t *testing.T) {
+func TestListenAndServe_Basic(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -46,22 +46,41 @@ func TestNewListener(t *testing.T) {
 				TCPListener: mockNet.ListenTCP,
 			}
 
-			l, err := NewListener(tc.addr, deps)
-			if (err != nil) != tc.wantErr {
-				t.Errorf("NewListener(%q) error = %v, wantErr %v", tc.addr, err, tc.wantErr)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+
+			handler := func(conn net.Conn) error {
+				conn.Close()
+				return nil
 			}
-			if !tc.wantErr {
-				if l == nil {
-					t.Error("NewListener() returned nil listener")
-				} else {
-					l.Close()
+
+			errCh := make(chan error, 1)
+			go func() {
+				errCh <- ListenAndServe(ctx, tc.addr, 10*time.Second, handler, deps)
+			}()
+
+			// Give it a moment to start or fail
+			time.Sleep(50 * time.Millisecond)
+
+			// Cancel context to stop server
+			cancel()
+
+			// Wait for server to exit
+			select {
+			case err := <-errCh:
+				if (err != nil) != tc.wantErr {
+					t.Errorf("ListenAndServe(%q) error = %v, wantErr %v", tc.addr, err, tc.wantErr)
+				}
+			case <-time.After(1 * time.Second):
+				if !tc.wantErr {
+					t.Error("ListenAndServe did not exit after context cancellation")
 				}
 			}
 		})
 	}
 }
 
-func TestListener_Serve(t *testing.T) {
+func TestListenAndServe_HandlerCalled(t *testing.T) {
 	// Use mock TCP network
 	mockNet := mocks_tcp.NewMockTCPNetwork()
 	deps := &config.Dependencies{
@@ -69,32 +88,29 @@ func TestListener_Serve(t *testing.T) {
 		TCPListener: mockNet.ListenTCP,
 	}
 
-	l, err := NewListener("127.0.0.1:12345", deps)
-	if err != nil {
-		t.Fatalf("NewListener() error = %v", err)
-	}
-	defer l.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	addr := l.nl.Addr().String()
 	handlerCalled := make(chan bool, 1)
-
 	handler := func(conn net.Conn) error {
 		defer conn.Close()
 		handlerCalled <- true
 		return nil
 	}
 
-	// Start serving in a goroutine
+	// Start server
+	serveDone := make(chan error, 1)
 	go func() {
-		l.Serve(handler)
+		serveDone <- ListenAndServe(ctx, "127.0.0.1:12345", 10*time.Second, handler, deps)
 	}()
 
 	// Wait for listener to be ready
+	addr := "127.0.0.1:12345"
 	if _, err := mockNet.WaitForListener(addr, 1000); err != nil {
 		t.Fatalf("Listener not ready: %v", err)
 	}
 
-	// Connect to the listener using mock network
+	// Connect to the listener
 	tcpAddr, _ := net.ResolveTCPAddr("tcp", addr)
 	conn, err := mockNet.DialTCP("tcp", nil, tcpAddr)
 	if err != nil {
@@ -109,9 +125,13 @@ func TestListener_Serve(t *testing.T) {
 	case <-time.After(1 * time.Second):
 		t.Error("Handler was not called")
 	}
+
+	// Stop server
+	cancel()
+	<-serveDone
 }
 
-func TestListener_ConcurrentConnections(t *testing.T) {
+func TestListenAndServe_ConcurrentConnections(t *testing.T) {
 	// Use mock TCP network
 	mockNet := mocks_tcp.NewMockTCPNetwork()
 	deps := &config.Dependencies{
@@ -119,16 +139,12 @@ func TestListener_ConcurrentConnections(t *testing.T) {
 		TCPListener: mockNet.ListenTCP,
 	}
 
-	l, err := NewListener("127.0.0.1:12346", deps)
-	if err != nil {
-		t.Fatalf("NewListener() error = %v", err)
-	}
-	defer l.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	addr := l.nl.Addr().String()
 	var handlerCount int
 	var mu sync.Mutex
-	handlerCh := make(chan bool, 10) // Buffered to allow multiple handlers
+	handlerCh := make(chan bool, 10)
 	handlerStarted := make(chan bool, 10)
 
 	handler := func(conn net.Conn) error {
@@ -137,21 +153,22 @@ func TestListener_ConcurrentConnections(t *testing.T) {
 		handlerCount++
 		mu.Unlock()
 		handlerStarted <- true
-		<-handlerCh // Block until we signal
+		<-handlerCh // Block until signaled
 		return nil
 	}
 
-	// Start serving
+	// Start server
 	go func() {
-		l.Serve(handler)
+		ListenAndServe(ctx, "127.0.0.1:12346", 10*time.Second, handler, deps)
 	}()
 
 	// Wait for listener to be ready
+	addr := "127.0.0.1:12346"
 	if _, err := mockNet.WaitForListener(addr, 1000); err != nil {
 		t.Fatalf("Listener not ready: %v", err)
 	}
 
-	// Connect multiple connections (test with 5 concurrent connections)
+	// Connect multiple connections
 	const numConns = 5
 	conns := make([]net.Conn, numConns)
 	tcpAddr, _ := net.ResolveTCPAddr("tcp", addr)
@@ -164,7 +181,7 @@ func TestListener_ConcurrentConnections(t *testing.T) {
 		conns[i] = conn
 		defer conn.Close()
 
-		// Wait for handler to start processing
+		// Wait for handler to start
 		select {
 		case <-handlerStarted:
 			// Handler started
@@ -173,7 +190,7 @@ func TestListener_ConcurrentConnections(t *testing.T) {
 		}
 	}
 
-	// All handlers should be running concurrently
+	// Verify all handlers are running
 	mu.Lock()
 	count := handlerCount
 	mu.Unlock()
@@ -181,16 +198,17 @@ func TestListener_ConcurrentConnections(t *testing.T) {
 		t.Errorf("Expected %d concurrent handlers, got %d", numConns, count)
 	}
 
-	// Signal all handlers to finish
+	// Signal handlers to finish
 	for i := 0; i < numConns; i++ {
 		handlerCh <- true
 	}
 
-	// Wait briefly for handlers to complete
-	<-time.After(100 * time.Millisecond)
+	// Stop server
+	cancel()
+	time.Sleep(100 * time.Millisecond)
 }
 
-func TestListener_HandlerError(t *testing.T) {
+func TestListenAndServe_HandlerError(t *testing.T) {
 	// Use mock TCP network
 	mockNet := mocks_tcp.NewMockTCPNetwork()
 	deps := &config.Dependencies{
@@ -198,31 +216,28 @@ func TestListener_HandlerError(t *testing.T) {
 		TCPListener: mockNet.ListenTCP,
 	}
 
-	l, err := NewListener("127.0.0.1:12347", deps)
-	if err != nil {
-		t.Fatalf("NewListener() error = %v", err)
-	}
-	defer l.Close()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	addr := l.nl.Addr().String()
 	handlerCalled := make(chan bool, 1)
-
 	handler := func(conn net.Conn) error {
 		conn.Close()
 		handlerCalled <- true
 		return fmt.Errorf("test error")
 	}
 
+	// Start server
 	go func() {
-		l.Serve(handler)
+		ListenAndServe(ctx, "127.0.0.1:12347", 10*time.Second, handler, deps)
 	}()
 
 	// Wait for listener to be ready
+	addr := "127.0.0.1:12347"
 	if _, err := mockNet.WaitForListener(addr, 1000); err != nil {
 		t.Fatalf("Listener not ready: %v", err)
 	}
 
-	// Connect - handler will return error but serve should continue
+	// Connect - handler will return error but server should continue
 	tcpAddr, _ := net.ResolveTCPAddr("tcp", addr)
 	conn, err := mockNet.DialTCP("tcp", nil, tcpAddr)
 	if err != nil {
@@ -230,10 +245,10 @@ func TestListener_HandlerError(t *testing.T) {
 	}
 	conn.Close()
 
-	// Wait for first handler to complete
+	// Wait for handler to complete
 	<-handlerCalled
 
-	// Verify listener is still accepting connections
+	// Verify listener still accepts connections
 	conn2, err := mockNet.DialTCP("tcp", nil, tcpAddr)
 	if err != nil {
 		t.Error("Listener stopped accepting after handler error")
@@ -241,9 +256,13 @@ func TestListener_HandlerError(t *testing.T) {
 	if conn2 != nil {
 		conn2.Close()
 	}
+
+	// Stop server
+	cancel()
+	time.Sleep(100 * time.Millisecond)
 }
 
-func TestListener_Close(t *testing.T) {
+func TestListenAndServe_ContextCancellation(t *testing.T) {
 	// Use mock TCP network
 	mockNet := mocks_tcp.NewMockTCPNetwork()
 	deps := &config.Dependencies{
@@ -251,12 +270,7 @@ func TestListener_Close(t *testing.T) {
 		TCPListener: mockNet.ListenTCP,
 	}
 
-	l, err := NewListener("127.0.0.1:12348", deps)
-	if err != nil {
-		t.Fatalf("NewListener() error = %v", err)
-	}
-
-	addr := l.nl.Addr().String()
+	ctx, cancel := context.WithCancel(context.Background())
 
 	handler := func(conn net.Conn) error {
 		conn.Close()
@@ -265,36 +279,33 @@ func TestListener_Close(t *testing.T) {
 
 	serveDone := make(chan error, 1)
 	go func() {
-		serveDone <- l.Serve(handler)
+		serveDone <- ListenAndServe(ctx, "127.0.0.1:12348", 10*time.Second, handler, deps)
 	}()
 
 	// Wait for listener to be ready
+	addr := "127.0.0.1:12348"
 	if _, err := mockNet.WaitForListener(addr, 1000); err != nil {
 		t.Fatalf("Listener not ready: %v", err)
 	}
 
-	// Close the listener
-	if err := l.Close(); err != nil {
-		t.Errorf("Close() error = %v", err)
-	}
+	// Cancel context
+	cancel()
 
-	// Verify Serve returns after close
+	// Verify server exits
 	select {
-	case <-serveDone:
-		// Success
+	case err := <-serveDone:
+		if err != nil {
+			t.Errorf("Expected nil error after cancellation, got: %v", err)
+		}
 	case <-time.After(1 * time.Second):
-		t.Error("Serve did not return after Close")
+		t.Error("ListenAndServe did not return after context cancellation")
 	}
 
 	// Verify we can't connect anymore
 	tcpAddr, _ := net.ResolveTCPAddr("tcp", addr)
 	conn, err := mockNet.DialTCP("tcp", nil, tcpAddr)
-	if err == nil {
-		// The connection might succeed if there's a race, but it should be closed immediately
-		// Try to write to verify it's really closed
+	if err == nil && conn != nil {
 		conn.Close()
-		t.Error("Expected connection to fail after Close")
+		t.Error("Expected connection to fail after cancellation")
 	}
 }
-
-var _ transport.Listener = (*Listener)(nil)

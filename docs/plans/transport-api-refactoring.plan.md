@@ -46,8 +46,15 @@ This creates an unnecessarily complicated dance! The new design simplifies the A
 
 ## Implementation Plan
 
-- [ ] **Step 1: Review and understand the current implementation**
+- [X] **Step 1: Review and understand the current implementation**
   - **Task**: Thoroughly review all transport implementations, their current usage in `pkg/net`, timeout handling, and test infrastructure. This ensures the refactoring plan is accurate and executable.
+  - **Notes**: Reviewed all transport implementations. Current architecture uses interfaces (Dialer/Listener) with struct-based implementations. Key findings:
+    - TCP: NewDialer/NewListener return structs with Dial() and Serve() methods
+    - WebSocket: Same pattern, protocol (ws/wss) passed as parameter
+    - UDP: Same pattern, uses QUIC internally
+    - pkg/net creates dialers/listeners via factory functions in dial_internal.go and listen_internal.go
+    - Timeout handling: Some operations set deadlines but clearing is inconsistent
+    - Test strategy: Tests use table-driven approach with subtests
   - **Files to review**:
     - `pkg/transport/transport.go`: Current interface definitions
     - `pkg/transport/tcp/dialer.go`: TCP dialer implementation
@@ -70,8 +77,16 @@ This creates an unnecessarily complicated dance! The new design simplifies the A
   - **Dependencies**: None
   - **Definition of done**: Complete understanding of current implementation, timeout issues identified, all call sites mapped, and notes taken on potential blockers
 
-- [ ] **Step 2: Refactor TCP transport to new API**
+- [X] **Step 2: Refactor TCP transport to new API**
   - **Task**: Replace the TCP `Dialer` and `Listener` structs with stateless functions. This serves as the template for other transports.
+  - **Notes**: TCP transport successfully refactored:
+    - Replaced `NewDialer()` + `Dial()` method with `Dial(ctx, addr, timeout, deps)` function
+    - Replaced `NewListener()` + `Serve()` + `Close()` methods with `ListenAndServe(ctx, addr, timeout, handler, deps)` function
+    - Split long functions into well-named private helpers (resolveTCPAddress, dialWithTimeout, configureConnection, createListener, createConnectionSemaphore, serveConnections, acceptLoop, handleConnection, isListenerClosed)
+    - Added proper timeout handling: clear deadlines after operations
+    - Added context handling for graceful shutdown
+    - Updated all tests to work with new API
+    - All tests passing ✓
   - **Files**:
     - `pkg/transport/tcp/dialer.go`: Replace with `Dial` function
       ```go
