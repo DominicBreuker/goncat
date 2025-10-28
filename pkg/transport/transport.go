@@ -16,11 +16,11 @@
 // Transport-specific notes:
 //   - TCP: Single Dial and ListenAndServe function with dependencies parameter
 //   - WebSocket: Separate functions for ws (plain) and wss (TLS):
-//     - DialWS / DialWSS
-//     - ListenAndServeWS / ListenAndServeWSS
+//   - DialWS / DialWSS
+//   - ListenAndServeWS / ListenAndServeWSS
 //   - UDP: Uses QUIC protocol with built-in TLS 1.3:
-//     - Single Dial and ListenAndServe function
-//     - Init byte handling for stream activation is internal
+//   - Single Dial and ListenAndServe function
+//   - Init byte handling for stream activation is internal
 //
 // Timeout Handling:
 //   - Timeouts are set before potentially blocking operations
@@ -28,17 +28,18 @@
 //   - This prevents healthy connections from being killed by lingering timeouts
 //
 // Example usage:
-//   // TCP
-//   conn, err := tcp.Dial(ctx, "localhost:8080", 10*time.Second, deps)
-//   err := tcp.ListenAndServe(ctx, ":8080", 10*time.Second, handler, deps)
 //
-//   // WebSocket
-//   conn, err := ws.DialWS(ctx, "localhost:8080", 10*time.Second)
-//   err := ws.ListenAndServeWSS(ctx, ":8443", 10*time.Second, handler)
+//	// TCP
+//	conn, err := tcp.Dial(ctx, "localhost:8080", 10*time.Second, deps)
+//	err := tcp.ListenAndServe(ctx, ":8080", 10*time.Second, handler, deps)
 //
-//   // UDP/QUIC
-//   conn, err := udp.Dial(ctx, "localhost:12345", 10*time.Second)
-//   err := udp.ListenAndServe(ctx, ":12345", 10*time.Second, handler)
+//	// WebSocket
+//	conn, err := ws.DialWS(ctx, "localhost:8080", 10*time.Second)
+//	err := ws.ListenAndServeWSS(ctx, ":8443", 10*time.Second, handler)
+//
+//	// UDP/QUIC
+//	conn, err := udp.Dial(ctx, "localhost:12345", 10*time.Second)
+//	err := udp.ListenAndServe(ctx, ":12345", 10*time.Second, handler)
 package transport
 
 import "net"

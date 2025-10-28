@@ -141,4 +141,3 @@ func openAndActivateStream(conn *quic.Conn) (*quic.Stream, error) {
 
 	return stream, nil
 }
-

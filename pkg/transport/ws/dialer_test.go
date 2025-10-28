@@ -38,4 +38,3 @@ func TestFormatURL(t *testing.T) {
 		})
 	}
 }
-
