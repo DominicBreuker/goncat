@@ -4,13 +4,14 @@ import (
 	"context"
 	"dominicbreuker/goncat/pkg/config"
 	"errors"
+	"net"
 	"testing"
 	"time"
 )
 
 // uses interfaces from internal.go and fakes from internal_test.go
 
-// it should close the client and master handler on success
+// it should close the connection and master handler on success
 func TestMasterConnect_Success(t *testing.T) {
 	t.Parallel()
 
@@ -22,27 +23,25 @@ func TestMasterConnect_Success(t *testing.T) {
 	}
 	mCfg := &config.Master{}
 
-	fc := &fakeClient{
-		conn: &fakeConn{},
-	}
+	fakeConn := &fakeConn{}
 
-	newClient := func(ctx context.Context, cfg *config.Shared) clientInterface {
-		return fc
+	dial := func(ctx context.Context, cfg *config.Shared) (net.Conn, error) {
+		return fakeConn, nil
 	}
 
 	// Inline fake master handler: returns nil (success)
-	err := masterConnect(ctx, cfg, mCfg, newClient, newFakeMasterHandle(nil, nil))
+	err := masterConnect(ctx, cfg, mCfg, dial, newFakeMasterHandle(nil, nil))
 	if err != nil {
 		t.Fatalf("masterConnect() error = %v, want nil", err)
 	}
 
-	if !fc.closed {
-		t.Error("client was not closed")
+	if !fakeConn.closed {
+		t.Error("connection was not closed")
 	}
 }
 
-// it should return an error if connecting fails
-func TestMasterConnect_ConnectError(t *testing.T) {
+// it should return an error if dialing fails
+func TestMasterConnect_DialError(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -53,27 +52,20 @@ func TestMasterConnect_ConnectError(t *testing.T) {
 	}
 	mCfg := &config.Master{}
 
-	connectErr := errors.New("connection failed")
-	fc := &fakeClient{
-		connectErr: connectErr,
+	dialErr := errors.New("connection failed")
+
+	dial := func(ctx context.Context, cfg *config.Shared) (net.Conn, error) {
+		return nil, dialErr
 	}
 
-	newClient := func(ctx context.Context, cfg *config.Shared) clientInterface {
-		return fc
-	}
-
-	err := masterConnect(ctx, cfg, mCfg, newClient, newFakeMasterHandle(nil, func() {
-		t.Error("newMaster should not be called when connect fails")
+	err := masterConnect(ctx, cfg, mCfg, dial, newFakeMasterHandle(nil, func() {
+		t.Error("handler should not be called when dial fails")
 	}))
 	if err == nil {
 		t.Fatal("masterConnect() error = nil, want error")
 	}
-	if !errors.Is(err, connectErr) && err.Error() != "connecting: connection failed" {
-		t.Errorf("masterConnect() error = %v, want wrapped connection error", err)
-	}
-
-	if fc.closed {
-		t.Error("client should not be closed when connect fails")
+	if !errors.Is(err, dialErr) && err.Error() != "dialing: connection failed" {
+		t.Errorf("masterConnect() error = %v, want wrapped dial error", err)
 	}
 }
 
@@ -89,30 +81,26 @@ func TestMasterConnect_HandleError(t *testing.T) {
 	}
 	mCfg := &config.Master{}
 
-	fc := &fakeClient{
-		conn: &fakeConn{},
-	}
+	fakeConn := &fakeConn{}
 
-	newClient := func(ctx context.Context, cfg *config.Shared) clientInterface {
-		return fc
+	dial := func(ctx context.Context, cfg *config.Shared) (net.Conn, error) {
+		return fakeConn, nil
 	}
 
 	handleErr := errors.New("handle failed")
 
-	err := masterConnect(ctx, cfg, mCfg, newClient, newFakeMasterHandle(handleErr, nil))
+	err := masterConnect(ctx, cfg, mCfg, dial, newFakeMasterHandle(handleErr, nil))
 	if err == nil {
 		t.Fatal("masterConnect() error = nil, want error")
 	}
 
-	// Client should be closed even on handle error. The master handler is
-	// executed by the factory and may handle its own cleanup; we only assert
-	// the client cleanup here.
-	if !fc.closed {
-		t.Error("client was not closed despite handle error")
+	// Connection should be closed even on handle error
+	if !fakeConn.closed {
+		t.Error("connection was not closed despite handle error")
 	}
 }
 
-// it should handle context cancellation by closing client and master handler
+// it should handle context cancellation by closing connection and master handler
 func TestMasterConnect_ContextCancellation(t *testing.T) {
 	t.Parallel()
 
@@ -124,22 +112,21 @@ func TestMasterConnect_ContextCancellation(t *testing.T) {
 	}
 	mCfg := &config.Master{}
 
-	fc := &fakeClient{
-		conn:    &fakeConn{},
+	fakeConn := &fakeConn{
 		closeCh: make(chan struct{}),
+	}
+
+	dial := func(ctx context.Context, cfg *config.Shared) (net.Conn, error) {
+		return fakeConn, nil
 	}
 
 	// Master that blocks in Handle
 	handleCh := make(chan struct{})
 
-	newClient := func(ctx context.Context, cfg *config.Shared) clientInterface {
-		return fc
-	}
-
 	// Run masterConnect in a goroutine
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- masterConnect(ctx, cfg, mCfg, newClient, newFakeMasterHandle(nil, func() {
+		errCh <- masterConnect(ctx, cfg, mCfg, dial, newFakeMasterHandle(nil, func() {
 			<-handleCh
 		}))
 	}()
@@ -147,12 +134,12 @@ func TestMasterConnect_ContextCancellation(t *testing.T) {
 	// Cancel context
 	cancel()
 
-	// Client should be closed
+	// Connection should be closed
 	select {
-	case <-fc.closeCh:
-		// Good, client was closed
+	case <-fakeConn.closeCh:
+	// Good, connection was closed
 	case <-time.After(1 * time.Second):
-		t.Error("client Close was not called after context cancellation")
+		t.Error("connection Close was not called after context cancellation")
 	}
 
 	// Now signal handle to return
@@ -161,7 +148,7 @@ func TestMasterConnect_ContextCancellation(t *testing.T) {
 	// Wait for completion
 	select {
 	case <-errCh:
-		// Function returned
+	// Function returned
 	case <-time.After(1 * time.Second):
 		t.Error("masterConnect did not return")
 	}

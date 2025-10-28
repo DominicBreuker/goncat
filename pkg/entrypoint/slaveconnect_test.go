@@ -4,13 +4,14 @@ import (
 	"context"
 	"dominicbreuker/goncat/pkg/config"
 	"errors"
+	"net"
 	"testing"
 	"time"
 )
 
 // uses interfaces from internal.go and fakes from internal_test.go
 
-// it should close the client and slave handler on success
+// it should close the connection and slave handler on success
 func TestSlaveConnect_Success(t *testing.T) {
 	t.Parallel()
 
@@ -21,29 +22,24 @@ func TestSlaveConnect_Success(t *testing.T) {
 		Port:     8080,
 	}
 
-	fc := &fakeClient{
-		conn: &fakeConn{},
+	fakeConn := &fakeConn{}
+
+	dial := func(ctx context.Context, cfg *config.Shared) (net.Conn, error) {
+		return fakeConn, nil
 	}
 
-	newClient := func(ctx context.Context, cfg *config.Shared) clientInterface {
-		return fc
-	}
-
-	err := slaveConnect(ctx, cfg, newClient, newFakeSlaveHandle(nil, nil))
+	err := slaveConnect(ctx, cfg, dial, newFakeSlaveHandle(nil, nil))
 	if err != nil {
 		t.Fatalf("slaveConnect() error = %v, want nil", err)
 	}
 
-	if !fc.closed {
-		t.Error("client was not closed")
+	if !fakeConn.closed {
+		t.Error("connection was not closed")
 	}
-
-	// Note: the entrypoint does not manage handler.Close(); the handler itself
-	// is responsible for cleanup. We only assert client cleanup here.
 }
 
-// it should return an error if connecting fails
-func TestSlaveConnect_ConnectError(t *testing.T) {
+// it should return an error if dialing fails
+func TestSlaveConnect_DialError(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -53,27 +49,20 @@ func TestSlaveConnect_ConnectError(t *testing.T) {
 		Port:     8080,
 	}
 
-	connectErr := errors.New("connection failed")
-	fc := &fakeClient{
-		connectErr: connectErr,
+	dialErr := errors.New("connection failed")
+
+	dial := func(ctx context.Context, cfg *config.Shared) (net.Conn, error) {
+		return nil, dialErr
 	}
 
-	newClient := func(ctx context.Context, cfg *config.Shared) clientInterface {
-		return fc
-	}
-
-	err := slaveConnect(ctx, cfg, newClient, newFakeSlaveHandle(nil, func() {
-		t.Error("handler should not be called when connect fails")
+	err := slaveConnect(ctx, cfg, dial, newFakeSlaveHandle(nil, func() {
+		t.Error("handler should not be called when dial fails")
 	}))
 	if err == nil {
 		t.Fatal("slaveConnect() error = nil, want error")
 	}
-	if !errors.Is(err, connectErr) && err.Error() != "connecting: connection failed" {
-		t.Errorf("slaveConnect() error = %v, want wrapped connection error", err)
-	}
-
-	if fc.closed {
-		t.Error("client should not be closed when connect fails")
+	if !errors.Is(err, dialErr) && err.Error() != "dialing: connection failed" {
+		t.Errorf("slaveConnect() error = %v, want wrapped dial error", err)
 	}
 }
 
@@ -88,28 +77,26 @@ func TestSlaveConnect_HandleError(t *testing.T) {
 		Port:     8080,
 	}
 
-	fc := &fakeClient{
-		conn: &fakeConn{},
-	}
+	fakeConn := &fakeConn{}
 
-	newClient := func(ctx context.Context, cfg *config.Shared) clientInterface {
-		return fc
+	dial := func(ctx context.Context, cfg *config.Shared) (net.Conn, error) {
+		return fakeConn, nil
 	}
 
 	slaveNewErr := errors.New("slave creation failed")
 
-	err := slaveConnect(ctx, cfg, newClient, newFakeSlaveHandle(slaveNewErr, nil))
+	err := slaveConnect(ctx, cfg, dial, newFakeSlaveHandle(slaveNewErr, nil))
 	if err == nil {
 		t.Fatal("slaveConnect() error = nil, want error")
 	}
 
-	// Client should still be closed even when slave creation fails
-	if !fc.closed {
-		t.Error("client was not closed despite slave.New error")
+	// Connection should still be closed even when slave creation fails
+	if !fakeConn.closed {
+		t.Error("connection was not closed despite slave.New error")
 	}
 }
 
-// it should handle context cancellation by closing client and slave
+// it should handle context cancellation by closing connection and slave
 func TestSlaveConnect_ContextCancellation(t *testing.T) {
 	t.Parallel()
 
@@ -120,22 +107,21 @@ func TestSlaveConnect_ContextCancellation(t *testing.T) {
 		Port:     8080,
 	}
 
-	fc := &fakeClient{
-		conn:    &fakeConn{},
+	fakeConn := &fakeConn{
 		closeCh: make(chan struct{}),
+	}
+
+	dial := func(ctx context.Context, cfg *config.Shared) (net.Conn, error) {
+		return fakeConn, nil
 	}
 
 	// Slave that blocks in Handle
 	handleCh := make(chan struct{})
 
-	newClient := func(ctx context.Context, cfg *config.Shared) clientInterface {
-		return fc
-	}
-
 	// Run slaveConnect in a goroutine
 	errCh := make(chan error, 1)
 	go func() {
-		errCh <- slaveConnect(ctx, cfg, newClient, newFakeSlaveHandle(nil, func() {
+		errCh <- slaveConnect(ctx, cfg, dial, newFakeSlaveHandle(nil, func() {
 			<-handleCh
 		}))
 	}()
@@ -143,12 +129,12 @@ func TestSlaveConnect_ContextCancellation(t *testing.T) {
 	// Cancel context
 	cancel()
 
-	// Client should be closed
+	// Connection should be closed
 	select {
-	case <-fc.closeCh:
-		// Good, client was closed
+	case <-fakeConn.closeCh:
+		// Good, connection was closed
 	case <-time.After(1 * time.Second):
-		t.Error("client Close was not called after context cancellation")
+		t.Error("connection Close was not called after context cancellation")
 	}
 
 	// Now signal handle to return

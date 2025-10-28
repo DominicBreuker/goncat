@@ -4,14 +4,13 @@ import (
 	"context"
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/handler/slave"
+	netpkg "dominicbreuker/goncat/pkg/net"
 	"dominicbreuker/goncat/pkg/semaphore"
 	"errors"
 	"fmt"
 	"net"
 	"sync"
 )
-
-// uses interfaces/factories from internal.go (DI for testing)
 
 func SlaveListen(ctx context.Context, cfg *config.Shared) error {
 	// Create N=1 semaphore for limiting concurrent stdin/stdout connections.
@@ -21,47 +20,7 @@ func SlaveListen(ctx context.Context, cfg *config.Shared) error {
 	}
 	cfg.Deps.ConnSem = semaphore.New(1, cfg.Timeout)
 
-	return slaveListen(ctx, cfg, realServerFactory(), slave.Handle)
-}
-
-func slaveListen(
-	parent context.Context,
-	cfg *config.Shared,
-	newServer serverFactory,
-	handle slaveHandler,
-) error {
-	// child context we can cancel on return
-	ctx, cancel := context.WithCancel(parent)
-	defer cancel()
-
-	s, err := newServer(ctx, cfg, makeSlaveHandler(ctx, cfg, handle))
-	if err != nil {
-		return fmt.Errorf("creating server: %w", err)
-	}
-	var closeOnce sync.Once
-	closeServer := func() { closeOnce.Do(func() { _ = s.Close() }) }
-	defer closeServer()
-
-	// run Serve in a goroutine and wait deterministically
-	errCh := make(chan error, 1)
-	go func() { errCh <- s.Serve() }()
-
-	select {
-	case <-ctx.Done():
-		cfg.Logger.VerboseMsg("Slave listen: context cancelled, shutting down server")
-		closeServer()
-		err := <-errCh
-		if err == nil || isServerClosed(err) || errors.Is(err, context.Canceled) {
-			return nil
-		}
-		return fmt.Errorf("serving after cancel: %w", err)
-
-	case err := <-errCh:
-		if err == nil || isServerClosed(err) {
-			return nil
-		}
-		return fmt.Errorf("serving: %w", err)
-	}
+	return netpkg.ListenAndServe(ctx, cfg, makeSlaveHandler(ctx, cfg, slave.Handle))
 }
 
 func makeSlaveHandler(
@@ -86,13 +45,13 @@ func makeSlaveHandler(
 		case <-ctx.Done():
 			closeConn()
 			err := <-errCh
-			if err == nil || errors.Is(err, context.Canceled) /* || errors.Is(err, net.ErrClosed) */ {
+			if err == nil || errors.Is(err, context.Canceled) {
 				return nil
 			}
 			return fmt.Errorf("handling after cancel: %w", err)
 
 		case err := <-errCh:
-			if err == nil /* || errors.Is(err, net.ErrClosed) */ {
+			if err == nil {
 				return nil
 			}
 			return fmt.Errorf("handling: %w", err)
