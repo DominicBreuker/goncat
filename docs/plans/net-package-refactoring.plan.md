@@ -35,7 +35,7 @@ The new API keeps all implementation details (structs, timeout management, clean
 
 ## Implementation Plan
 
-- [ ] **Step 1: Create the new `pkg/net` package structure**
+- [X] **Step 1: Create the new `pkg/net` package structure**
   - **Task**: Create the foundation of the new `pkg/net` package with the basic file structure and API signatures. This establishes the public interface that will replace the old client/server packages.
   - **Files**:
     - `pkg/net/dial.go`: New file with `Dial` function signature
@@ -126,7 +126,7 @@ The new API keeps all implementation details (structs, timeout management, clean
     - Code compiles without errors: `go build ./pkg/net`
     - No lint warnings: `make lint` passes
 
-- [ ] **Step 2: Implement Dial function with proper timeout handling**
+- [X] **Step 2: Implement Dial function with proper timeout handling**
   - **Task**: Implement the `Dial` function by extracting and refactoring code from `pkg/client/client.go`. Focus on clean, readable code with private helper functions for each logical step. Pay special attention to timeout handling - set timeouts before blocking operations and clear them immediately after success.
   - **Files**:
     - `pkg/net/dial.go`: Implement `Dial` function
@@ -234,7 +234,7 @@ The new API keeps all implementation details (structs, timeout management, clean
     - Code is readable - a human can understand the flow by reading function names
     - Manual code review confirms timeout handling is correct
 
-- [ ] **Step 3: Implement ListenAndServe function with proper timeout handling**
+- [X] **Step 3: Implement ListenAndServe function with proper timeout handling**
   - **Task**: Implement the `ListenAndServe` function by extracting and refactoring code from `pkg/server/server.go`. Use private helper functions to keep the main function clean and readable. Ensure TLS handshake timeouts are properly managed.
   - **Files**:
     - `pkg/net/listen.go`: Implement `ListenAndServe` function
