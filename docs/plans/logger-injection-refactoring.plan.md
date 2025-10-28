@@ -123,7 +123,7 @@ This refactoring will:
   - **Definition of done**: pkg/net logging uses cfg.Logger, connection messages still appear correctly
   - **Completed**: Refactored both files, tests pass
 
-- [ ] Step 5: Refactor pkg/transport Package
+- [X] Step 5: Refactor pkg/transport Package
   - **Task**: Replace 11 call sites in pkg/transport/ with logger parameter
   - **Files**:
     - `pkg/transport/tcp/listener.go`: Lines 135, 140 (2 calls)
