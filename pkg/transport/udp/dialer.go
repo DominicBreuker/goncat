@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"dominicbreuker/goncat/pkg/crypto"
+
 	quic "github.com/quic-go/quic-go"
 )
 
@@ -55,7 +56,7 @@ func Dial(ctx context.Context, addr string, timeout time.Duration) (net.Conn, er
 		return nil, err
 	}
 
-	return NewStreamConn(stream, quicConn.LocalAddr(), quicConn.RemoteAddr()), nil
+	return NewStreamConn(quicConn, stream, quicConn.LocalAddr(), quicConn.RemoteAddr()), nil
 }
 
 // resolveUDPAddress parses and resolves a UDP address string.

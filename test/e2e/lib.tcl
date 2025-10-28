@@ -27,7 +27,14 @@ namespace eval Expect {
         send -- "exit\n"
     }
 
+    proc shutdown {} {
+        send -- "\003"
+    }
+
     proc close_and_wait {} {
+        shutdown
+
+        after 500
         close
         wait
     }

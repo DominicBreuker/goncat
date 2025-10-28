@@ -11,14 +11,16 @@ import (
 // StreamConn adapts a *quic.Stream to the net.Conn interface, allowing QUIC
 // streams to be used seamlessly with code that expects net.Conn.
 type StreamConn struct {
+	conn   *quic.Conn
 	stream *quic.Stream
 	laddr  net.Addr
 	raddr  net.Addr
 }
 
 // NewStreamConn creates a new StreamConn wrapping the given QUIC stream.
-func NewStreamConn(stream *quic.Stream, laddr, raddr net.Addr) *StreamConn {
+func NewStreamConn(conn *quic.Conn, stream *quic.Stream, laddr, raddr net.Addr) *StreamConn {
 	return &StreamConn{
+		conn:   conn,
 		stream: stream,
 		laddr:  laddr,
 		raddr:  raddr,
@@ -37,7 +39,8 @@ func (c *StreamConn) Write(p []byte) (int, error) {
 
 // Close closes the stream (closes send side).
 func (c *StreamConn) Close() error {
-	return c.stream.Close()
+	//return c.stream.Close()
+	return c.conn.CloseWithError(0x23, "stream closed")
 }
 
 // LocalAddr returns the local network address.
