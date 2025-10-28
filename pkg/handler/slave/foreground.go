@@ -30,7 +30,7 @@ func (slv *slave) handleForeground(ctx context.Context, m msg.Foreground) error 
 	defer conn.Close()
 
 	if m.Exec == "" {
-		terminal.Pipe(ctx, conn, slv.cfg.Verbose, slv.cfg.Deps)
+		terminal.Pipe(ctx, conn, slv.cfg.Verbose, slv.cfg.Logger, slv.cfg.Deps)
 	} else {
 		if m.Pty {
 			connPtyCtl, err := slv.sess.AcceptNewChannelContext(ctx)
@@ -39,11 +39,11 @@ func (slv *slave) handleForeground(ctx context.Context, m msg.Foreground) error 
 			}
 			defer connPtyCtl.Close()
 
-			if err := exec.RunWithPTY(ctx, connPtyCtl, conn, m.Exec, slv.cfg.Verbose); err != nil {
+			if err := exec.RunWithPTY(ctx, connPtyCtl, conn, m.Exec, slv.cfg.Verbose, slv.cfg.Logger); err != nil {
 				return fmt.Errorf("exec.RunWithPTY(...): %s", err)
 			}
 		} else {
-			if err := exec.Run(ctx, conn, m.Exec, slv.cfg.Deps); err != nil {
+			if err := exec.Run(ctx, conn, m.Exec, slv.cfg.Logger, slv.cfg.Deps); err != nil {
 				return fmt.Errorf("exec.Run(conn, %s): %s", m.Exec, err)
 			}
 		}

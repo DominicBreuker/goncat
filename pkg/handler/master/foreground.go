@@ -55,7 +55,7 @@ func (mst *master) handleForgroundPlain(ctx context.Context) error {
 		}
 	}
 
-	terminal.Pipe(ctx, conn, mst.cfg.Verbose, mst.cfg.Deps)
+	terminal.Pipe(ctx, conn, mst.cfg.Verbose, mst.cfg.Logger, mst.cfg.Deps)
 
 	return nil
 }
@@ -83,7 +83,7 @@ func (mst *master) handleForgroundPty(ctx context.Context) error {
 		}
 	}
 
-	if err := terminal.PipeWithPTY(ctx, connPtyCtl, connData, mst.cfg.Verbose, mst.cfg.Deps); err != nil {
+	if err := terminal.PipeWithPTY(ctx, connPtyCtl, connData, mst.cfg.Verbose, mst.cfg.Logger, mst.cfg.Deps); err != nil {
 		return fmt.Errorf("terminal.PipeWithPTY(connCtl, connData): %s", err)
 	}
 

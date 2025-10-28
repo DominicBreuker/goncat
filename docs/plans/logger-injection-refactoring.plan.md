@@ -23,7 +23,7 @@ This refactoring will:
 
 ## Implementation Plan
 
-- [X] Step 1: Analysis and Categorization
+- [V] Step 1: Analysis and Categorization
   - **Task**: Review all 76 call sites to understand refactoring patterns and group them by subsystem
   - **Files**: All files containing `log.ErrorMsg` or `log.InfoMsg` calls
     - Run: `grep -rn "log\.ErrorMsg\|log\.InfoMsg" --include="*.go" | grep -v "pkg/log/log.go"`
@@ -34,7 +34,7 @@ This refactoring will:
   - **Definition of done**: Complete list of call sites grouped by refactoring pattern, documented in working notes
   - **Completed**: Analyzed all 76 call sites, confirmed counts match plan expectations across all subsystems
 
-- [X] Step 2: Refactor cmd Package
+- [V] Step 2: Refactor cmd Package
   - **Task**: Replace 10 call sites in cmd/ package with logger from config
   - **Files**:
     - `cmd/masterlisten/masterlisten.go`: Lines 67, 69 (2 calls)
@@ -67,7 +67,7 @@ This refactoring will:
   - **Definition of done**: All cmd/ package logging uses cfg.Logger, tests pass with `go test ./cmd/...`
   - **Completed**: Refactored all 5 files, all cmd tests pass
 
-- [X] Step 3: Refactor pkg/clean Package
+- [V] Step 3: Refactor pkg/clean Package
   - **Task**: Replace 3 call sites in pkg/clean/ with logger parameter
   - **Files**:
     - `pkg/clean/clean_default.go`: Line 16 (1 call)
@@ -99,7 +99,7 @@ This refactoring will:
   - **Definition of done**: All pkg/clean/ logging uses logger parameter, cleanup still works, tests pass
   - **Completed**: Refactored clean.go, clean_default.go, clean_windows.go and updated callers. All tests pass.
 
-- [X] Step 4: Refactor pkg/net Package
+- [V] Step 4: Refactor pkg/net Package
   - **Task**: Replace 2 call sites in pkg/net/ with logger from config
   - **Files**:
     - `pkg/net/listen.go`: Line 38 (1 call)
@@ -123,7 +123,7 @@ This refactoring will:
   - **Definition of done**: pkg/net logging uses cfg.Logger, connection messages still appear correctly
   - **Completed**: Refactored both files, tests pass
 
-- [X] Step 5: Refactor pkg/transport Package
+- [V] Step 5: Refactor pkg/transport Package
   - **Task**: Replace 11 call sites in pkg/transport/ with logger parameter
   - **Files**:
     - `pkg/transport/tcp/listener.go`: Lines 135, 140 (2 calls)
@@ -170,7 +170,7 @@ This refactoring will:
     - Run full test suite
     - Verify all transport tests pass
 
-- [ ] Step 6: Refactor pkg/terminal Package
+- [X] Step 6: Refactor pkg/terminal Package
   - **Task**: Replace 6 call sites in pkg/terminal/ with logger parameter
   - **Files**:
     - `pkg/terminal/terminal.go`: Lines 33, 36, 40, 49, 56, 82, 87 (7 calls)
@@ -191,8 +191,9 @@ This refactoring will:
     ```
   - **Dependencies**: Need to trace where Pipe() is called from
   - **Definition of done**: All terminal logging uses logger parameter, PTY still works correctly
+  - **Completed**: Refactored Pipe(), PipeWithPTY(), and syncTerminalSize(). Updated callers in handler/slave and handler/master.
 
-- [ ] Step 7: Refactor pkg/exec Package
+- [X] Step 7: Refactor pkg/exec Package
   - **Task**: Replace 6 call sites in pkg/exec/ with logger parameter
   - **Files**:
     - `pkg/exec/exec.go`: Line 54 (1 call)
@@ -214,6 +215,7 @@ This refactoring will:
   - **Callers**: Update in `pkg/handler/slave/foreground.go`
   - **Dependencies**: Step 6 (terminal package may need logger too)
   - **Definition of done**: All exec logging uses logger parameter, command execution still works
+  - **Completed**: Refactored Run(), RunWithPTY(), and syncTerminalSize() for both Unix and Windows. Updated callers.
 
 - [ ] Step 8: Refactor pkg/handler/slave Package
   - **Task**: Replace 8 call sites in pkg/handler/slave/ with logger from handler struct

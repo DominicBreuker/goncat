@@ -15,7 +15,7 @@ import (
 // Run executes the specified program and pipes its stdin/stdout/stderr
 // to and from the provided network connection. The function blocks until
 // both the program exits AND all I/O copying is complete.
-func Run(ctx context.Context, conn net.Conn, program string, deps *config.Dependencies) error {
+func Run(ctx context.Context, conn net.Conn, program string, logger *log.Logger, deps *config.Dependencies) error {
 	execCmd := config.GetExecCommandFunc(deps)
 	cmd := execCmd(program)
 
@@ -51,7 +51,7 @@ func Run(ctx context.Context, conn net.Conn, program string, deps *config.Depend
 
 	go func() {
 		pipeDone <- pipeio.Pipe(ctx, cmdio, conn, func(err error) {
-			log.ErrorMsg("Run Pipe(pty, conn): %s\n", err)
+			logger.ErrorMsg("Run Pipe(pty, conn): %s\n", err)
 		})
 	}()
 
