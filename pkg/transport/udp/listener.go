@@ -13,6 +13,7 @@ import (
 	"dominicbreuker/goncat/pkg/crypto"
 	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/transport"
+
 	quic "github.com/quic-go/quic-go"
 )
 
@@ -206,7 +207,7 @@ func handleQUICConnection(conn *quic.Conn, handler transport.Handler, sem chan s
 	}
 
 	// Wrap stream in net.Conn adapter
-	streamConn := NewStreamConn(stream, conn.LocalAddr(), conn.RemoteAddr())
+	streamConn := NewStreamConn(conn, stream, conn.LocalAddr(), conn.RemoteAddr())
 	defer streamConn.Close()
 
 	if err := handler(streamConn); err != nil {
