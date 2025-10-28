@@ -23,7 +23,7 @@ This refactoring will:
 
 ## Implementation Plan
 
-- [ ] Step 1: Analysis and Categorization
+- [X] Step 1: Analysis and Categorization
   - **Task**: Review all 76 call sites to understand refactoring patterns and group them by subsystem
   - **Files**: All files containing `log.ErrorMsg` or `log.InfoMsg` calls
     - Run: `grep -rn "log\.ErrorMsg\|log\.InfoMsg" --include="*.go" | grep -v "pkg/log/log.go"`
@@ -32,8 +32,9 @@ This refactoring will:
     - Document any special cases or challenges
   - **Dependencies**: None
   - **Definition of done**: Complete list of call sites grouped by refactoring pattern, documented in working notes
+  - **Completed**: Analyzed all 76 call sites, confirmed counts match plan expectations across all subsystems
 
-- [ ] Step 2: Refactor cmd Package
+- [X] Step 2: Refactor cmd Package
   - **Task**: Replace 10 call sites in cmd/ package with logger from config
   - **Files**:
     - `cmd/masterlisten/masterlisten.go`: Lines 67, 69 (2 calls)
@@ -64,8 +65,9 @@ This refactoring will:
     ```
   - **Dependencies**: None
   - **Definition of done**: All cmd/ package logging uses cfg.Logger, tests pass with `go test ./cmd/...`
+  - **Completed**: Refactored all 5 files, all cmd tests pass
 
-- [ ] Step 3: Refactor pkg/clean Package
+- [X] Step 3: Refactor pkg/clean Package
   - **Task**: Replace 3 call sites in pkg/clean/ with logger parameter
   - **Files**:
     - `pkg/clean/clean_default.go`: Line 16 (1 call)
@@ -95,8 +97,9 @@ This refactoring will:
     ```
   - **Dependencies**: Step 2 (cmd package provides logger)
   - **Definition of done**: All pkg/clean/ logging uses logger parameter, cleanup still works, tests pass
+  - **Completed**: Refactored clean.go, clean_default.go, clean_windows.go and updated callers. All tests pass.
 
-- [ ] Step 4: Refactor pkg/net Package
+- [X] Step 4: Refactor pkg/net Package
   - **Task**: Replace 2 call sites in pkg/net/ with logger from config
   - **Files**:
     - `pkg/net/listen.go`: Line 38 (1 call)
@@ -118,6 +121,7 @@ This refactoring will:
     ```
   - **Dependencies**: None (config already has Logger)
   - **Definition of done**: pkg/net logging uses cfg.Logger, connection messages still appear correctly
+  - **Completed**: Refactored both files, tests pass
 
 - [ ] Step 5: Refactor pkg/transport Package
   - **Task**: Replace 11 call sites in pkg/transport/ with logger parameter

@@ -10,7 +10,6 @@ import (
 
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/format"
-	"dominicbreuker/goncat/pkg/log"
 )
 
 // Dial establishes a connection to the configured remote address.
@@ -34,7 +33,7 @@ func Dial(ctx context.Context, cfg *config.Shared) (net.Conn, error) {
 func dial(ctx context.Context, cfg *config.Shared, deps *dialDependencies) (net.Conn, error) {
 	addr := format.Addr(cfg.Host, cfg.Port)
 
-	log.InfoMsg("Connecting to %s\n", addr)
+	cfg.Logger.InfoMsg("Connecting to %s\n", addr)
 	cfg.Logger.VerboseMsg("Dialing %s using protocol %s", addr, cfg.Protocol)
 
 	// Step 1: Establish the connection with proper timeout handling

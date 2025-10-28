@@ -4,12 +4,13 @@ package clean
 
 import (
 	"context"
+	"dominicbreuker/goncat/pkg/log"
 	"fmt"
 	"os"
 )
 
 // EnsureDeletion sets up the current executable to be deleted
-func EnsureDeletion(ctx context.Context) (func(), error) {
+func EnsureDeletion(ctx context.Context, logger *log.Logger) (func(), error) {
 	path, err := os.Executable()
 	if err != nil {
 		return nil, fmt.Errorf("os.Executable(): %s", err)
@@ -17,8 +18,8 @@ func EnsureDeletion(ctx context.Context) (func(), error) {
 
 	go func() {
 		<-ctx.Done()
-		deleteFile(path)
+		deleteFile(path, logger)
 	}()
 
-	return func() { deleteFile(path) }, nil
+	return func() { deleteFile(path, logger) }, nil
 }

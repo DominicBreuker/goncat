@@ -67,9 +67,9 @@ func GetCommand() *cli.Command {
 			}
 
 			if errs := config.Validate(cfg, mCfg); len(errs) > 0 {
-				log.ErrorMsg("Argument validation errors:")
+				cfg.Logger.ErrorMsg("Argument validation errors:")
 				for _, err := range errs {
-					log.ErrorMsg(" - %s", err)
+					cfg.Logger.ErrorMsg(" - %s", err)
 				}
 				return fmt.Errorf("exiting")
 			}
