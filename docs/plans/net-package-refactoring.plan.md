@@ -759,3 +759,30 @@ func Dial(ctx context.Context, cfg *config.Shared) (net.Conn, error) {
 **Total**: ~6-8 hours for a careful, thorough implementation
 
 This is a significant refactoring but it's worth doing right to improve code quality and maintainability.
+
+## Bug Fix (Post-Implementation)
+
+- [X] **Bug Fix: Nil pointer dereference in TLS upgrade failure**
+  - **Issue**: E2E tests revealed a panic when TLS client connects to plain server
+    - Error: `panic: runtime error: invalid memory address or nil pointer dereference`
+    - Location: `pkg/net/dial.go:56` when trying to close connection after TLS upgrade failure
+  - **Root Cause**: In `dial()` function, when `upgradeTLS()` failed, it returned `nil, error`
+    - The code did: `conn, err = upgradeTLS(conn, cfg)` 
+    - This overwrote the original `conn` with `nil` when TLS failed
+    - Then tried to close the nil connection: `_ = conn.Close()`
+  - **Fix Applied**: Use separate variable for TLS result
+    - Changed to: `tlsConn, err := upgradeTLS(conn, cfg)`
+    - Now closes original `conn` on error, not the nil `tlsConn`
+    - Only assigns `conn = tlsConn` after successful TLS upgrade
+  - **Testing**:
+    - Reproduced panic with TLS client → plain server scenario
+    - Verified fix: now fails gracefully with `Error: TLS handshake: EOF`
+    - All unit tests pass
+    - All integration tests pass  
+    - Manual verification tests pass (4/4)
+    - Full test suite with race detection passes
+  - **Definition of done**: 
+    - No panic when TLS upgrade fails
+    - Graceful error message instead
+    - Original connection properly closed
+    - All tests passing

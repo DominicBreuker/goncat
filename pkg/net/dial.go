@@ -51,12 +51,13 @@ func dial(ctx context.Context, cfg *config.Shared, deps *dialDependencies) (net.
 	// Step 3: Upgrade to TLS if requested
 	if cfg.SSL {
 		cfg.Logger.VerboseMsg("Upgrading connection to TLS")
-		conn, err = upgradeTLS(conn, cfg)
+		tlsConn, err := upgradeTLS(conn, cfg)
 		if err != nil {
-			_ = conn.Close()
+			_ = conn.Close() // Close the original connection, not the nil tlsConn
 			return nil, fmt.Errorf("upgrading to TLS: %w", err)
 		}
 		cfg.Logger.VerboseMsg("TLS upgrade completed")
+		conn = tlsConn // Only assign if successful
 	}
 
 	return conn, nil
