@@ -307,8 +307,15 @@ This creates an unnecessarily complicated dance! The new design simplifies the A
   - **Dependencies**: Step 2 (use TCP as template)
   - **Definition of done**: UDP transport uses stateless functions, all tests pass, timeout handling is clean, QUIC stream initialization works correctly, code is readable
 
-- [ ] **Step 5: Update transport package interface and remove old abstractions**
+- [X] **Step 5: Update transport package interface and remove old abstractions**
   - **Task**: Update `pkg/transport/transport.go` to remove the old `Dialer` and `Listener` interfaces. Document the new API design.
+  - **Notes**: Transport package interface updated:
+    - Removed `Dialer` and `Listener` interfaces
+    - Added comprehensive package documentation explaining new function-based API
+    - Documented transport-specific patterns (TCP with deps, WebSocket ws/wss variants, UDP with QUIC)
+    - Documented timeout handling pattern
+    - Added usage examples for all three transports
+    - Kept `Handler` type (still needed)
   - **Files**:
     - `pkg/transport/transport.go`: Replace interface definitions with documentation
       ```go
