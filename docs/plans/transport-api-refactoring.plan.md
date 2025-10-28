@@ -151,8 +151,16 @@ This creates an unnecessarily complicated dance! The new design simplifies the A
   - **Dependencies**: Step 1
   - **Definition of done**: TCP transport uses stateless functions, all tests pass, timeout handling is clean (set before operations, cleared after), code is readable with well-named private functions
 
-- [ ] **Step 3: Refactor WebSocket transport to new API**
+- [X] **Step 3: Refactor WebSocket transport to new API**
   - **Task**: Replace WebSocket `Dialer` and `Listener` structs with separate functions for `ws` and `wss` protocols. This handles the special case where protocol determines TLS usage.
+  - **Notes**: WebSocket transport successfully refactored:
+    - Replaced `NewDialer()` + `Dial()` with `DialWS(ctx, addr, timeout)` and `DialWSS(ctx, addr, timeout)` functions
+    - Replaced `NewListener()` + `Serve()` + `Close()` with `ListenAndServeWS(ctx, addr, timeout, handler)` and `ListenAndServeWSS(ctx, addr, timeout, handler)`
+    - Split long functions into well-named private helpers (formatURL, dialWebSocket, createDialOptions, listenAndServeWebSocket, createNetListener, wrapWithTLS, createConnectionSemaphore, createHTTPServer, createWebSocketHandler, handleWebSocketUpgrade, serveWithContext)
+    - Maintained proper timeout handling for HTTP server
+    - Added context handling for graceful shutdown
+    - Updated tests
+    - All tests passing ✓
   - **Files**:
     - `pkg/transport/ws/dialer.go`: Replace with two functions
       ```go
