@@ -4,7 +4,6 @@ package master
 import (
 	"bufio"
 	"context"
-	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/mux/msg"
 	"dominicbreuker/goncat/pkg/pipeio"
 	"dominicbreuker/goncat/pkg/socks"
@@ -95,7 +94,7 @@ func (srv *Server) handleConnect(connLocal net.Conn, sr *socks.Request) error {
 
 	// 2) Now that the client has the success reply, flip to raw piping
 	pipeio.Pipe(srv.ctx, connLocal, connRemote, func(err error) {
-		log.ErrorMsg("Pipe(stdio, conn): %s\n", err)
+		srv.cfg.Logger.ErrorMsg("Pipe(stdio, conn): %s\n", err)
 	})
 
 	return nil

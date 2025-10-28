@@ -10,7 +10,7 @@ import (
 // It establishes a connection to the requested destination and pipes data.
 func (slv *slave) handleConnectAsync(ctx context.Context, m msg.Connect) {
 	go func() {
-		h := portfwd.NewClient(ctx, m, slv.sess, slv.cfg.Deps)
+		h := portfwd.NewClient(ctx, m, slv.sess, slv.cfg.Logger, slv.cfg.Deps)
 		if err := h.Handle(); err != nil {
 			slv.cfg.Logger.ErrorMsg("Running connect job: %s", err)
 		}

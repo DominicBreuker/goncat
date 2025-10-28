@@ -10,7 +10,7 @@ import (
 // It establishes a TCP connection to the requested destination.
 func (slv *slave) handleSocksConnectAsync(ctx context.Context, m msg.SocksConnect) {
 	go func() {
-		tr := socksslave.NewTCPRelay(ctx, m, slv.sess, slv.cfg.Deps)
+		tr := socksslave.NewTCPRelay(ctx, m, slv.sess, slv.cfg.Logger, slv.cfg.Deps)
 		if err := tr.Handle(); err != nil {
 			slv.cfg.Logger.ErrorMsg("Running SocksConnect job: %s\n", err)
 		}
@@ -21,7 +21,7 @@ func (slv *slave) handleSocksConnectAsync(ctx context.Context, m msg.SocksConnec
 // It creates a UDP relay to handle UDP datagrams for the SOCKS5 client.
 func (slv *slave) handleSocksAsociateAsync(ctx context.Context, _ msg.SocksAssociate) {
 	go func() {
-		relay, err := socksslave.NewUDPRelay(ctx, slv.sess, slv.cfg.Deps)
+		relay, err := socksslave.NewUDPRelay(ctx, slv.sess, slv.cfg.Logger, slv.cfg.Deps)
 		if err != nil {
 			slv.cfg.Logger.ErrorMsg("Running SocksAssociate job: %s\n", err)
 			return

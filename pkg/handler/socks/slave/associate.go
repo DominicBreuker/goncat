@@ -25,11 +25,12 @@ type UDPRelay struct {
 	mu       sync.RWMutex
 	isClosed bool
 	sessCtl  ClientControlSession
+	logger   *log.Logger
 }
 
 // NewUDPRelay creates a new UDP relay for handling SOCKS5 ASSOCIATE requests.
 // It binds a local UDP port for sending/receiving datagrams and opens a control channel.
-func NewUDPRelay(ctx context.Context, sessCtl ClientControlSession, deps *config.Dependencies) (*UDPRelay, error) {
+func NewUDPRelay(ctx context.Context, sessCtl ClientControlSession, logger *log.Logger, deps *config.Dependencies) (*UDPRelay, error) {
 	// Get the packet listener function from dependencies or use default
 	listenerFn := config.GetPacketListenerFunc(deps)
 	connLocal, err := listenerFn("udp", "0.0.0.0:")
@@ -52,6 +53,7 @@ func NewUDPRelay(ctx context.Context, sessCtl ClientControlSession, deps *config
 		cancel:     cancel,
 		isClosed:   false,
 		sessCtl:    sessCtl,
+		logger:     logger,
 	}, nil
 }
 
@@ -75,7 +77,7 @@ func (r *UDPRelay) closed() bool {
 
 // LogError logs an error message with a prefix to indicate where it comes from.
 func (r *UDPRelay) LogError(format string, a ...interface{}) {
-	log.ErrorMsg("UDP Relay: "+format, a...)
+	r.logger.ErrorMsg("UDP Relay: "+format, a...)
 }
 
 // Serve starts the UDP relay, forwarding datagrams between local and remote ends.

@@ -7,7 +7,6 @@ import (
 
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/format"
-	"dominicbreuker/goncat/pkg/log"
 	"dominicbreuker/goncat/pkg/socks"
 	"errors"
 	"fmt"
@@ -60,7 +59,7 @@ func NewServer(ctx context.Context, cfg Config, sessCtl ServerControlSession) (*
 
 // LogError logs an error message with a prefix to indicate where it comes from
 func (srv *Server) LogError(format string, a ...interface{}) {
-	log.ErrorMsg("SOCKS proxy: "+format, a...)
+	srv.cfg.Logger.ErrorMsg("SOCKS proxy: "+format, a...)
 }
 
 // Serve starts accepting SOCKS5 client connections and handles them.

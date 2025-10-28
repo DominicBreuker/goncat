@@ -58,7 +58,7 @@ func (mst *master) startRemotePortFwdJob(ctx context.Context, wg *sync.WaitGroup
 // This is used for remote port forwarding when the slave forwards a connection back to the master.
 func (mst *master) handleConnectAsync(ctx context.Context, m msg.Connect) {
 	go func() {
-		h := portfwd.NewClient(ctx, m, mst.sess, mst.cfg.Deps)
+		h := portfwd.NewClient(ctx, m, mst.sess, mst.cfg.Logger, mst.cfg.Deps)
 		if err := h.Handle(); err != nil {
 			mst.cfg.Logger.ErrorMsg("Running connect job: %s", err)
 		}

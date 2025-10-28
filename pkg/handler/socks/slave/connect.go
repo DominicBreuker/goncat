@@ -20,15 +20,17 @@ type TCPRelay struct {
 	m       msg.SocksConnect
 	sessCtl ClientControlSession
 	deps    *config.Dependencies
+	logger  *log.Logger
 }
 
 // NewTCPRelay creates a new TCP relay for handling a SOCKS5 CONNECT request.
-func NewTCPRelay(ctx context.Context, m msg.SocksConnect, sessCtl ClientControlSession, deps *config.Dependencies) *TCPRelay {
+func NewTCPRelay(ctx context.Context, m msg.SocksConnect, sessCtl ClientControlSession, logger *log.Logger, deps *config.Dependencies) *TCPRelay {
 	return &TCPRelay{
 		ctx:     ctx,
 		m:       m,
 		sessCtl: sessCtl,
 		deps:    deps,
+		logger:  logger,
 	}
 }
 
@@ -102,7 +104,7 @@ func (tr *TCPRelay) Handle() error {
 	}
 
 	pipeio.Pipe(tr.ctx, connRemote, conn, func(err error) {
-		log.ErrorMsg("Handling connect to %s: %s\n", addr, err)
+		tr.logger.ErrorMsg("Handling connect to %s: %s\n", addr, err)
 	})
 
 	return nil
