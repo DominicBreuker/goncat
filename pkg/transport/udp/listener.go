@@ -20,25 +20,43 @@ import (
 // - listener_unix.go for Unix-like systems (Linux, macOS, BSD)
 // - listener_windows.go for Windows
 
-// Listener implements transport.Listener for UDP with QUIC.
-// It allows up to 100 concurrent connections to prevent resource exhaustion.
-type Listener struct {
-	udpConn      *net.UDPConn
-	quicListener *quic.Listener
-	sem          chan struct{} // capacity 100 -> allows up to 100 concurrent handlers
+// ListenAndServe creates a QUIC listener over UDP and serves connections.
+// The function blocks until the context is cancelled or an error occurs.
+// Up to 100 concurrent connections are allowed; additional connections are rejected.
+//
+// QUIC provides built-in TLS 1.3 encryption at the transport layer.
+// An ephemeral certificate is generated for the transport layer TLS.
+// Application-level TLS (--ssl, --key) is handled separately by the caller.
+//
+// QUIC streams require an init byte to activate - this is handled internally.
+func ListenAndServe(ctx context.Context, addr string, timeout time.Duration, handler transport.Handler) error {
+	// Create UDP listener with SO_REUSEADDR
+	udpConn, err := createUDPListener(ctx, addr)
+	if err != nil {
+		return err
+	}
+	defer udpConn.Close()
+
+	// Generate ephemeral TLS config for QUIC transport
+	tlsConfig, err := generateQUICServerTLSConfig()
+	if err != nil {
+		return err
+	}
+
+	// Create QUIC listener
+	quicListener, err := createQUICListener(udpConn, tlsConfig, timeout)
+	if err != nil {
+		return err
+	}
+	defer quicListener.Close()
+
+	// Serve connections with semaphore
+	sem := createConnectionSemaphore(100)
+	return serveQUICConnections(ctx, quicListener, handler, sem)
 }
 
-// NewListener creates a UDP+QUIC listener on the specified address.
-// Parameters:
-// - ctx: Context for lifecycle management
-// - addr: Address to bind (e.g., "0.0.0.0:12345" or ":12345")
-// - timeout: MaxIdleTimeout for QUIC connections
-//
-// Note: QUIC mandates TLS 1.3. An ephemeral certificate is generated internally for
-// the transport layer. Application-level TLS (--ssl, --key) is handled separately
-// by the caller, similar to how WebSocket (wss) handles transport-level TLS.
-func NewListener(ctx context.Context, addr string, timeout time.Duration) (*Listener, error) {
-	// Create UDP socket with SO_REUSEADDR for rapid port reuse (important for E2E tests)
+// createUDPListener creates a UDP socket with SO_REUSEADDR for rapid port reuse.
+func createUDPListener(ctx context.Context, addr string) (*net.UDPConn, error) {
 	lc := &net.ListenConfig{
 		Control: func(network, address string, c syscall.RawConn) error {
 			var sockOptErr error
@@ -63,13 +81,15 @@ func NewListener(ctx context.Context, addr string, timeout time.Duration) (*List
 		return nil, fmt.Errorf("expected *net.UDPConn, got %T", packetConn)
 	}
 
-	// Generate ephemeral TLS config for QUIC transport layer.
-	// Similar to how WebSocket (wss) handles its transport TLS internally.
-	// Application-level TLS (if --ssl/--key is set) will be applied on top by the caller.
+	return udpConn, nil
+}
+
+// generateQUICServerTLSConfig generates an ephemeral TLS configuration for QUIC server.
+func generateQUICServerTLSConfig() (*tls.Config, error) {
+	// Generate ephemeral certificate
 	key := rand.Text()
 	_, cert, err := crypto.GenerateCertificates(key)
 	if err != nil {
-		udpConn.Close()
 		return nil, fmt.Errorf("generate certificates: %w", err)
 	}
 
@@ -79,68 +99,98 @@ func NewListener(ctx context.Context, addr string, timeout time.Duration) (*List
 		NextProtos:   []string{"goncat-quic"},
 	}
 
-	// Configure QUIC
-	// MaxIdleTimeout should be longer than the timeout used for control operations
-	// to avoid premature connection closure. Use at least 30 seconds or 3x the timeout.
+	return tlsConfig, nil
+}
+
+// createQUICListener creates a QUIC listener with proper timeout configuration.
+func createQUICListener(udpConn *net.UDPConn, tlsConfig *tls.Config, timeout time.Duration) (*quic.Listener, error) {
+	// Configure QUIC timeouts
 	maxIdleTimeout := timeout * 3
 	if maxIdleTimeout < 30*time.Second {
 		maxIdleTimeout = 30 * time.Second
 	}
+
 	quicConfig := &quic.Config{
 		MaxIdleTimeout:  maxIdleTimeout,
-		KeepAlivePeriod: maxIdleTimeout / 3, // Keep alive more frequently than idle timeout
+		KeepAlivePeriod: maxIdleTimeout / 3,
 	}
 
 	// Create QUIC transport and listener
 	tr := &quic.Transport{Conn: udpConn}
 	quicListener, err := tr.Listen(tlsConfig, quicConfig)
 	if err != nil {
-		udpConn.Close()
 		return nil, fmt.Errorf("quic listen: %w", err)
 	}
 
-	l := &Listener{
-		udpConn:      udpConn,
-		quicListener: quicListener,
-		sem:          make(chan struct{}, 100),
-	}
-	// initially allow 100 connections
-	for i := 0; i < 100; i++ {
-		l.sem <- struct{}{}
-	}
-
-	return l, nil
+	return quicListener, nil
 }
 
-// Serve accepts QUIC connections and handles them using the provided handler.
-// Up to 100 connections can be handled concurrently; additional connections are rejected.
-func (l *Listener) Serve(handle transport.Handler) error {
+// createConnectionSemaphore creates a buffered channel to limit concurrent connections.
+func createConnectionSemaphore(capacity int) chan struct{} {
+	sem := make(chan struct{}, capacity)
+	for i := 0; i < capacity; i++ {
+		sem <- struct{}{}
+	}
+	return sem
+}
+
+// serveQUICConnections accepts and handles QUIC connections.
+func serveQUICConnections(ctx context.Context, quicListener *quic.Listener, handler transport.Handler, sem chan struct{}) error {
+	// Run accept loop in goroutine
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- acceptQUICLoop(quicListener, handler, sem)
+	}()
+
+	// Wait for either context cancellation or accept loop error
+	select {
+	case <-ctx.Done():
+		// Context cancelled - close listener
+		_ = quicListener.Close()
+		err := <-errCh
+		// Treat closure as graceful shutdown
+		if err == nil || isClosedError(err) {
+			return nil
+		}
+		return fmt.Errorf("serving after cancellation: %w", err)
+
+	case err := <-errCh:
+		// Accept loop exited on its own
+		if err == nil || isClosedError(err) {
+			return nil
+		}
+		return fmt.Errorf("accept quic: %w", err)
+	}
+}
+
+// acceptQUICLoop accepts QUIC connections and spawns handlers.
+func acceptQUICLoop(quicListener *quic.Listener, handler transport.Handler, sem chan struct{}) error {
 	for {
 		// Accept QUIC connection
-		conn, err := l.quicListener.Accept(context.Background())
+		conn, err := quicListener.Accept(context.Background())
 		if err != nil {
 			// Check for clean shutdown
 			if isClosedError(err) {
 				return nil
 			}
-			return fmt.Errorf("accept quic: %w", err)
+			return err
 		}
 
 		// Try to acquire a slot
 		select {
-		case <-l.sem:
-			go l.handleConnection(conn, handle)
+		case <-sem:
+			go handleQUICConnection(conn, handler, sem)
 		default:
-			// All 100 slots busy
+			// All slots busy
 			_ = conn.CloseWithError(0x42, "server busy")
 		}
 	}
 }
 
-// handleConnection processes a single QUIC connection.
-func (l *Listener) handleConnection(conn *quic.Conn, handle transport.Handler) {
+// handleQUICConnection processes a single QUIC connection.
+func handleQUICConnection(conn *quic.Conn, handler transport.Handler, sem chan struct{}) {
 	defer func() {
-		l.sem <- struct{}{} // release slot
+		sem <- struct{}{} // Release slot
 	}()
 	defer func() {
 		if r := recover(); r != nil {
@@ -148,23 +198,10 @@ func (l *Listener) handleConnection(conn *quic.Conn, handle transport.Handler) {
 		}
 	}()
 
-	// Accept first bidirectional stream with a reasonable timeout
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	stream, err := conn.AcceptStream(ctx)
+	// Accept stream and read init byte
+	stream, err := acceptStreamAndActivate(conn)
 	if err != nil {
-		_ = conn.CloseWithError(0, "no stream")
-		return
-	}
-
-	// Read and discard the initialization byte that was sent by the client to activate the stream.
-	// QUIC streams are lazy-initialized - the client must write data before the stream is
-	// transmitted and visible to AcceptStream(). This single byte ensures immediate connection
-	// establishment without blocking.
-	initByte := make([]byte, 1)
-	_, err = stream.Read(initByte)
-	if err != nil {
-		_ = conn.CloseWithError(0, "failed to read init byte")
+		_ = conn.CloseWithError(0, err.Error())
 		return
 	}
 
@@ -172,17 +209,31 @@ func (l *Listener) handleConnection(conn *quic.Conn, handle transport.Handler) {
 	streamConn := NewStreamConn(stream, conn.LocalAddr(), conn.RemoteAddr())
 	defer streamConn.Close()
 
-	if err := handle(streamConn); err != nil {
+	if err := handler(streamConn); err != nil {
 		log.ErrorMsg("Handling connection: %s\n", err)
 	}
 }
 
-// Close stops the listener.
-func (l *Listener) Close() error {
-	if err := l.quicListener.Close(); err != nil {
-		return err
+// acceptStreamAndActivate accepts a stream and reads the init byte.
+// The client sends an init byte to activate the stream immediately.
+func acceptStreamAndActivate(conn *quic.Conn) (*quic.Stream, error) {
+	// Accept first bidirectional stream with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	stream, err := conn.AcceptStream(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("no stream")
 	}
-	return l.udpConn.Close()
+
+	// Read and discard init byte
+	initByte := make([]byte, 1)
+	_, err = stream.Read(initByte)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read init byte")
+	}
+
+	return stream, nil
 }
 
 // isClosedError checks if an error indicates a closed connection.

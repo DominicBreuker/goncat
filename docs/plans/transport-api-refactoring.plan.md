@@ -205,8 +205,15 @@ This creates an unnecessarily complicated dance! The new design simplifies the A
   - **Dependencies**: Step 2 (use TCP as template)
   - **Definition of done**: WebSocket transport uses stateless functions with separate WS/WSS variants, all tests pass, timeout handling is clean, code is readable
 
-- [ ] **Step 4: Refactor UDP transport to new API**
+- [X] **Step 4: Refactor UDP transport to new API**
   - **Task**: Replace UDP/QUIC `Dialer` and `Listener` structs with stateless functions. Handle QUIC-specific initialization (init byte for stream activation).
+  - **Notes**: UDP transport successfully refactored:
+    - Replaced `NewDialer()` + `Dial()` with `Dial(ctx, addr, timeout)` function
+    - Replaced `NewListener()` + `Serve()` + `Close()` with `ListenAndServe(ctx, addr, timeout, handler)` function
+    - Split long functions into well-named private helpers (resolveUDPAddress, createUDPSocket, generateQUICTLSConfig, dialQUIC, openAndActivateStream for dialer; createUDPListener, generateQUICServerTLSConfig, createQUICListener, createConnectionSemaphore, serveQUICConnections, acceptQUICLoop, handleQUICConnection, acceptStreamAndActivate for listener)
+    - Maintained QUIC init byte handling internally (transparent to callers)
+    - Added proper context handling for graceful shutdown
+    - All tests passing ✓
   - **Files**:
     - `pkg/transport/udp/dialer.go`: Replace with `Dial` function
       ```go
