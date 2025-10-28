@@ -2,9 +2,6 @@ package net
 
 import (
 	"context"
-	"errors"
-	"fmt"
-	"net"
 
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/format"

@@ -10,23 +10,9 @@ import (
 
 	"dominicbreuker/goncat/pkg/config"
 	"dominicbreuker/goncat/pkg/log"
-	"dominicbreuker/goncat/pkg/transport"
 )
 
 // Test helpers and fakes
-
-// fakeDialer implements transport.Dialer for testing.
-type fakeDialer struct {
-	dialErr error
-	conn    net.Conn
-}
-
-func (f *fakeDialer) Dial(ctx context.Context) (net.Conn, error) {
-	if f.dialErr != nil {
-		return nil, f.dialErr
-	}
-	return f.conn, nil
-}
 
 // fakeConn implements net.Conn for testing.
 type fakeConn struct {
@@ -93,8 +79,8 @@ func TestDial_TCP_Success(t *testing.T) {
 
 	fakeConn := newFakeConn()
 	deps := &dialDependencies{
-		newTCPDialer: func(addr string, deps *config.Dependencies) (transport.Dialer, error) {
-			return &fakeDialer{conn: fakeConn}, nil
+		dialTCP: func(ctx context.Context, addr string, timeout time.Duration, deps *config.Dependencies) (net.Conn, error) {
+			return fakeConn, nil
 		},
 	}
 
@@ -124,8 +110,36 @@ func TestDial_WebSocket_Success(t *testing.T) {
 
 	fakeConn := newFakeConn()
 	deps := &dialDependencies{
-		newWSDialer: func(ctx context.Context, addr string, proto config.Protocol) transport.Dialer {
-			return &fakeDialer{conn: fakeConn}
+		dialWS: func(ctx context.Context, addr string, timeout time.Duration) (net.Conn, error) {
+			return fakeConn, nil
+		},
+	}
+
+	conn, err := dial(ctx, cfg, deps)
+	if err != nil {
+		t.Fatalf("dial() error = %v, want nil", err)
+	}
+	if conn == nil {
+		t.Fatal("dial() returned nil conn")
+	}
+}
+
+// Test successful dial for WebSocket Secure protocol
+func TestDial_WebSocketSecure_Success(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	cfg := &config.Shared{
+		Protocol: config.ProtoWSS,
+		Host:     "localhost",
+		Port:     8080,
+		Logger:   log.NewLogger(false),
+	}
+
+	fakeConn := newFakeConn()
+	deps := &dialDependencies{
+		dialWSS: func(ctx context.Context, addr string, timeout time.Duration) (net.Conn, error) {
+			return fakeConn, nil
 		},
 	}
 
@@ -152,8 +166,8 @@ func TestDial_UDP_Success(t *testing.T) {
 
 	fakeConn := newFakeConn()
 	deps := &dialDependencies{
-		newUDPDialer: func(addr string, timeout time.Duration) (transport.Dialer, error) {
-			return &fakeDialer{conn: fakeConn}, nil
+		dialUDP: func(ctx context.Context, addr string, timeout time.Duration) (net.Conn, error) {
+			return fakeConn, nil
 		},
 	}
 
@@ -163,34 +177,6 @@ func TestDial_UDP_Success(t *testing.T) {
 	}
 	if conn == nil {
 		t.Fatal("dial() returned nil conn")
-	}
-}
-
-// Test dial failure when dialer creation fails
-func TestDial_DialerCreationFails(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	cfg := &config.Shared{
-		Protocol: config.ProtoTCP,
-		Host:     "localhost",
-		Port:     8080,
-		Logger:   log.NewLogger(false),
-	}
-
-	expectedErr := errors.New("dialer creation failed")
-	deps := &dialDependencies{
-		newTCPDialer: func(addr string, deps *config.Dependencies) (transport.Dialer, error) {
-			return nil, expectedErr
-		},
-	}
-
-	conn, err := dial(ctx, cfg, deps)
-	if err == nil {
-		t.Fatal("dial() error = nil, want error")
-	}
-	if conn != nil {
-		t.Error("dial() returned non-nil conn on error")
 	}
 }
 
@@ -208,8 +194,8 @@ func TestDial_ConnectionFails(t *testing.T) {
 
 	expectedErr := errors.New("connection refused")
 	deps := &dialDependencies{
-		newTCPDialer: func(addr string, deps *config.Dependencies) (transport.Dialer, error) {
-			return &fakeDialer{dialErr: expectedErr}, nil
+		dialTCP: func(ctx context.Context, addr string, timeout time.Duration, deps *config.Dependencies) (net.Conn, error) {
+			return nil, expectedErr
 		},
 	}
 
@@ -237,8 +223,8 @@ func TestDial_ContextCancelled(t *testing.T) {
 	}
 
 	deps := &dialDependencies{
-		newTCPDialer: func(addr string, deps *config.Dependencies) (transport.Dialer, error) {
-			return &fakeDialer{dialErr: context.Canceled}, nil
+		dialTCP: func(ctx context.Context, addr string, timeout time.Duration, deps *config.Dependencies) (net.Conn, error) {
+			return nil, context.Canceled
 		},
 	}
 

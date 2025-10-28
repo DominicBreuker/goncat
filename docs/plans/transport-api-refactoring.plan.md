@@ -355,8 +355,18 @@ This creates an unnecessarily complicated dance! The new design simplifies the A
   - **Dependencies**: Steps 2, 3, 4 (all transports refactored)
   - **Definition of done**: Old interfaces removed, package documentation updated, Handler type preserved
 
-- [ ] **Step 6: Migrate pkg/net to use new transport API**
+- [X] **Step 6: Migrate pkg/net to use new transport API**
   - **Task**: Update `pkg/net` to call the new transport functions directly instead of instantiating structs. This is the main integration point.
+  - **Notes**: Successfully migrated pkg/net:
+    - Updated `dial_internal.go` - replaced `createDialer()` with direct `establishConnection()` calling transport functions
+    - Updated `dial.go` - removed dialer creation step, simplified to direct connection establishment
+    - Updated `listen_internal.go` - replaced `realCreateListener()` with `serveWithTransport()` calling transport functions directly
+    - Updated `listen.go` - simplified to directly call transport functions, removed listener management
+    - Updated `dialDependencies` to use function signatures instead of Dialer interface
+    - Updated `listenDependencies` to use function signatures instead of Listener interface
+    - Updated all tests in `dial_test.go` and `listen_test.go` to match new API
+    - All tests passing ✓
+    - Build succeeds ✓
   - **Files**:
     - `pkg/net/dial_internal.go`: Update to call new transport functions
       ```go
