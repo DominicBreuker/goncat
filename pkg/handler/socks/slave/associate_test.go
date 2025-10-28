@@ -1,8 +1,8 @@
 package slave
 
 import (
-	"dominicbreuker/goncat/pkg/log"
 	"context"
+	"dominicbreuker/goncat/pkg/log"
 	"encoding/gob"
 	"errors"
 	"net"
