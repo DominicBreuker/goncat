@@ -71,7 +71,7 @@ Scripts will be organized in `docs/scripts/` with an overview document `docs/VAL
   - **Definition of done**: 4 transport scripts exist, each validates basic connectivity and bidirectional data exchange for its protocol
   - **Completed**: Created all 4 transport validation scripts. Each script verifies connection establishment and data transfer. TCP script tests both master-listen and slave-listen modes. All scripts tested and passing.
 
-- [ ] Step 3: Create encryption and authentication scripts
+- [X] Step 3: Create encryption and authentication scripts
   - **Task**: Validate --ssl and --key functionality across transports
   - **Files**:
     - `docs/scripts/05-encryption-ssl.sh`: Validate --ssl flag
@@ -87,8 +87,9 @@ Scripts will be organized in `docs/scripts/` with an overview document `docs/VAL
   - **Script depth**: Must actually verify TLS connection (not just that flag is accepted)
   - **Dependencies**: Step 2 complete
   - **Definition of done**: Scripts verify encryption works, authentication succeeds/fails appropriately
+  - **Completed**: Created both scripts. 05-encryption-ssl.sh tests TLS with TCP and WebSocket, verifies mismatched SSL fails. 06-authentication-key.sh tests matching/mismatched passwords and validates --key requires --ssl. All tests passing.
 
-- [ ] Step 4: Create command execution scripts
+- [X] Step 4: Create command execution scripts
   - **Task**: Validate --exec flag with and without --pty
   - **Files**:
     - `docs/scripts/07-exec-simple.sh`: Validate simple command execution (no PTY)
@@ -103,6 +104,7 @@ Scripts will be organized in `docs/scripts/` with an overview document `docs/VAL
   - **Environment consideration**: PTY may not work in agent environment - script should detect and mark as unsupported if needed
   - **Dependencies**: Step 2 complete
   - **Definition of done**: Scripts validate command execution, with real output verification
+  - **Completed**: Created both scripts. 07-exec-simple.sh validates basic command execution. 08-exec-pty.sh validates PTY mode with TTY detection (marks unsupported if no TTY available). Both passing.
 
 - [ ] Step 5: Create port forwarding scripts
   - **Task**: Validate local (-L) and remote (-R) port forwarding for TCP and UDP
