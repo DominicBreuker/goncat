@@ -1,146 +1,192 @@
 #!/usr/bin/env python3
 """
-Validation Script: PTY Mode Execution
-Purpose: Verify --pty flag enables interactive pseudo-terminal mode
-Expected: PTY mode works with interactive features
+Validation Script: PTY Mode Command Execution
+Purpose: Verify --pty flag provides proper interactive terminal
+Data Flow: pexpect drives MASTER process interactively
+Tests: TTY features, command execution, Ctrl+C, line editing, exit
 Dependencies: python3, pexpect, goncat binary
 """
 
+import os
+import sys
+import signal
+import subprocess
+import time
 import pexpect
 import re
-import sys
-import os
-import time
-import subprocess
 
-# Colors for output
+# Colors
 RED = '\033[0;31m'
 GREEN = '\033[0;32m'
 YELLOW = '\033[1;33m'
-NC = '\033[0m'  # No Color
+NC = '\033[0m'
 
-def print_status(message, status='info'):
-    if status == 'success':
-        print(f"{GREEN}{message}{NC}")
-    elif status == 'error':
-        print(f"{RED}{message}{NC}")
-    elif status == 'warning':
-        print(f"{YELLOW}{message}{NC}")
-    else:
-        print(message)
-
-def cleanup():
-    """Kill any lingering goncat processes"""
-    subprocess.run(['pkill', '-9', 'goncat.elf'], stderr=subprocess.DEVNULL)
+def poll_for_pattern(filepath, pattern, timeout=10):
+    """Poll for a pattern in a file"""
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            with open(filepath, 'r') as f:
+                content = f.read()
+                if re.search(pattern, content):
+                    return True
+        except FileNotFoundError:
+            pass
+        time.sleep(0.1)
+    return False
 
 def main():
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    repo_root = os.path.abspath(os.path.join(script_dir, '../..'))
+    repo_root = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
     os.chdir(repo_root)
     
-    binary_path = os.path.join(repo_root, 'dist/goncat.elf')
+    binary = f"{repo_root}/dist/goncat.elf"
+    if not os.path.exists(binary):
+        print(f"{YELLOW}Building goncat binary...{NC}")
+        subprocess.run(["make", "build-linux"], check=True)
     
-    # Ensure binary exists
-    if not os.path.exists(binary_path):
-        print_status("Building goncat binary...", 'warning')
-        subprocess.run(['make', 'build-linux'], check=True)
+    print(f"{GREEN}=== PTY Mode Command Execution Validation ==={NC}")
     
-    print_status("Starting validation: PTY Mode", 'success')
-    
-    cleanup()
-    
-    port = 12070
-    
-    # Start master in background with PTY mode
-    print_status("Test: PTY mode with interactive bash", 'warning')
-    master_cmd = f"{binary_path} master listen tcp://*:{port} --exec /bin/bash --pty"
-    
-    master_proc = subprocess.Popen(
-        master_cmd.split(),
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True
-    )
-    
-    time.sleep(2)
+    port = 12071
+    slave_proc = None
+    master = None
     
     try:
-        # Connect slave with pexpect for interactive control
-        slave_cmd = f"{binary_path} slave connect tcp://localhost:{port}"
-        child = pexpect.spawn(slave_cmd, encoding='utf-8', timeout=15)
+        # Start master with pexpect (PTY mode, interactive)
+        print(f"{YELLOW}Starting master with --pty (interactive)...{NC}")
+        cmd = f"{binary} master listen tcp://*:{port} --exec /bin/bash --pty"
+        master = pexpect.spawn(cmd, encoding='utf-8', timeout=10)
+        master.logfile = open("/tmp/goncat-pty-master.log", "w")
+        master.setwinsize(24, 120)
         
-        # Wait for connection
+        # Wait for listening message
+        master.expect("Listening on", timeout=5)
+        print(f"{GREEN}✓ Master listening{NC}")
+        
+        # Now connect slave in background
+        print(f"{YELLOW}Connecting slave...{NC}")
+        slave_log = open("/tmp/goncat-pty-slave.log", "w")
+        slave_proc = subprocess.Popen(
+            [binary, "slave", "connect", f"tcp://localhost:{port}"],
+            stdout=slave_log,
+            stderr=subprocess.STDOUT
+        )
+        
+        # Wait for session established (may appear in logs or as output)
         time.sleep(2)
+        # Check slave log for establishment
+        if poll_for_pattern("/tmp/goncat-pty-slave.log", r"Session with .* established", timeout=5):
+            print(f"{GREEN}✓ Session established{NC}")
+        else:
+            print(f"{YELLOW}⚠ Session established message not found (may still work){NC}")
         
-        # Test 1: Verify connection established
-        print_status("Test 1: Verify PTY connection", 'warning')
-        child.sendline('')  # Send enter to get a prompt
+        # Set deterministic PS1 prompt
+        master.sendline("export PS1='GONCAT-PTY> '")
+        master.expect("GONCAT-PTY> ", timeout=5)
+        print(f"{GREEN}✓ Deterministic prompt set{NC}")
+        
+        # Test 1: TTY detection
+        print(f"{YELLOW}Test 1: Verify TTY is allocated{NC}")
+        master.sendline("test -t 0 && echo TTY_YES || echo TTY_NO")
+        idx = master.expect(["TTY_YES", "TTY_NO"], timeout=5)
+        if idx == 0:
+            print(f"{GREEN}✓ TTY allocated (stdin is a terminal){NC}")
+        else:
+            print(f"{RED}✗ No TTY allocated{NC}")
+            sys.exit(1)
+        master.expect("GONCAT-PTY> ", timeout=5)
+        
+        # Test 2: Basic command execution
+        print(f"{YELLOW}Test 2: Execute basic commands{NC}")
+        master.sendline("whoami")
+        master.expect(r"(root|runner|[a-z0-9]+)", timeout=5)
+        print(f"{GREEN}✓ whoami command executed{NC}")
+        master.expect("GONCAT-PTY> ", timeout=5)
+        
+        token = f"PTY_TOKEN_{os.getpid()}"
+        master.sendline(f"echo {token}")
+        master.expect(token, timeout=5)
+        print(f"{GREEN}✓ Token verified (data channel working){NC}")
+        master.expect("GONCAT-PTY> ", timeout=5)
+        
+        # Test 3: Line editing (command history with arrow keys)
+        print(f"{YELLOW}Test 3: Test line editing (arrow keys){NC}")
+        master.sendline("echo first")
+        master.expect("first", timeout=5)
+        master.expect("GONCAT-PTY> ", timeout=5)
+        
+        master.sendline("echo second")
+        master.expect("second", timeout=5)
+        master.expect("GONCAT-PTY> ", timeout=5)
+        
+        # Up arrow should recall "echo second"
+        master.send("\x1b[A")  # Up arrow
+        time.sleep(0.2)
+        master.sendline("")  # Execute recalled command
+        master.expect("second", timeout=5)
+        print(f"{GREEN}✓ Command history (up arrow) working{NC}")
+        master.expect("GONCAT-PTY> ", timeout=5)
+        
+        # Test 4: Ctrl+C interrupt
+        print(f"{YELLOW}Test 4: Test Ctrl+C interrupt{NC}")
+        master.sendline("sleep 30")
         time.sleep(0.5)
+        master.sendintr()  # Ctrl+C
+        # After Ctrl+C, should get prompt back (sleep interrupted)
+        master.expect("GONCAT-PTY> ", timeout=5)
+        print(f"{GREEN}✓ Ctrl+C interrupt working{NC}")
         
-        # Look for bash-like prompt patterns or just any output
-        output = child.before if hasattr(child, 'before') and child.before else ''
-        if 'established' in output or len(output) > 10:
-            print_status("✓ PTY connection established", 'success')
+        # Test 5: Terminal dimensions
+        print(f"{YELLOW}Test 5: Test terminal dimensions{NC}")
+        master.sendline("tput cols")
+        master.expect(r"\d+", timeout=5)
+        print(f"{GREEN}✓ Terminal dimensions accessible{NC}")
+        master.expect("GONCAT-PTY> ", timeout=5)
         
-        # Test 2: Send a command and wait for output
-        print_status("Test 2: Execute command", 'warning')
-        child.sendline('echo TEST_OUTPUT_12345')
+        # Test 6: Graceful exit
+        print(f"{YELLOW}Test 6: Test graceful exit{NC}")
+        master.sendline("exit")
+        # After exit, expect either EOF or session closed message
+        idx = master.expect([pexpect.EOF, r"Session .* closed", pexpect.TIMEOUT], timeout=5)
+        if idx in [0, 1]:
+            print(f"{GREEN}✓ Graceful exit working{NC}")
+        else:
+            print(f"{YELLOW}⚠ Exit completed but no clean EOF{NC}")
+        
+        # Verify slave connection logs show session closed
+        slave_log.close()
         time.sleep(1)
+        if poll_for_pattern("/tmp/goncat-pty-slave.log", r"Session with .* closed", timeout=3):
+            print(f"{GREEN}✓ Session closed on slave side{NC}")
+        else:
+            print(f"{YELLOW}⚠ Session close not logged on slave{NC}")
         
-        # Try to read available output
-        try:
-            output = child.read_nonblocking(size=2000, timeout=2)
-            if 'TEST_OUTPUT_12345' in output:
-                print_status("✓ Command execution and output works", 'success')
-            else:
-                print_status(f"⚠ Output unclear, got: {output[:100]}", 'warning')
-        except:
-            print_status("⚠ Could not read output", 'warning')
+        # Clean up
+        if slave_proc:
+            slave_proc.wait(timeout=3)
         
-        # Test 3: Ctrl+C
-        print_status("Test 3: Ctrl+C handling", 'warning')
-        child.sendline('sleep 60')
-        time.sleep(0.5)
-        child.sendcontrol('c')
-        time.sleep(0.5)
-        
-        # Try sending another command
-        child.sendline('echo AFTER_CTRLC')
-        time.sleep(1)
-        try:
-            output = child.read_nonblocking(size=2000, timeout=2)
-            if 'AFTER_CTRLC' in output:
-                print_status("✓ Ctrl+C works, shell responsive", 'success')
-            else:
-                print_status("⚠ Ctrl+C test unclear", 'warning')
-        except:
-            print_status("⚠ Ctrl+C test incomplete", 'warning')
-        
-        # Test 4: Exit
-        print_status("Test 4: Exit command", 'warning')
-        child.sendline('exit')
-        try:
-            child.expect(pexpect.EOF, timeout=5)
-            print_status("✓ Exit closes session", 'success')
-        except pexpect.TIMEOUT:
-            print_status("⚠ Exit may not have closed session cleanly", 'warning')
-        
-        print_status("✓ PTY mode validation passed", 'success')
+        print(f"{GREEN}✓ PTY mode validation PASSED{NC}")
         return 0
         
+    except pexpect.TIMEOUT as e:
+        print(f"{RED}✗ Timeout during PTY interaction{NC}")
+        print(f"Buffer: {master.buffer if master else 'N/A'}")
+        print(f"Before: {master.before if master else 'N/A'}")
+        return 1
     except Exception as e:
-        print_status(f"✗ Test failed: {e}", 'error')
+        print(f"{RED}✗ Error: {e}{NC}")
         import traceback
         traceback.print_exc()
         return 1
     finally:
         # Cleanup
-        master_proc.terminate()
-        try:
-            master_proc.wait(timeout=2)
-        except subprocess.TimeoutExpired:
-            master_proc.kill()
-        cleanup()
+        if master and master.isalive():
+            master.close(force=True)
+        if slave_proc:
+            try:
+                slave_proc.terminate()
+                slave_proc.wait(timeout=3)
+            except:
+                slave_proc.kill()
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     sys.exit(main())
