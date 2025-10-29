@@ -84,8 +84,10 @@ echo -e "${GREEN}✓ Connection with 5s timeout established successfully${NC}"
 # Let it run for a moment
 sleep 2
 
-# Clean close
-kill "$SLAVE_PID" 2>/dev/null
+# Clean close (slave may have already exited)
+if kill -0 "$SLAVE_PID" 2>/dev/null; then
+    kill "$SLAVE_PID" 2>/dev/null || true
+fi
 wait "$SLAVE_PID" 2>/dev/null || true
 SLAVE_PID=""
 
@@ -93,7 +95,9 @@ if poll_for_pattern /tmp/goncat-timeout-master1.log "Session with .* closed" 5; 
     echo -e "${GREEN}✓ Session closed normally${NC}"
 fi
 
-kill "$MASTER_PID" 2>/dev/null && wait "$MASTER_PID" 2>/dev/null || true
+# Clean up master process (may already be dead)
+kill "$MASTER_PID" 2>/dev/null || true
+wait "$MASTER_PID" 2>/dev/null || true
 MASTER_PID=""
 
 # Test 2: Timeout is detected when connection dies unexpectedly
