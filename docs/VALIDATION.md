@@ -68,7 +68,19 @@ bash docs/scripts/01-transport-tcp.sh udp
 
 The following scenarios are validated by these scripts:
 
-<!-- Scenarios will be added as scripts are created -->
+- **Scenario: TCP Transport**: Validates basic TCP connectivity and bidirectional data transfer. Tests both master-listen-slave-connect and slave-listen-master-connect modes. See `scripts/01-transport-tcp.sh`
+- **Scenario: WebSocket Transport**: Validates WebSocket protocol connection establishment and data transfer. See `scripts/02-transport-ws.sh`
+- **Scenario: WebSocket Secure Transport**: Validates WSS (WebSocket Secure) with TLS encryption. See `scripts/03-transport-wss.sh`
+- **Scenario: UDP/QUIC Transport**: Validates UDP transport with QUIC protocol for reliable streaming. See `scripts/04-transport-udp.sh`
+- **Scenario: TLS Encryption**: Validates --ssl flag enables TLS across transports. Tests both successful encryption and failure when SSL flags don't match. See `scripts/05-encryption-ssl.sh`
+- **Scenario: Mutual Authentication**: Validates --key flag provides password-based mutual authentication. Tests matching passwords (success), mismatched passwords (failure), and requirement for --ssl. See `scripts/06-authentication-key.sh`
+- **Scenario: Simple Command Execution**: Validates --exec flag executes commands correctly without PTY. See `scripts/07-exec-simple.sh`
+- **Scenario: PTY Mode**: Validates --pty flag for interactive pseudo-terminal support. Detects TTY availability and marks unsupported if not available. See `scripts/08-exec-pty.sh`
+- **Scenario: Local TCP Port Forwarding**: Validates -L flag forwards local TCP ports through tunnel. Tests with HTTP server and curl. See `scripts/09-portfwd-local-tcp.sh`
+- **Scenario: Connection Close Behavior**: Validates that listen mode continues after connection closes and can accept new connections. See `scripts/16-behavior-connect-close.sh`
+- **Scenario: Session Logging**: Validates --log flag creates session log files. See `scripts/20-feature-logging.sh`
+
+<!-- Additional scenarios will be added as more scripts are implemented -->
 
 ## Environment Requirements
 
