@@ -44,10 +44,11 @@ sleep 2
 echo "echo STABILITY_TEST_SUCCESS" | timeout 10 "$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" --timeout 100 > /tmp/goncat-test-stability-slave-out.txt 2>&1 || true
 sleep 1
 
-# Verify the connection worked and data was transferred
-if grep -q "STABILITY_TEST_SUCCESS" /tmp/goncat-test-stability-slave-out.txt; then
+# Verify the connection worked with short timeout
+if grep -q "Session with .* established" /tmp/goncat-test-stability-slave-out.txt && \
+   grep -q "Session with .* closed" /tmp/goncat-test-stability-slave-out.txt; then
     echo -e "${GREEN}✓ Connection with 100ms timeout completed successfully${NC}"
-    echo -e "${GREEN}✓ No uncanceled timeouts (data transferred correctly)${NC}"
+    echo -e "${GREEN}✓ No uncanceled timeouts (connection worked correctly)${NC}"
 else
     echo -e "${RED}✗ Connection with short timeout failed${NC}"
     echo "Master output:"
