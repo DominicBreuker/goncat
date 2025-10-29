@@ -1,7 +1,7 @@
 #!/bin/bash
 # Validation Script: TCP Transport
-# Purpose: Verify tcp transport works for master-listen and slave-connect modes
-# Expected: Data transfers successfully
+# Purpose: Verify tcp transport with proper data flow validation
+# Data Flow: Master stdin → slave executes in shell → output to master stdout
 # Dependencies: bash, goncat binary
 
 set -euo pipefail
@@ -13,67 +13,111 @@ cd "$REPO_ROOT"
 # Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Track PIDs for cleanup
+MASTER_PID=""
+SLAVE_PID=""
+
 cleanup() {
-    pkill -9 goncat.elf 2>/dev/null || true
-    rm -f /tmp/goncat-test-tcp-*
+    [ -n "$MASTER_PID" ] && kill "$MASTER_PID" 2>/dev/null && wait "$MASTER_PID" 2>/dev/null
+    [ -n "$SLAVE_PID" ] && kill "$SLAVE_PID" 2>/dev/null && wait "$SLAVE_PID" 2>/dev/null
+    rm -f /tmp/goncat-tcp-*
 }
 trap cleanup EXIT
+
+# Helper function: Poll for pattern in file
+poll_for_pattern() {
+    local file="$1"
+    local pattern="$2"
+    local timeout="${3:-10}"
+    local start=$(date +%s)
+    while true; do
+        if [ -f "$file" ] && grep -qE "$pattern" "$file" 2>/dev/null; then
+            return 0
+        fi
+        local now=$(date +%s)
+        if [ $((now - start)) -ge "$timeout" ]; then
+            return 1
+        fi
+        sleep 0.1
+    done
+}
 
 if [ ! -f "$REPO_ROOT/dist/goncat.elf" ]; then
     echo -e "${YELLOW}Building goncat binary...${NC}"
     make build-linux
 fi
 
-echo -e "${GREEN}Starting validation: TCP Transport${NC}"
+echo -e "${GREEN}=== TCP Transport Validation ===${NC}"
 
 TRANSPORT="tcp"
-PORT_BASE=12000
+PORT=12001
+TOKEN="TCP_$$$RANDOM"
 
-# Test: Master listen, slave connect
-echo -e "${YELLOW}Test: Master listen (${TRANSPORT}), slave connect${NC}"
-MASTER_PORT=$((PORT_BASE + 1))
-
-# Start master with shell
-"$REPO_ROOT/dist/goncat.elf" master listen "${TRANSPORT}://*:${MASTER_PORT}" --exec /bin/sh > /tmp/goncat-test-tcp-master-out.txt 2>&1 &
+# Start master with --exec (shell will run on slave side)
+(echo "echo $TOKEN"; sleep 1; echo "exit") | "$REPO_ROOT/dist/goncat.elf" master listen "${TRANSPORT}://*:${PORT}" --exec /bin/sh > /tmp/goncat-tcp-master.log 2>&1 &
 MASTER_PID=$!
-sleep 2
 
-# Verify master is listening
-if ! grep -q "Listening on" /tmp/goncat-test-tcp-master-out.txt; then
-    echo -e "${RED}✗ Master not listening${NC}"
-    cat /tmp/goncat-test-tcp-master-out.txt
+# Wait for master to start listening
+if ! poll_for_pattern /tmp/goncat-tcp-master.log "Listening on" 5; then
+    echo -e "${RED}✗ Master failed to start${NC}"
+    cat /tmp/goncat-tcp-master.log
+    exit 1
+fi
+echo -e "${GREEN}✓ Master listening${NC}"
+
+# Connect slave
+"$REPO_ROOT/dist/goncat.elf" slave connect "${TRANSPORT}://localhost:${PORT}" > /tmp/goncat-tcp-slave.log 2>&1 &
+SLAVE_PID=$!
+
+# Wait for connection establishment on both sides
+if ! poll_for_pattern /tmp/goncat-tcp-master.log "Session with .* established" 10; then
+    echo -e "${RED}✗ Connection not established on master${NC}"
+    cat /tmp/goncat-tcp-master.log
     exit 1
 fi
 
-# Connect slave and send commands
-(echo "echo TCP_TEST_SUCCESS"; sleep 0.5; echo "exit") | timeout 15 "$REPO_ROOT/dist/goncat.elf" slave connect "${TRANSPORT}://localhost:${MASTER_PORT}" > /tmp/goncat-test-tcp-slave-out.txt 2>&1 || true
-sleep 1
+if ! poll_for_pattern /tmp/goncat-tcp-slave.log "Session with .* established" 10; then
+    echo -e "${RED}✗ Connection not established on slave${NC}"
+    cat /tmp/goncat-tcp-slave.log
+    exit 1
+fi
+echo -e "${GREEN}✓ Connection established${NC}"
 
-# Verify session established
-if ! grep -q "Session with .* established" /tmp/goncat-test-tcp-slave-out.txt; then
-    echo -e "${RED}✗ Connection not established${NC}"
-    cat /tmp/goncat-test-tcp-slave-out.txt
+# Wait for command execution and data flow
+# Token should appear in master stdout (slave executes, sends back)
+if ! poll_for_pattern /tmp/goncat-tcp-master.log "$TOKEN" 10; then
+    echo -e "${RED}✗ Data token not found in master output${NC}"
+    echo "Expected: $TOKEN"
+    echo "Master output:"
+    cat /tmp/goncat-tcp-master.log
+    exit 1
+fi
+echo -e "${GREEN}✓ Data token verified (data channel working)${NC}"
+
+# Wait for master to close session
+wait "$MASTER_PID"
+MASTER_EXIT=$?
+
+# Verify session closed on both sides
+if ! grep -qE "Session with .* closed" /tmp/goncat-tcp-master.log; then
+    echo -e "${RED}✗ Session close not logged on master${NC}"
     exit 1
 fi
 
-echo -e "${GREEN}✓ Connection established successfully${NC}"
-
-# Verify data transfer
-if grep -q "TCP_TEST_SUCCESS" /tmp/goncat-test-tcp-slave-out.txt; then
-    echo -e "${GREEN}✓ Data received successfully through tcp tunnel${NC}"
-else
-    echo -e "${YELLOW}⚠ Data transfer verification incomplete${NC}"
+if ! grep -qE "Session with .* closed" /tmp/goncat-tcp-slave.log; then
+    echo -e "${RED}✗ Session close not logged on slave${NC}"
+    exit 1
 fi
+echo -e "${GREEN}✓ Session closed on both sides${NC}"
 
-# Verify session closed
-if grep -q "Session with .* closed" /tmp/goncat-test-tcp-slave-out.txt; then
-    echo -e "${GREEN}✓ Session closed gracefully${NC}"
+# Master in listen mode should exit after processing the piped input (exit command)
+if [ "$MASTER_EXIT" -ne 0 ]; then
+    echo -e "${RED}✗ Master exit code: $MASTER_EXIT${NC}"
+    exit 1
 fi
+echo -e "${GREEN}✓ Master exited cleanly${NC}"
 
-kill $MASTER_PID 2>/dev/null || true
-
-echo -e "${GREEN}✓ TCP transport validation passed${NC}"
+echo -e "${GREEN}✓ TCP transport validation PASSED${NC}"
 exit 0
