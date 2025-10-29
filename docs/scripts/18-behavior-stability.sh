@@ -36,13 +36,12 @@ echo -e "${YELLOW}Test: Connection works with 100ms timeout (no uncanceled timeo
 MASTER_PORT=$((PORT_BASE + 1))
 
 # Start master with very short timeout (100ms)
-# Use echo command which completes quickly but validates the connection works
-"$REPO_ROOT/dist/goncat.elf" master listen "tcp://*:${MASTER_PORT}" --timeout 100 --exec 'echo STABILITY_TEST_SUCCESS' > /tmp/goncat-test-stability-master-out.txt 2>&1 &
+"$REPO_ROOT/dist/goncat.elf" master listen "tcp://*:${MASTER_PORT}" --timeout 100 --exec /bin/sh > /tmp/goncat-test-stability-master-out.txt 2>&1 &
 MASTER_PID=$!
 sleep 2
 
-# Connect slave with same short timeout
-timeout 10 "$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" --timeout 100 > /tmp/goncat-test-stability-slave-out.txt 2>&1 || true
+# Connect slave with same short timeout and send command
+echo "echo STABILITY_TEST_SUCCESS" | timeout 10 "$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" --timeout 100 > /tmp/goncat-test-stability-slave-out.txt 2>&1 || true
 sleep 1
 
 # Verify the connection worked and data was transferred

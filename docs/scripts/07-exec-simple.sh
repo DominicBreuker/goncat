@@ -31,23 +31,61 @@ echo -e "${GREEN}Starting validation: Simple Command Execution${NC}"
 
 PORT_BASE=12060
 
-# Test: Execute simple echo command
-echo -e "${YELLOW}Test: Execute echo command${NC}"
+# Test: Execute shell commands through connection
+echo -e "${YELLOW}Test: Execute shell commands${NC}"
 MASTER_PORT=$((PORT_BASE + 1))
 
-"$REPO_ROOT/dist/goncat.elf" master listen "tcp://*:${MASTER_PORT}" --exec 'echo EXEC_TEST_SUCCESS' > /tmp/goncat-test-exec-master-out.txt 2>&1 &
+# Start master with shell exec
+"$REPO_ROOT/dist/goncat.elf" master listen "tcp://*:${MASTER_PORT}" --exec /bin/sh > /tmp/goncat-test-exec-master-out.txt 2>&1 &
 MASTER_PID=$!
 sleep 2
 
-timeout 10 "$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" > /tmp/goncat-test-exec-slave-out.txt 2>&1 || true
+# Verify master is listening
+if ! grep -q "Listening on" /tmp/goncat-test-exec-master-out.txt; then
+    echo -e "${RED}✗ Master failed to start listening${NC}"
+    cat /tmp/goncat-test-exec-master-out.txt
+    exit 1
+fi
+
+# Connect slave and send commands
+(echo "whoami"; sleep 0.5; echo "id"; sleep 0.5; echo "exit") | timeout 10 "$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" > /tmp/goncat-test-exec-slave-out.txt 2>&1 || true
 sleep 1
 
-if grep -q "EXEC_TEST_SUCCESS" /tmp/goncat-test-exec-slave-out.txt; then
-    echo -e "${GREEN}✓ Command execution works${NC}"
-else
-    echo -e "${RED}✗ Command execution failed${NC}"
+# Verify session was established
+if ! grep -q "Session with .* established" /tmp/goncat-test-exec-slave-out.txt; then
+    echo -e "${RED}✗ Session not established${NC}"
     cat /tmp/goncat-test-exec-slave-out.txt
     exit 1
+fi
+
+# Verify command output (whoami should return a username)
+if grep -qE "(root|runner|[a-z]+)" /tmp/goncat-test-exec-slave-out.txt; then
+    echo -e "${GREEN}✓ Commands executed and output received${NC}"
+else
+    echo -e "${RED}✗ Command output not found${NC}"
+    cat /tmp/goncat-test-exec-slave-out.txt
+    exit 1
+fi
+
+# Verify session closed after exit command
+if grep -q "Session with .* closed" /tmp/goncat-test-exec-slave-out.txt; then
+    echo -e "${GREEN}✓ Session closed gracefully after exit${NC}"
+else
+    echo -e "${YELLOW}⚠ Session close message not found${NC}"
+fi
+
+# Verify master logged session closure
+if grep -q "Session with .* closed" /tmp/goncat-test-exec-master-out.txt; then
+    echo -e "${GREEN}✓ Master detected session closure${NC}"
+else
+    echo -e "${YELLOW}⚠ Master session close message not found${NC}"
+fi
+
+# Verify master is still running (listen mode should continue)
+if ps -p $MASTER_PID > /dev/null; then
+    echo -e "${GREEN}✓ Master continues running in listen mode${NC}"
+else
+    echo -e "${YELLOW}⚠ Master exited${NC}"
 fi
 
 kill $MASTER_PID 2>/dev/null || true

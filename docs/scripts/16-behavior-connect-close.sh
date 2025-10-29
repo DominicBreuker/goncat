@@ -35,31 +35,99 @@ PORT_BASE=12090
 echo -e "${YELLOW}Test 1: Listen mode continues after connection closes${NC}"
 MASTER_PORT=$((PORT_BASE + 1))
 
-"$REPO_ROOT/dist/goncat.elf" master listen "tcp://*:${MASTER_PORT}" --exec 'echo CLOSE_TEST' > /tmp/goncat-test-behavior-master-out.txt 2>&1 &
+# Start master with shell
+"$REPO_ROOT/dist/goncat.elf" master listen "tcp://*:${MASTER_PORT}" --exec /bin/sh > /tmp/goncat-test-behavior-master-out.txt 2>&1 &
 MASTER_PID=$!
 sleep 2
 
-# Connect and immediately exit
-timeout 5 "$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" > /tmp/goncat-test-behavior-slave1-out.txt 2>&1 || true
-sleep 2
-
-# Check master is still running
-if ps -p $MASTER_PID > /dev/null; then
-    echo -e "${GREEN}✓ Listen mode continues after connection closes${NC}"
-else
-    echo -e "${RED}✗ Listen mode should continue after connection closes${NC}"
+# Verify master is listening
+if ! grep -q "Listening on" /tmp/goncat-test-behavior-master-out.txt; then
+    echo -e "${RED}✗ Master not listening${NC}"
     cat /tmp/goncat-test-behavior-master-out.txt
     exit 1
 fi
 
-# Connect again to verify it still works
-timeout 5 "$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" > /tmp/goncat-test-behavior-slave2-out.txt 2>&1 || true
+# Connect slave and send exit command to close connection
+echo "exit" | timeout 5 "$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" > /tmp/goncat-test-behavior-slave1-out.txt 2>&1 || true
 sleep 1
 
-if grep -q "CLOSE_TEST" /tmp/goncat-test-behavior-slave2-out.txt; then
+# Verify session was established and closed on slave side
+if ! grep -q "Session with .* established" /tmp/goncat-test-behavior-slave1-out.txt; then
+    echo -e "${RED}✗ First connection not established${NC}"
+    cat /tmp/goncat-test-behavior-slave1-out.txt
+    exit 1
+fi
+
+if ! grep -q "Session with .* closed" /tmp/goncat-test-behavior-slave1-out.txt; then
+    echo -e "${YELLOW}⚠ Session close message not found on slave${NC}"
+fi
+
+# Verify master logged the connection and closure
+if ! grep -q "Session with .* established" /tmp/goncat-test-behavior-master-out.txt; then
+    echo -e "${RED}✗ Master didn't log session establishment${NC}"
+    exit 1
+fi
+
+if ! grep -q "Session with .* closed" /tmp/goncat-test-behavior-master-out.txt; then
+    echo -e "${RED}✗ Master didn't log session closure${NC}"
+    exit 1
+fi
+
+# Check master is still running
+if ! ps -p $MASTER_PID > /dev/null; then
+    echo -e "${RED}✗ Listen mode should continue after connection closes${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✓ Listen mode continues after connection closes${NC}"
+
+# Test 2: Connect again to verify it still works
+echo -e "${YELLOW}Test 2: Second connection works${NC}"
+echo "whoami" | timeout 5 "$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" > /tmp/goncat-test-behavior-slave2-out.txt 2>&1 || true
+sleep 1
+
+# Verify second connection established
+if grep -q "Session with .* established" /tmp/goncat-test-behavior-slave2-out.txt; then
     echo -e "${GREEN}✓ Listen mode accepted second connection${NC}"
 else
-    echo -e "${YELLOW}⚠ Second connection incomplete${NC}"
+    echo -e "${RED}✗ Second connection failed${NC}"
+    cat /tmp/goncat-test-behavior-slave2-out.txt
+    exit 1
+fi
+
+# Test 3: Slave shutdown via SIGINT
+echo -e "${YELLOW}Test 3: Slave graceful shutdown${NC}"
+
+# Start a new slave connection in background
+"$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" > /tmp/goncat-test-behavior-slave3-out.txt 2>&1 &
+SLAVE_PID=$!
+sleep 2
+
+# Verify connection established
+if ! grep -q "Session with .* established" /tmp/goncat-test-behavior-slave3-out.txt; then
+    echo -e "${RED}✗ Third connection not established${NC}"
+    exit 1
+fi
+
+# Send SIGINT to slave
+kill -INT $SLAVE_PID 2>/dev/null || true
+sleep 2
+
+# Verify slave exited
+if ps -p $SLAVE_PID > /dev/null 2>&1; then
+    echo -e "${RED}✗ Slave should have exited after SIGINT${NC}"
+    kill -9 $SLAVE_PID 2>/dev/null || true
+    exit 1
+fi
+
+echo -e "${GREEN}✓ Slave shut down gracefully${NC}"
+
+# Verify master detected the closure
+sleep 1
+if tail -5 /tmp/goncat-test-behavior-master-out.txt | grep -q "Session with .* closed"; then
+    echo -e "${GREEN}✓ Master detected slave shutdown${NC}"
+else
+    echo -e "${YELLOW}⚠ Master may not have logged the closure${NC}"
 fi
 
 kill $MASTER_PID 2>/dev/null || true

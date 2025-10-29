@@ -37,12 +37,12 @@ echo -e "${YELLOW}Test: Verify master detects when slave connection closes${NC}"
 MASTER_PORT=$((PORT_BASE + 1))
 
 # Start master
-"$REPO_ROOT/dist/goncat.elf" master listen "tcp://*:${MASTER_PORT}" --exec 'echo SHUTDOWN_TEST' > /tmp/goncat-test-shutdown-master-out.txt 2>&1 &
+"$REPO_ROOT/dist/goncat.elf" master listen "tcp://*:${MASTER_PORT}" --exec /bin/sh > /tmp/goncat-test-shutdown-master-out.txt 2>&1 &
 MASTER_PID=$!
 sleep 2
 
-# Connect slave (which will exit after getting output)
-timeout 10 "$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" > /tmp/goncat-test-shutdown-slave-out.txt 2>&1 || true
+# Connect slave and send exit command
+echo "exit" | timeout 10 "$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" > /tmp/goncat-test-shutdown-slave-out.txt 2>&1 || true
 sleep 2
 
 # Verify master logged session closure

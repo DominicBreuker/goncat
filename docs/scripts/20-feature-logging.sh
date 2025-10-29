@@ -38,11 +38,11 @@ rm -f "$LOG_FILE"
 echo -e "${YELLOW}Test: Create session log${NC}"
 MASTER_PORT=$((PORT_BASE + 1))
 
-"$REPO_ROOT/dist/goncat.elf" master listen "tcp://*:${MASTER_PORT}" --exec 'echo LOG_TEST_DATA' --log "$LOG_FILE" > /tmp/goncat-test-log-master-out.txt 2>&1 &
+"$REPO_ROOT/dist/goncat.elf" master listen "tcp://*:${MASTER_PORT}" --exec /bin/sh --log "$LOG_FILE" > /tmp/goncat-test-log-master-out.txt 2>&1 &
 MASTER_PID=$!
 sleep 2
 
-timeout 10 "$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" > /tmp/goncat-test-log-slave-out.txt 2>&1 || true
+echo "echo LOG_TEST_DATA" | timeout 10 "$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" > /tmp/goncat-test-log-slave-out.txt 2>&1 || true
 sleep 2
 
 kill $MASTER_PID 2>/dev/null || true
