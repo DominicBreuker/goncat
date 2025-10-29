@@ -1,7 +1,7 @@
 #!/bin/bash
 # Validation Script: Connection Stability
-# Purpose: Verify connections work correctly with short timeout
-# Expected: Connection establishes and completes successfully with short timeout
+# Purpose: Verify connections are stable with short timeout
+# Tests: Multiple connections succeed with 100ms timeout (no uncanceled timeouts)
 # Dependencies: bash, goncat binary
 
 set -euo pipefail
@@ -16,54 +16,108 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Track PIDs for cleanup
+MASTER_PID=""
+SLAVE_PID=""
+
 cleanup() {
-    pkill -9 goncat.elf 2>/dev/null || true
-    rm -f /tmp/goncat-test-stability-*
+    [ -n "$MASTER_PID" ] && kill "$MASTER_PID" 2>/dev/null && wait "$MASTER_PID" 2>/dev/null || true
+    [ -n "$SLAVE_PID" ] && kill "$SLAVE_PID" 2>/dev/null && wait "$SLAVE_PID" 2>/dev/null || true
+    rm -f /tmp/goncat-stability-*
 }
 trap cleanup EXIT
+
+# Helper function: Poll for pattern in file
+poll_for_pattern() {
+    local file="$1"
+    local pattern="$2"
+    local timeout="${3:-10}"
+    local start=$(date +%s)
+    while true; do
+        if [ -f "$file" ] && grep -qE "$pattern" "$file" 2>/dev/null; then
+            return 0
+        fi
+        local now=$(date +%s)
+        if [ $((now - start)) -ge "$timeout" ]; then
+            return 1
+        fi
+        sleep 0.1
+    done
+}
 
 if [ ! -f "$REPO_ROOT/dist/goncat.elf" ]; then
     echo -e "${YELLOW}Building goncat binary...${NC}"
     make build-linux
 fi
 
-echo -e "${GREEN}Starting validation: Connection Stability${NC}"
+echo -e "${GREEN}=== Connection Stability Validation ===${NC}"
 
-PORT_BASE=12100
+MASTER_PORT=12100
 
-# Test: Connection works correctly with short timeout
-echo -e "${YELLOW}Test: Connection works with 100ms timeout (no uncanceled timeouts)${NC}"
-MASTER_PORT=$((PORT_BASE + 1))
+# Test: Multiple connections work with very short timeout (100ms)
+echo -e "${YELLOW}Test: Multiple connections succeed with 100ms timeout (stability check)${NC}"
 
-# Start master with very short timeout (100ms)
-"$REPO_ROOT/dist/goncat.elf" master listen "tcp://*:${MASTER_PORT}" --timeout 100 --exec /bin/sh > /tmp/goncat-test-stability-master-out.txt 2>&1 &
+"$REPO_ROOT/dist/goncat.elf" master listen "tcp://*:${MASTER_PORT}" --timeout 100 --exec /bin/sh > /tmp/goncat-stability-master.log 2>&1 &
 MASTER_PID=$!
-sleep 2
 
-# Connect slave with same short timeout and send command
-echo "echo STABILITY_TEST_SUCCESS" | timeout 10 "$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" --timeout 100 > /tmp/goncat-test-stability-slave-out.txt 2>&1 || true
-sleep 1
+if ! poll_for_pattern /tmp/goncat-stability-master.log "Listening on" 5; then
+    echo -e "${RED}✗ Master failed to start${NC}"
+    cat /tmp/goncat-stability-master.log
+    exit 1
+fi
+echo -e "${GREEN}✓ Master listening with 100ms timeout${NC}"
 
-# Verify the connection worked with short timeout
-if grep -q "Session with .* established" /tmp/goncat-test-stability-slave-out.txt && \
-   grep -q "Session with .* closed" /tmp/goncat-test-stability-slave-out.txt; then
-    echo -e "${GREEN}✓ Connection with 100ms timeout completed successfully${NC}"
-    echo -e "${GREEN}✓ No uncanceled timeouts (connection worked correctly)${NC}"
+# Connection 1
+"$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" --timeout 100 > /tmp/goncat-stability-slave1.log 2>&1 &
+SLAVE_PID=$!
+
+if ! poll_for_pattern /tmp/goncat-stability-master.log "Session with .* established" 10; then
+    echo -e "${RED}✗ First connection failed to establish${NC}"
+    cat /tmp/goncat-stability-master.log
+    exit 1
+fi
+echo -e "${GREEN}✓ First connection established with 100ms timeout${NC}"
+
+# Keep connection alive for 3 seconds (much longer than 100ms timeout)
+sleep 3
+
+# Verify connection is still up (no premature timeout)
+if kill -0 "$SLAVE_PID" 2>/dev/null; then
+    echo -e "${GREEN}✓ Connection stable for 3 seconds (no false timeout)${NC}"
 else
-    echo -e "${RED}✗ Connection with short timeout failed${NC}"
-    echo "Master output:"
-    cat /tmp/goncat-test-stability-master-out.txt
-    echo "Slave output:"
-    cat /tmp/goncat-test-stability-slave-out.txt
+    echo -e "${RED}✗ Connection died prematurely (false timeout)${NC}"
     exit 1
 fi
 
-# Verify connection was actually established (not just failed gracefully)
-if grep -q "Session with .* established" /tmp/goncat-test-stability-slave-out.txt; then
-    echo -e "${GREEN}✓ Connection establishment confirmed in logs${NC}"
+# Clean close
+kill "$SLAVE_PID" 2>/dev/null
+wait "$SLAVE_PID" 2>/dev/null || true
+SLAVE_PID=""
+
+if poll_for_pattern /tmp/goncat-stability-master.log "Session with .* closed" 5; then
+    echo -e "${GREEN}✓ First session closed cleanly${NC}"
 fi
 
-kill $MASTER_PID 2>/dev/null || true
+# Connection 2 - verify listener still works
+"$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" --timeout 100 > /tmp/goncat-stability-slave2.log 2>&1 &
+SLAVE_PID=$!
 
-echo -e "${GREEN}✓ Connection stability validation passed${NC}"
+# Count sessions in log (should be 2 now)
+sleep 2
+SESSION_COUNT=$(grep -c "Session with .* established" /tmp/goncat-stability-master.log || echo 0)
+if [ "$SESSION_COUNT" -ge 2 ]; then
+    echo -e "${GREEN}✓ Second connection also succeeded with 100ms timeout${NC}"
+    echo -e "${GREEN}✓ No uncanceled timeouts detected (connections are stable)${NC}"
+else
+    echo -e "${RED}✗ Second connection failed${NC}"
+    exit 1
+fi
+
+kill "$SLAVE_PID" 2>/dev/null && wait "$SLAVE_PID" 2>/dev/null || true
+SLAVE_PID=""
+
+kill "$MASTER_PID" 2>/dev/null && wait "$MASTER_PID" 2>/dev/null || true
+MASTER_PID=""
+
+echo -e "${GREEN}✓ Connection stability validation PASSED${NC}"
 exit 0
