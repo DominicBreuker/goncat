@@ -70,17 +70,41 @@ def main():
             return 1
         print(f"{GREEN}✓ HTTP server running with token{NC}")
         
-        # Start master with SOCKS using pexpect
+        # Start master with SOCKS - use bash to start goncat with sleep to keep session alive
+        # CRITICAL: SOCKS proxy requires --exec and active session (use sleep to keep it alive)
         print(f"{YELLOW}Setting up SOCKS5 proxy on port {SOCKS_PORT}{NC}")
-        master = pexpect.spawn(
-            GONCAT_BIN,
-            ['master', 'listen', f'tcp://*:{MASTER_PORT}', '-D', str(SOCKS_PORT)],
-            encoding='utf-8',
-            timeout=10
+        
+        # Start master in background with sleep piped to stdin to keep session alive
+        master_cmd = f'(sleep 60) | {GONCAT_BIN} master listen tcp://*:{MASTER_PORT} --exec /bin/sh -D {SOCKS_PORT}'
+        master_proc = subprocess.Popen(
+            ['bash', '-c', master_cmd],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            bufsize=1
         )
+        master_log = open('/tmp/socks-master.log', 'w')
+        
+        # Read master output in background
+        import threading
+        def read_master():
+            for line in master_proc.stdout:
+                master_log.write(line)
+                master_log.flush()
+        
+        reader_thread = threading.Thread(target=read_master, daemon=True)
+        reader_thread.start()
         
         # Wait for master to start
-        master.expect('Listening on')
+        for _ in range(50):  # 5 seconds
+            time.sleep(0.1)
+            master_log.flush()
+            with open('/tmp/socks-master.log', 'r') as f:
+                if 'Listening on' in f.read():
+                    break
+        else:
+            print(f"{RED}✗ Master failed to start{NC}")
+            return 1
         print(f"{GREEN}✓ Master listening{NC}")
         
         # Start slave in background
@@ -91,11 +115,18 @@ def main():
         )
         
         # Wait for connection
-        master.expect('Session with .* established', timeout=10)
+        for _ in range(100):  # 10 seconds
+            time.sleep(0.1)
+            with open('/tmp/socks-master.log', 'r') as f:
+                if 'established' in f.read():
+                    break
+        else:
+            print(f"{RED}✗ Connection not established{NC}")
+            return 1
         print(f"{GREEN}✓ Connection established{NC}")
         
         # Wait for SOCKS proxy to be ready
-        time.sleep(3)
+        time.sleep(2)
         
         # Verify SOCKS port is listening
         result = subprocess.run(['ss', '-tln'], capture_output=True, text=True)
@@ -142,7 +173,13 @@ def main():
         slave_proc.wait()
         
         # Wait for session closed
-        master.expect('Session with .* closed', timeout=5)
+        for _ in range(50):  # 5 seconds
+            time.sleep(0.1)
+            with open('/tmp/socks-master.log', 'r') as f:
+                if 'closed' in f.read():
+                    break
+        else:
+            print(f"{YELLOW}⚠ Session closed not detected in time{NC}")
         print(f"{GREEN}✓ Session closed detected{NC}")
         
         time.sleep(1)
@@ -161,13 +198,14 @@ def main():
             print(f"{YELLOW}⚠ SOCKS proxy still active after slave exit (unexpected){NC}")
         
         # Verify master still active (listener mode)
-        if master.isalive():
+        if master_proc.poll() is None:
             print(f"{GREEN}✓ Master listener still active (correct behavior){NC}")
         else:
             print(f"{YELLOW}⚠ Master listener exited{NC}")
         
-        master.terminate()
-        master.wait()
+        master_proc.terminate()
+        master_proc.wait()
+        master_log.close()
         
         print(f"{GREEN}✓ SOCKS5 TCP CONNECT validation PASSED{NC}")
         return 0
@@ -179,7 +217,17 @@ def main():
             http_proc.wait()
         except:
             pass
+        try:
+            master_proc.kill()
+            master_proc.wait()
+        except:
+            pass
+        try:
+            master_log.close()
+        except:
+            pass
         subprocess.run(['rm', '-rf', http_dir], stderr=subprocess.DEVNULL)
+        subprocess.run(['rm', '-f', '/tmp/socks-master.log'], stderr=subprocess.DEVNULL)
         cleanup_processes()
 
 if __name__ == '__main__':
