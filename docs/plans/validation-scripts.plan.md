@@ -15,7 +15,7 @@ Scripts will be organized in `docs/scripts/` with an overview document `docs/VAL
 
 ## Implementation plan
 
-- [ ] Step 1: Create validation documentation structure
+- [X] Step 1: Create validation documentation structure
   - **Task**: Set up the validation documentation and scripts directory structure
   - **Files**: 
     - `docs/VALIDATION.md`: Create overview document with:
@@ -28,8 +28,9 @@ Scripts will be organized in `docs/scripts/` with an overview document `docs/VAL
     - `docs/scripts/`: Create directory for validation scripts
   - **Dependencies**: None
   - **Definition of done**: Directory structure exists, VALIDATION.md has header and structure ready for scenario additions
+  - **Completed**: Created docs/VALIDATION.md with agent-compatible header, grep hint, usage instructions, troubleshooting section. Created docs/scripts/ and docs/scripts/helpers/ directories.
 
-- [ ] Step 2: Create transport verification scripts
+- [X] Step 2: Create transport verification scripts
   - **Task**: Create validation scripts for each transport protocol (tcp, ws, wss, udp)
   - **Files**:
     - `docs/scripts/01-transport-tcp.sh`: Validate basic TCP transport
@@ -68,6 +69,7 @@ Scripts will be organized in `docs/scripts/` with an overview document `docs/VAL
     ```
   - **Dependencies**: Step 1 complete
   - **Definition of done**: 4 transport scripts exist, each validates basic connectivity and bidirectional data exchange for its protocol
+  - **Completed**: Created all 4 transport validation scripts. Each script verifies connection establishment and data transfer. TCP script tests both master-listen and slave-listen modes. All scripts tested and passing.
 
 - [ ] Step 3: Create encryption and authentication scripts
   - **Task**: Validate --ssl and --key functionality across transports
