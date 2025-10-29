@@ -50,6 +50,11 @@ if [ ! -f "$REPO_ROOT/dist/goncat.elf" ]; then
     make build-linux
 fi
 
+# Ensure clean state - kill any lingering processes from previous tests
+pkill -9 -f "goncat.elf.*12120" 2>/dev/null || true
+pkill -9 -f "goncat.elf.*12121" 2>/dev/null || true
+sleep 1
+
 echo -e "${GREEN}=== Timeout Behavior Validation ===${NC}"
 
 MASTER_PORT=12120

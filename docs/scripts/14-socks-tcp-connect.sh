@@ -53,6 +53,11 @@ if [ ! -f "$REPO_ROOT/dist/goncat.elf" ]; then
     make build-linux
 fi
 
+# Ensure clean state - kill any lingering processes from previous tests
+pkill -9 -f "goncat.elf.*1080" 2>/dev/null || true
+pkill -9 -f "python3.*9980" 2>/dev/null || true
+sleep 1
+
 echo -e "${GREEN}=== SOCKS5 TCP CONNECT Validation ===${NC}"
 
 HTTP_PORT=9980
@@ -103,11 +108,20 @@ fi
 echo -e "${GREEN}✓ Connection established${NC}"
 
 # Give SOCKS proxy a moment to be ready
-sleep 2
+sleep 3
+
+# Verify SOCKS port is actually listening
+if ! ss -tln | grep -q ":${SOCKS_PORT} "; then
+    echo -e "${RED}✗ SOCKS port ${SOCKS_PORT} not listening${NC}"
+    echo "Master log:"
+    cat /tmp/goncat-socks-master.log
+    exit 1
+fi
+echo -e "${GREEN}✓ SOCKS proxy port listening${NC}"
 
 # Test 1: Fetch through SOCKS proxy and verify token (decisive test)
 echo -e "${YELLOW}Test 1: Fetch through SOCKS proxy and verify token${NC}"
-RESULT=$(timeout 5 curl -s --socks5 "127.0.0.1:${SOCKS_PORT}" "http://localhost:${HTTP_PORT}/" 2>&1)
+RESULT=$(timeout 10 curl -s --socks5 "127.0.0.1:${SOCKS_PORT}" "http://localhost:${HTTP_PORT}/" 2>&1)
 if echo "$RESULT" | grep -q "$TOKEN"; then
     echo -e "${GREEN}✓ Token verified (data went through SOCKS proxy)${NC}"
 else
