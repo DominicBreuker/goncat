@@ -1,7 +1,10 @@
 #!/bin/bash
-# Validation Script: Mutual Authentication
-# Purpose: Verify --key flag provides mutual TLS authentication
-# Expected: Connection succeeds with matching passwords, fails with mismatched
+# Validation Script: Mutual Authentication with --key
+# Purpose: Verify --key flag with mutual TLS authentication
+# Test Matrix:
+#   1. --ssl --key matching → success + data token verification
+#   2. --ssl with wrong --key → auth failure
+#   3. --key without --ssl → CLI error
 # Dependencies: bash, goncat binary
 
 set -euo pipefail
@@ -10,74 +13,148 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 cd "$REPO_ROOT"
 
+# Colors for output
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-NC='\033[0m'
+NC='\033[0m' # No Color
+
+# Track PIDs for cleanup
+MASTER_PID=""
+SLAVE_PID=""
 
 cleanup() {
-    pkill -9 goncat.elf 2>/dev/null || true
-    rm -f /tmp/goncat-test-auth-*
+    [ -n "$MASTER_PID" ] && kill "$MASTER_PID" 2>/dev/null && wait "$MASTER_PID" 2>/dev/null
+    [ -n "$SLAVE_PID" ] && kill "$SLAVE_PID" 2>/dev/null && wait "$SLAVE_PID" 2>/dev/null
+    rm -f /tmp/goncat-auth-*
 }
 trap cleanup EXIT
+
+# Helper function: Poll for pattern in file
+poll_for_pattern() {
+    local file="$1"
+    local pattern="$2"
+    local timeout="${3:-10}"
+    local start=$(date +%s)
+    while true; do
+        if [ -f "$file" ] && grep -qE "$pattern" "$file" 2>/dev/null; then
+            return 0
+        fi
+        local now=$(date +%s)
+        if [ $((now - start)) -ge "$timeout" ]; then
+            return 1
+        fi
+        sleep 0.1
+    done
+}
 
 if [ ! -f "$REPO_ROOT/dist/goncat.elf" ]; then
     echo -e "${YELLOW}Building goncat binary...${NC}"
     make build-linux
 fi
 
-echo -e "${GREEN}Starting validation: Mutual Authentication (--key)${NC}"
+echo -e "${GREEN}=== Mutual Authentication Validation ===${NC}"
 
-PORT_BASE=12050
-CORRECT_PASSWORD="test_password_123"
-WRONG_PASSWORD="wrong_password_456"
+TRANSPORT="tcp"
+PORT_BASE=12030
+TEST_KEY="auth_password_456"
 
-# Test 1: Matching passwords (should succeed)
-echo -e "${YELLOW}Test 1: Both sides with correct --key (should succeed)${NC}"
-MASTER_PORT=$((PORT_BASE + 1))
+# Test 1: --ssl --key matching → success + data verification
+echo -e "${YELLOW}Test 1: --ssl --key matching (should succeed)${NC}"
+PORT=$((PORT_BASE + 1))
+TOKEN="AUTH_MATCH_$$_$RANDOM"
 
-"$REPO_ROOT/dist/goncat.elf" master listen "tcp://*:${MASTER_PORT}" --ssl --key "$CORRECT_PASSWORD" --exec /bin/sh > /tmp/goncat-test-auth-master1-out.txt 2>&1 &
+(echo "echo $TOKEN"; sleep 1; echo "exit") | "$REPO_ROOT/dist/goncat.elf" master listen "${TRANSPORT}://*:${PORT}" --exec /bin/sh --ssl --key "$TEST_KEY" > /tmp/goncat-auth-t1-master.log 2>&1 &
 MASTER_PID=$!
+
+if ! poll_for_pattern /tmp/goncat-auth-t1-master.log "Listening on" 5; then
+    echo -e "${RED}✗ Test 1: Master failed to start${NC}"
+    exit 1
+fi
+
+"$REPO_ROOT/dist/goncat.elf" slave connect "${TRANSPORT}://localhost:${PORT}" --ssl --key "$TEST_KEY" > /tmp/goncat-auth-t1-slave.log 2>&1 &
+SLAVE_PID=$!
+
+if ! poll_for_pattern /tmp/goncat-auth-t1-master.log "Session with .* established" 10; then
+    echo -e "${RED}✗ Test 1: Connection not established${NC}"
+    cat /tmp/goncat-auth-t1-master.log
+    exit 1
+fi
+
+# Verify data token in master output
+if ! poll_for_pattern /tmp/goncat-auth-t1-master.log "$TOKEN" 10; then
+    echo -e "${RED}✗ Test 1: Data token not found (mTLS may not be protecting data channel)${NC}"
+    exit 1
+fi
+
+if ! poll_for_pattern /tmp/goncat-auth-t1-master.log "Session with .* closed" 5; then
+    echo -e "${RED}✗ Test 1: Session not closed properly${NC}"
+    exit 1
+fi
+
+wait "$SLAVE_PID" 2>/dev/null
+kill "$MASTER_PID" 2>/dev/null && wait "$MASTER_PID" 2>/dev/null
+MASTER_PID=""
+SLAVE_PID=""
+echo -e "${GREEN}✓ Test 1 PASSED: Mutual TLS authentication working${NC}"
+
+# Test 2: --ssl with mismatched --key → auth failure
+echo -e "${YELLOW}Test 2: --ssl with mismatched keys (should fail)${NC}"
+PORT=$((PORT_BASE + 2))
+
+"$REPO_ROOT/dist/goncat.elf" master listen "${TRANSPORT}://*:${PORT}" --exec /bin/sh --ssl --key "$TEST_KEY" > /tmp/goncat-auth-t2-master.log 2>&1 &
+MASTER_PID=$!
+
+if ! poll_for_pattern /tmp/goncat-auth-t2-master.log "Listening on" 5; then
+    echo -e "${RED}✗ Test 2: Master failed to start${NC}"
+    exit 1
+fi
+
+"$REPO_ROOT/dist/goncat.elf" slave connect "${TRANSPORT}://localhost:${PORT}" --ssl --key "WRONG_PASSWORD" > /tmp/goncat-auth-t2-slave.log 2>&1 &
+SLAVE_PID=$!
+
+# Should NOT establish connection (mutual TLS auth failure)
+sleep 3
+if grep -qE "Session with .* established" /tmp/goncat-auth-t2-master.log; then
+    echo -e "${RED}✗ Test 2: Connection established (should have failed auth)${NC}"
+    exit 1
+fi
+
+wait "$SLAVE_PID" 2>/dev/null
+
+# Check for auth/TLS error in logs
+if ! grep -qE "(Error|handshake|auth|certificate)" /tmp/goncat-auth-t2-slave.log && \
+   ! grep -qE "(Error|handshake|auth|certificate)" /tmp/goncat-auth-t2-master.log; then
+    echo -e "${RED}✗ Test 2: No error detected (should have auth failure)${NC}"
+    exit 1
+fi
+
+kill "$MASTER_PID" 2>/dev/null && wait "$MASTER_PID" 2>/dev/null
+MASTER_PID=""
+SLAVE_PID=""
+echo -e "${GREEN}✓ Test 2 PASSED: Mismatched keys properly rejected${NC}"
+
+# Test 3: --key without --ssl → CLI error
+echo -e "${YELLOW}Test 3: --key without --ssl (should fail immediately)${NC}"
+PORT=$((PORT_BASE + 3))
+
+"$REPO_ROOT/dist/goncat.elf" master listen "${TRANSPORT}://*:${PORT}" --exec /bin/sh --key "$TEST_KEY" > /tmp/goncat-auth-t3-master.log 2>&1 &
+MASTER_PID=$!
+
 sleep 2
 
-if ! grep -q "Listening on" /tmp/goncat-test-auth-master1-out.txt; then
-    echo -e "${RED}✗ Master not listening${NC}"
-    exit 1
-fi
+# Should fail immediately with validation error
+wait "$MASTER_PID" 2>/dev/null
 
-echo "whoami" | timeout 10 "$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" --ssl --key "$CORRECT_PASSWORD" > /tmp/goncat-test-auth-slave1-out.txt 2>&1 || true
-sleep 1
-
-if grep -q "Session with .* established" /tmp/goncat-test-auth-slave1-out.txt; then
-    echo -e "${GREEN}✓ Mutual authentication succeeded with correct password${NC}"
+if grep -qE "(you must use '--ssl' to use '--key'|Argument validation)" /tmp/goncat-auth-t3-master.log; then
+    echo -e "${GREEN}✓ Test 3 PASSED: --key without --ssl properly rejected${NC}"
 else
-    echo -e "${RED}✗ Authentication failed with correct password${NC}"
-    cat /tmp/goncat-test-auth-slave1-out.txt
+    echo -e "${RED}✗ Test 3: Expected validation error not found${NC}"
+    cat /tmp/goncat-auth-t3-master.log
     exit 1
 fi
 
-kill $MASTER_PID 2>/dev/null || true
-sleep 1
+MASTER_PID=""
 
-# Test 2: Mismatched passwords (should fail)
-echo -e "${YELLOW}Test 2: Different passwords (should fail)${NC}"
-MASTER_PORT=$((PORT_BASE + 2))
-
-"$REPO_ROOT/dist/goncat.elf" master listen "tcp://*:${MASTER_PORT}" --ssl --key "$CORRECT_PASSWORD" --exec /bin/sh > /tmp/goncat-test-auth-master2-out.txt 2>&1 &
-MASTER_PID=$!
-sleep 2
-
-timeout 10 "$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" --ssl --key "$WRONG_PASSWORD" > /tmp/goncat-test-auth-slave2-out.txt 2>&1 || true
-sleep 1
-
-if grep -q "Session with .* established" /tmp/goncat-test-auth-slave2-out.txt && grep -qE "(whoami|root)" /tmp/goncat-test-auth-slave2-out.txt; then
-    echo -e "${RED}✗ Authentication should have failed with wrong password${NC}"
-    exit 1
-else
-    echo -e "${GREEN}✓ Authentication correctly rejected wrong password${NC}"
-fi
-
-kill $MASTER_PID 2>/dev/null || true
-
-echo -e "${GREEN}✓ Mutual authentication validation passed${NC}"
+echo -e "${GREEN}✓ All mutual authentication tests PASSED${NC}"
 exit 0
