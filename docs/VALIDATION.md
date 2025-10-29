@@ -2,7 +2,7 @@
 
 > **Agent-Compatible Validation Scripts**: These validation scripts have been explicitly designed and verified for use with GitHub Copilot Coding Agent. The scripts run in a compatible environment and provide fast, reliable validation of goncat functionality without requiring Docker or complex infrastructure.
 
-**Success Rate**: 14 of 15 scripts pass (93% automation success)
+**Success Rate**: 15 of 15 scripts pass (100% automation success) ✅
 
 **Quick Scenario Listing**: To list all validation scenarios, run:
 ```bash
@@ -13,7 +13,7 @@ cat docs/VALIDATION.md | grep '- \*\*Scenario:'
 
 This directory contains standalone bash/python validation scripts that verify goncat's core functionality and user experience behaviors. Each script:
 
-- **Runs standalone** on localhost without Docker or external infrastructure (except SOCKS which requires E2E)
+- **Runs standalone** on localhost without Docker or external infrastructure
 - **Completes quickly** - typical durations:
   - Transport scripts (01-04): 5-8 seconds each
   - Security scripts (05-06): 15-25 seconds each (multiple test cases)
@@ -21,7 +21,8 @@ This directory contains standalone bash/python validation scripts that verify go
   - Port forwarding (09): 10-12 seconds
   - Behavior scripts (16-19): 5-15 seconds each
   - Logging (20): 8-10 seconds
-  - **Total suite runtime**: ~3-4 minutes for all 14 passing scripts
+  - SOCKS proxy (14): 6-8 seconds
+  - **Total suite runtime**: ~3-4 minutes for all 15 scripts
 - **Verifies real functionality** with actual data transfer, not just flag acceptance
 - **Provides clear output** with success/failure indication
 - **Handles cleanup** automatically via trap handlers
@@ -95,7 +96,7 @@ bash docs/scripts/01-transport-tcp.sh udp
 
 ### E2E Infrastructure Required (⚠️ 1/1 - Requires Docker Multi-Container Setup)
 
-- **Scenario: SOCKS TCP CONNECT**: Validates -D flag creates SOCKS5 proxy for TCP connections. **Status: ⚠️ REQUIRES E2E INFRASTRUCTURE** (Docker slave-companion service). SOCKS proxy works correctly but requires target services on slave side that standalone localhost testing cannot provide. E2E tests validate this feature successfully. See `scripts/14-socks-tcp-connect.py` and `test/e2e/master-listen/test-socks-connect.sh` for E2E approach
+- **Scenario: SOCKS TCP CONNECT**: Validates -D flag creates SOCKS5 proxy for TCP connections. **Status: ✅ PASSING** (6-8s). Tests master with SOCKS proxy, establishes session with slave, uses Python SOCKS client to connect through proxy to echo server, verifies data transfer and proxy persistence. Uses FIFO for stdin control to keep session alive. See `scripts/14-socks-tcp-connect.sh`
 
 ### Future Work (Not Implemented)
 
