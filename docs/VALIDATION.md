@@ -66,23 +66,35 @@ bash docs/scripts/01-transport-tcp.sh udp
 
 ## Validation Scenarios
 
-The following scenarios are validated by these scripts:
+### Fully Validated Scripts (✅ TESTED & PASSING)
 
-- **Scenario: TCP Transport**: Validates basic TCP connectivity and bidirectional data transfer. Tests both master-listen-slave-connect and slave-listen-master-connect modes. See `scripts/01-transport-tcp.sh`
-- **Scenario: WebSocket Transport**: Validates WebSocket protocol connection establishment and data transfer. See `scripts/02-transport-ws.sh`
-- **Scenario: WebSocket Secure Transport**: Validates WSS (WebSocket Secure) with TLS encryption. See `scripts/03-transport-wss.sh`
-- **Scenario: UDP/QUIC Transport**: Validates UDP transport with QUIC protocol for reliable streaming. See `scripts/04-transport-udp.sh`
-- **Scenario: TLS Encryption**: Validates --ssl flag enables TLS across transports. Tests both successful encryption and failure when SSL flags don't match. See `scripts/05-encryption-ssl.sh`
-- **Scenario: Mutual Authentication**: Validates --key flag provides password-based mutual authentication. Tests matching passwords (success), mismatched passwords (failure), and requirement for --ssl. See `scripts/06-authentication-key.sh`
-- **Scenario: Simple Command Execution**: Validates --exec flag executes commands correctly without PTY. See `scripts/07-exec-simple.sh`
-- **Scenario: PTY Mode**: Validates --pty flag for interactive pseudo-terminal support. Detects TTY availability and marks unsupported if not available. See `scripts/08-exec-pty.sh`
-- **Scenario: Local TCP Port Forwarding**: Validates -L flag forwards local TCP ports through tunnel. Tests with HTTP server and curl. See `scripts/09-portfwd-local-tcp.sh`
-- **Scenario: SOCKS TCP CONNECT**: Validates -D flag creates SOCKS5 proxy for TCP connections. Tests HTTP requests through SOCKS proxy. See `scripts/14-socks-tcp-connect.sh`
-- **Scenario: Connection Close Behavior**: Validates that listen mode continues after connection closes and can accept new connections. See `scripts/16-behavior-connect-close.sh`
-- **Scenario: Timeout Handling**: Validates --timeout flag is honored. Tests reasonable timeouts work, very short timeouts don't break connections, and connection attempts timeout appropriately. See `scripts/17-behavior-timeout.sh`
-- **Scenario: Connection Stability**: Validates connections work correctly with very short timeout (100ms) without uncanceled timeout issues. See `scripts/18-behavior-stability.sh`
-- **Scenario: Graceful Shutdown**: Validates master detects when slave connection closes gracefully. See `scripts/19-behavior-graceful-shutdown.sh`
-- **Scenario: Session Logging**: Validates --log flag creates session log files. See `scripts/20-feature-logging.sh`
+- **Scenario: TCP Transport**: Validates basic TCP connectivity and bidirectional data transfer with unique token verification in master output. **Status: ✅ PASSING**. See `scripts/01-transport-tcp.sh`
+- **Scenario: WebSocket Transport**: Validates WebSocket protocol connection establishment and data transfer with token validation. **Status: ✅ PASSING**. See `scripts/02-transport-ws.sh`
+- **Scenario: WebSocket Secure Transport**: Validates WSS (WebSocket Secure) with TLS encryption and data transfer. **Status: ✅ PASSING**. See `scripts/03-transport-wss.sh`
+- **Scenario: UDP/QUIC Transport**: Validates UDP transport with multi-line payload for segmentation testing. **Status: ✅ PASSING**. See `scripts/04-transport-udp.sh`
+- **Scenario: TLS Encryption**: Validates --ssl flag with 6 test cases: SSL success, SSL mismatches (master/slave only), mTLS success, mTLS wrong key, key-without-SSL error. **Status: ✅ PASSING**. See `scripts/05-encryption-ssl.sh`
+- **Scenario: Mutual Authentication**: Validates --key flag with 3 test cases: mTLS success, wrong key failure, key-without-SSL error. **Status: ✅ PASSING**. See `scripts/06-authentication-key.sh`
+- **Scenario: Simple Command Execution**: Validates --exec flag executes commands (whoami, id) with token verification in master output. Tests listener persistence. **Status: ✅ PASSING**. See `scripts/07-exec-simple.sh`
+- **Scenario: PTY Mode**: Validates --pty flag with pexpect testing: TTY allocation, command execution, line editing (arrow keys), Ctrl+C interrupt, terminal dimensions, graceful exit. **Status: ✅ PASSING**. See `scripts/08-exec-pty.py`
+- **Scenario: Local TCP Port Forwarding**: Validates -L flag forwards local TCP ports. Tests unique token through HTTP tunnel, persistence, and teardown. **Status: ✅ PASSING**. See `scripts/09-portfwd-local-tcp.sh`
+
+### Refactored Scripts (⚠️ NEEDS FINAL TESTING)
+
+- **Scenario: SOCKS TCP CONNECT**: Validates -D flag creates SOCKS5 proxy for TCP connections. Tests unique token through SOCKS, persistence, and teardown. **Status: ⚠️ REFACTORED, NEEDS TESTING**. See `scripts/14-socks-tcp-connect.sh`
+- **Scenario: Connection Close Behavior**: Validates listen mode persists after close, accepts new connections. Tests connect mode exits. **Status: ⚠️ REFACTORED, NEEDS TESTING**. See `scripts/16-behavior-connect-close.sh`
+- **Scenario: Timeout Handling**: Validates --timeout flag with normal connections and timeout detection when connection dies (SIGKILL). **Status: ⚠️ REFACTORED, NEEDS TESTING**. See `scripts/17-behavior-timeout.sh`
+- **Scenario: Connection Stability**: Validates connections work correctly with 100ms timeout for 3+ seconds without false timeouts. **Status: ⚠️ REFACTORED, NEEDS TESTING**. See `scripts/18-behavior-stability.sh`
+- **Scenario: Graceful Shutdown**: Validates graceful shutdown via SIGINT propagates to both sides, master continues in listen mode. **Status: ⚠️ REFACTORED, NEEDS TESTING**. See `scripts/19-behavior-graceful-shutdown.sh`
+- **Scenario: Session Logging**: Validates --log flag creates session log files with actual data, tests multiple sessions. **Status: ⚠️ REFACTORED, NEEDS TESTING**. See `scripts/20-feature-logging.sh`
+
+### Future Work (Not Implemented)
+
+- **Scenario: Local UDP Port Forwarding**: Not yet implemented
+- **Scenario: Remote TCP Port Forwarding**: Not yet implemented
+- **Scenario: Remote UDP Port Forwarding**: Not yet implemented
+- **Scenario: Multiple Simultaneous Forwards**: Not yet implemented
+- **Scenario: SOCKS UDP ASSOCIATE**: Not yet implemented
+- **Scenario: Self-Deletion Cleanup**: Not yet implemented
 
 <!-- Additional scenarios can be added following the established pattern -->
 
@@ -162,39 +174,55 @@ When adding new validation scripts:
 
 ```
 docs/scripts/
-├── 01-transport-tcp.sh          # TCP transport validation
-├── 02-transport-ws.sh           # WebSocket transport validation
-├── 03-transport-wss.sh          # WebSocket Secure validation
-├── 04-transport-udp.sh          # UDP/QUIC transport validation
-├── 05-encryption-ssl.sh         # TLS encryption validation
-├── 06-authentication-key.sh     # Mutual authentication validation
-├── 07-exec-simple.sh            # Command execution validation
-├── 08-exec-pty.sh               # PTY mode validation
-├── 09-portfwd-local-tcp.sh      # Local TCP port forwarding
+├── 01-transport-tcp.sh          # ✅ TCP transport validation
+├── 02-transport-ws.sh           # ✅ WebSocket transport validation
+├── 03-transport-wss.sh          # ✅ WebSocket Secure validation
+├── 04-transport-udp.sh          # ✅ UDP/QUIC transport validation
+├── 05-encryption-ssl.sh         # ✅ TLS encryption validation (6 test cases)
+├── 06-authentication-key.sh     # ✅ Mutual authentication validation (3 test cases)
+├── 07-exec-simple.sh            # ✅ Command execution validation
+├── 08-exec-pty.py               # ✅ PTY mode validation (pexpect)
+├── 09-portfwd-local-tcp.sh      # ✅ Local TCP port forwarding
+├── 14-socks-tcp-connect.sh      # ⚠️ SOCKS TCP CONNECT (needs testing)
+├── 16-behavior-connect-close.sh # ⚠️ Connection close behavior (needs testing)
+├── 17-behavior-timeout.sh       # ⚠️ Timeout handling (needs testing)
+├── 18-behavior-stability.sh     # ⚠️ Connection stability (needs testing)
+├── 19-behavior-graceful-shutdown.sh # ⚠️ Graceful shutdown (needs testing)
+├── 20-feature-logging.sh        # ⚠️ Session logging (needs testing)
+├── helpers/
+│   ├── cleanup.sh               # Process cleanup utilities
+│   └── poll_for_pattern.sh      # Polling helper for log checking
+├── REWRITE_PLAN.md              # Refactoring documentation
+└── README.md                    # Scripts directory overview
+
+Future work (not implemented):
 ├── 10-portfwd-local-udp.sh      # Local UDP port forwarding
 ├── 11-portfwd-remote-tcp.sh     # Remote TCP port forwarding
 ├── 12-portfwd-remote-udp.sh     # Remote UDP port forwarding
 ├── 13-portfwd-multiple.sh       # Multiple simultaneous forwards
-├── 14-socks-tcp-connect.sh      # SOCKS TCP CONNECT
 ├── 15-socks-udp-associate.sh    # SOCKS UDP ASSOCIATE
-├── 16-behavior-connect-close.sh # Connection close behavior
-├── 17-behavior-timeout.sh       # Timeout handling
-├── 18-behavior-stability.sh     # Connection stability
-├── 19-behavior-graceful-shutdown.sh # Graceful shutdown
-├── 20-feature-logging.sh        # Session logging
-├── 21-feature-cleanup.sh        # Self-deletion cleanup
-├── helpers/
-│   ├── cleanup.sh               # Process cleanup utilities
-│   ├── echo-server.sh           # Test echo servers
-│   └── run-across-transports.sh # Transport test runner
-└── README.md                    # This directory overview
+└── 21-feature-cleanup.sh        # Self-deletion cleanup
 ```
 
 ## Quick Reference
 
-| Script | Purpose | Duration | Dependencies |
-|--------|---------|----------|--------------|
-| Coming soon... | | | |
+| Script | Purpose | Status | Duration | Key Features |
+|--------|---------|--------|----------|--------------|
+| 01-transport-tcp.sh | TCP transport | ✅ PASSING | ~5s | Token validation, listener persistence |
+| 02-transport-ws.sh | WebSocket | ✅ PASSING | ~5s | WS protocol, token validation |
+| 03-transport-wss.sh | WebSocket Secure | ✅ PASSING | ~5s | WSS with TLS, token validation |
+| 04-transport-udp.sh | UDP/QUIC | ✅ PASSING | ~5s | Multi-line payload testing |
+| 05-encryption-ssl.sh | TLS encryption | ✅ PASSING | ~15s | 6 test cases (match/mismatch) |
+| 06-authentication-key.sh | Mutual TLS auth | ✅ PASSING | ~10s | 3 test cases (success/failure) |
+| 07-exec-simple.sh | Command execution | ✅ PASSING | ~5s | No PTY, token validation |
+| 08-exec-pty.py | PTY mode | ✅ PASSING | ~10s | pexpect, Ctrl+C, line editing |
+| 09-portfwd-local-tcp.sh | Local TCP forwarding | ✅ PASSING | ~10s | HTTP through tunnel, teardown |
+| 14-socks-tcp-connect.sh | SOCKS5 proxy | ⚠️ NEEDS TEST | ~10s | HTTP through SOCKS, teardown |
+| 16-behavior-connect-close.sh | Connection lifecycle | ⚠️ NEEDS TEST | ~10s | Listen persist, connect exit |
+| 17-behavior-timeout.sh | Timeout handling | ⚠️ NEEDS TEST | ~10s | Normal + timeout detection |
+| 18-behavior-stability.sh | Connection stability | ⚠️ NEEDS TEST | ~10s | 100ms timeout stability |
+| 19-behavior-graceful-shutdown.sh | Graceful shutdown | ⚠️ NEEDS TEST | ~5s | SIGINT propagation |
+| 20-feature-logging.sh | Session logging | ⚠️ NEEDS TEST | ~10s | Log file creation, data capture |
 
 ---
 
