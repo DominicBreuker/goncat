@@ -30,11 +30,17 @@ These scripts are designed for GitHub Copilot Coding Agent to quickly validate t
 
 ### Port Forwarding Scripts (09-13)
 - `09-portfwd-local-tcp.sh` - Local TCP port forwarding
-- Additional port forwarding scripts to be added
+- Additional port forwarding scripts can be added (UDP, remote, multiple)
+
+### SOCKS Proxy Scripts (14-15)
+- `14-socks-tcp-connect.sh` - SOCKS TCP CONNECT
+- Additional SOCKS scripts can be added (UDP ASSOCIATE)
 
 ### Connection Behavior Scripts (16-19)
 - `16-behavior-connect-close.sh` - Connection close behavior
-- Additional behavior scripts to be added
+- `17-behavior-timeout.sh` - Timeout flag handling
+- `18-behavior-stability.sh` - Connection stability with short timeout
+- `19-behavior-graceful-shutdown.sh` - Graceful shutdown detection
 
 ### Feature Scripts (20-21)
 - `20-feature-logging.sh` - Session logging

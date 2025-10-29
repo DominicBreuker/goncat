@@ -77,10 +77,14 @@ The following scenarios are validated by these scripts:
 - **Scenario: Simple Command Execution**: Validates --exec flag executes commands correctly without PTY. See `scripts/07-exec-simple.sh`
 - **Scenario: PTY Mode**: Validates --pty flag for interactive pseudo-terminal support. Detects TTY availability and marks unsupported if not available. See `scripts/08-exec-pty.sh`
 - **Scenario: Local TCP Port Forwarding**: Validates -L flag forwards local TCP ports through tunnel. Tests with HTTP server and curl. See `scripts/09-portfwd-local-tcp.sh`
+- **Scenario: SOCKS TCP CONNECT**: Validates -D flag creates SOCKS5 proxy for TCP connections. Tests HTTP requests through SOCKS proxy. See `scripts/14-socks-tcp-connect.sh`
 - **Scenario: Connection Close Behavior**: Validates that listen mode continues after connection closes and can accept new connections. See `scripts/16-behavior-connect-close.sh`
+- **Scenario: Timeout Handling**: Validates --timeout flag is honored. Tests reasonable timeouts work, very short timeouts don't break connections, and connection attempts timeout appropriately. See `scripts/17-behavior-timeout.sh`
+- **Scenario: Connection Stability**: Validates connections work correctly with very short timeout (100ms) without uncanceled timeout issues. See `scripts/18-behavior-stability.sh`
+- **Scenario: Graceful Shutdown**: Validates master detects when slave connection closes gracefully. See `scripts/19-behavior-graceful-shutdown.sh`
 - **Scenario: Session Logging**: Validates --log flag creates session log files. See `scripts/20-feature-logging.sh`
 
-<!-- Additional scenarios will be added as more scripts are implemented -->
+<!-- Additional scenarios can be added following the established pattern -->
 
 ## Environment Requirements
 
