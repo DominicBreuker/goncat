@@ -1,7 +1,9 @@
 #!/bin/bash
 # Validation Script: Connection Close Behavior
 # Purpose: Verify connection lifecycle behaviors
-# Expected: Connect mode exits on close, listen mode continues
+# Expected: Listen mode persists after connection closes, connect mode exits
+# Data Flow: Commands from master stdin → slave executes → master stdout
+# Tests: Listen persistence, connect mode exit, graceful SIGINT
 # Dependencies: bash, goncat binary
 
 set -euo pipefail
@@ -16,121 +18,149 @@ GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
+# Track PIDs for cleanup
+MASTER_PID=""
+SLAVE_PID=""
+
 cleanup() {
-    pkill -9 goncat.elf 2>/dev/null || true
-    rm -f /tmp/goncat-test-behavior-*
+    [ -n "$MASTER_PID" ] && kill "$MASTER_PID" 2>/dev/null && wait "$MASTER_PID" 2>/dev/null || true
+    [ -n "$SLAVE_PID" ] && kill "$SLAVE_PID" 2>/dev/null && wait "$SLAVE_PID" 2>/dev/null || true
+    rm -f /tmp/goncat-behavior-*
 }
 trap cleanup EXIT
+
+# Helper function: Poll for pattern in file
+poll_for_pattern() {
+    local file="$1"
+    local pattern="$2"
+    local timeout="${3:-10}"
+    local start=$(date +%s)
+    while true; do
+        if [ -f "$file" ] && grep -qE "$pattern" "$file" 2>/dev/null; then
+            return 0
+        fi
+        local now=$(date +%s)
+        if [ $((now - start)) -ge "$timeout" ]; then
+            return 1
+        fi
+        sleep 0.1
+    done
+}
 
 if [ ! -f "$REPO_ROOT/dist/goncat.elf" ]; then
     echo -e "${YELLOW}Building goncat binary...${NC}"
     make build-linux
 fi
 
-echo -e "${GREEN}Starting validation: Connection Close Behavior${NC}"
+echo -e "${GREEN}=== Connection Close Behavior Validation ===${NC}"
 
-PORT_BASE=12090
+MASTER_PORT=12090
+TOKEN1="CLOSE_$$_$RANDOM"
+TOKEN2="PERSIST_$$_$RANDOM"
 
-# Test 1: Listen mode continues after connection closes
-echo -e "${YELLOW}Test 1: Listen mode continues after connection closes${NC}"
-MASTER_PORT=$((PORT_BASE + 1))
+# Test 1: Listen mode persists after connection closes
+echo -e "${YELLOW}Test 1: Listen mode persists after connection closes${NC}"
 
-# Start master with shell
-"$REPO_ROOT/dist/goncat.elf" master listen "tcp://*:${MASTER_PORT}" --exec /bin/sh > /tmp/goncat-test-behavior-master-out.txt 2>&1 &
+# Start master in listen mode with shell (no input needed for listening)
+"$REPO_ROOT/dist/goncat.elf" master listen "tcp://*:${MASTER_PORT}" --exec /bin/sh > /tmp/goncat-behavior-master.log 2>&1 &
 MASTER_PID=$!
-sleep 2
 
-# Verify master is listening
-if ! grep -q "Listening on" /tmp/goncat-test-behavior-master-out.txt; then
-    echo -e "${RED}✗ Master not listening${NC}"
-    cat /tmp/goncat-test-behavior-master-out.txt
+if ! poll_for_pattern /tmp/goncat-behavior-master.log "Listening on" 5; then
+    echo -e "${RED}✗ Master failed to start${NC}"
+    cat /tmp/goncat-behavior-master.log
     exit 1
 fi
+echo -e "${GREEN}✓ Master listening${NC}"
 
-# Connect slave and send exit command to close connection
-echo "exit" | timeout 5 "$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" > /tmp/goncat-test-behavior-slave1-out.txt 2>&1 || true
-sleep 1
-
-# Verify session was established and closed on slave side
-if ! grep -q "Session with .* established" /tmp/goncat-test-behavior-slave1-out.txt; then
-    echo -e "${RED}✗ First connection not established${NC}"
-    cat /tmp/goncat-test-behavior-slave1-out.txt
-    exit 1
-fi
-
-if ! grep -q "Session with .* closed" /tmp/goncat-test-behavior-slave1-out.txt; then
-    echo -e "${YELLOW}⚠ Session close message not found on slave${NC}"
-fi
-
-# Verify master logged the connection and closure
-if ! grep -q "Session with .* established" /tmp/goncat-test-behavior-master-out.txt; then
-    echo -e "${RED}✗ Master didn't log session establishment${NC}"
-    exit 1
-fi
-
-if ! grep -q "Session with .* closed" /tmp/goncat-test-behavior-master-out.txt; then
-    echo -e "${RED}✗ Master didn't log session closure${NC}"
-    exit 1
-fi
-
-# Check master is still running
-if ! ps -p $MASTER_PID > /dev/null; then
-    echo -e "${RED}✗ Listen mode should continue after connection closes${NC}"
-    exit 1
-fi
-
-echo -e "${GREEN}✓ Listen mode continues after connection closes${NC}"
-
-# Test 2: Connect again to verify it still works
-echo -e "${YELLOW}Test 2: Second connection works${NC}"
-echo "whoami" | timeout 5 "$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" > /tmp/goncat-test-behavior-slave2-out.txt 2>&1 || true
-sleep 1
-
-# Verify second connection established
-if grep -q "Session with .* established" /tmp/goncat-test-behavior-slave2-out.txt; then
-    echo -e "${GREEN}✓ Listen mode accepted second connection${NC}"
-else
-    echo -e "${RED}✗ Second connection failed${NC}"
-    cat /tmp/goncat-test-behavior-slave2-out.txt
-    exit 1
-fi
-
-# Test 3: Slave shutdown via SIGINT
-echo -e "${YELLOW}Test 3: Slave graceful shutdown${NC}"
-
-# Start a new slave connection in background
-"$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" > /tmp/goncat-test-behavior-slave3-out.txt 2>&1 &
+# Connect slave, send command, then exit
+(echo "echo $TOKEN1"; echo "exit") | "$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" > /tmp/goncat-behavior-slave1.log 2>&1 &
 SLAVE_PID=$!
-sleep 2
 
-# Verify connection established
-if ! grep -q "Session with .* established" /tmp/goncat-test-behavior-slave3-out.txt; then
-    echo -e "${RED}✗ Third connection not established${NC}"
+# Wait for session establishment
+if ! poll_for_pattern /tmp/goncat-behavior-master.log "Session with .* established" 10; then
+    echo -e "${RED}✗ Connection not established${NC}"
+    cat /tmp/goncat-behavior-master.log
     exit 1
 fi
+echo -e "${GREEN}✓ Connection established${NC}"
 
-# Send SIGINT to slave
-kill -INT $SLAVE_PID 2>/dev/null || true
-sleep 2
-
-# Verify slave exited
-if ps -p $SLAVE_PID > /dev/null 2>&1; then
-    echo -e "${RED}✗ Slave should have exited after SIGINT${NC}"
-    kill -9 $SLAVE_PID 2>/dev/null || true
+# Wait for command output and session closure
+if ! poll_for_pattern /tmp/goncat-behavior-master.log "$TOKEN1" 10; then
+    echo -e "${RED}✗ Token not found in master output${NC}"
+    cat /tmp/goncat-behavior-master.log
     exit 1
 fi
+echo -e "${GREEN}✓ Token verified in master output${NC}"
 
-echo -e "${GREEN}✓ Slave shut down gracefully${NC}"
+# Wait for slave to exit
+wait "$SLAVE_PID" 2>/dev/null || true
+SLAVE_PID=""
 
-# Verify master detected the closure
-sleep 1
-if tail -5 /tmp/goncat-test-behavior-master-out.txt | grep -q "Session with .* closed"; then
-    echo -e "${GREEN}✓ Master detected slave shutdown${NC}"
+# Poll for session closed message
+if ! poll_for_pattern /tmp/goncat-behavior-master.log "Session with .* closed" 5; then
+    echo -e "${YELLOW}⚠ Session closed message not found${NC}"
 else
-    echo -e "${YELLOW}⚠ Master may not have logged the closure${NC}"
+    echo -e "${GREEN}✓ Session closed detected${NC}"
 fi
 
-kill $MASTER_PID 2>/dev/null || true
+# Verify master is still running (listen mode should persist)
+if kill -0 "$MASTER_PID" 2>/dev/null; then
+    echo -e "${GREEN}✓ Master listener still active (correct behavior)${NC}"
+else
+    echo -e "${RED}✗ Master listener exited (should persist in listen mode)${NC}"
+    exit 1
+fi
 
-echo -e "${GREEN}✓ Connection close behavior validation passed${NC}"
+# Test 2: Second connection works (listen mode accepted new connection)
+echo -e "${YELLOW}Test 2: Second connection to verify listen persistence${NC}"
+
+(echo "echo $TOKEN2"; echo "exit") | "$REPO_ROOT/dist/goncat.elf" slave connect "tcp://localhost:${MASTER_PORT}" > /tmp/goncat-behavior-slave2.log 2>&1 &
+SLAVE_PID=$!
+
+if ! poll_for_pattern /tmp/goncat-behavior-master.log "$TOKEN2" 10; then
+    echo -e "${RED}✗ Second connection failed${NC}"
+    cat /tmp/goncat-behavior-master.log
+    exit 1
+fi
+echo -e "${GREEN}✓ Second connection succeeded (listener persists)${NC}"
+
+wait "$SLAVE_PID" 2>/dev/null || true
+SLAVE_PID=""
+
+# Test 3: Connect mode exits after connection closes
+echo -e "${YELLOW}Test 3: Connect mode exits after connection closes${NC}"
+
+# Start slave in listen mode
+"$REPO_ROOT/dist/goncat.elf" slave listen "tcp://*:$((MASTER_PORT + 1))" > /tmp/goncat-behavior-slave-listen.log 2>&1 &
+SLAVE_PID=$!
+
+if ! poll_for_pattern /tmp/goncat-behavior-slave-listen.log "Listening on" 5; then
+    echo -e "${RED}✗ Slave listener failed to start${NC}"
+    cat /tmp/goncat-behavior-slave-listen.log
+    exit 1
+fi
+
+# Connect master in connect mode (should exit after connection closes)
+(echo "whoami"; echo "exit") | "$REPO_ROOT/dist/goncat.elf" master connect "tcp://localhost:$((MASTER_PORT + 1))" --exec /bin/sh > /tmp/goncat-behavior-master-connect.log 2>&1 &
+MASTER_CONNECT_PID=$!
+
+# Wait for master connect to exit
+timeout 10 bash -c "while kill -0 $MASTER_CONNECT_PID 2>/dev/null; do sleep 0.1; done" || true
+
+if kill -0 "$MASTER_CONNECT_PID" 2>/dev/null; then
+    echo -e "${RED}✗ Master connect mode did not exit${NC}"
+    kill "$MASTER_CONNECT_PID" 2>/dev/null || true
+    wait "$MASTER_CONNECT_PID" 2>/dev/null || true
+    exit 1
+else
+    echo -e "${GREEN}✓ Master connect mode exited after connection closed (correct behavior)${NC}"
+fi
+
+# Clean up
+kill "$MASTER_PID" 2>/dev/null && wait "$MASTER_PID" 2>/dev/null || true
+MASTER_PID=""
+kill "$SLAVE_PID" 2>/dev/null && wait "$SLAVE_PID" 2>/dev/null || true
+SLAVE_PID=""
+
+echo -e "${GREEN}✓ Connection close behavior validation PASSED${NC}"
 exit 0

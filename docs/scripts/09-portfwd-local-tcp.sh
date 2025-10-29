@@ -23,10 +23,10 @@ SLAVE_PID=""
 HTTP_PID=""
 
 cleanup() {
-    [ -n "$MASTER_PID" ] && kill "$MASTER_PID" 2>/dev/null && wait "$MASTER_PID" 2>/dev/null
-    [ -n "$SLAVE_PID" ] && kill "$SLAVE_PID" 2>/dev/null && wait "$SLAVE_PID" 2>/dev/null
-    [ -n "$HTTP_PID" ] && kill "$HTTP_PID" 2>/dev/null && wait "$HTTP_PID" 2>/dev/null
-    rm -f /tmp/goncat-portfwd-* /tmp/test-server-*
+    [ -n "$MASTER_PID" ] && kill "$MASTER_PID" 2>/dev/null && wait "$MASTER_PID" 2>/dev/null || true
+    [ -n "$SLAVE_PID" ] && kill "$SLAVE_PID" 2>/dev/null && wait "$SLAVE_PID" 2>/dev/null || true
+    [ -n "$HTTP_PID" ] && kill "$HTTP_PID" 2>/dev/null && wait "$HTTP_PID" 2>/dev/null || true
+    rm -rf /tmp/goncat-portfwd-* /tmp/test-server-* 2>/dev/null || true
 }
 trap cleanup EXIT
 
@@ -80,8 +80,9 @@ echo -e "${GREEN}✓ HTTP server running with token${NC}"
 # Test: Local port forwarding (-L forwards local FORWARD_PORT to remote HTTP_PORT)
 echo -e "${YELLOW}Setting up port forwarding: localhost:${FORWARD_PORT} → localhost:${HTTP_PORT}${NC}"
 
-# Start master with port forward and keep-alive shell
-"$REPO_ROOT/dist/goncat.elf" master listen "tcp://*:${MASTER_PORT}" --exec /bin/sh -L "${FORWARD_PORT}:localhost:${HTTP_PORT}" > /tmp/goncat-portfwd-master.log 2>&1 &
+# Start master with port forward and keep session alive with sleep
+# The shell needs to stay open for the tunnel to work
+(sleep 30) | "$REPO_ROOT/dist/goncat.elf" master listen "tcp://*:${MASTER_PORT}" --exec /bin/sh -L "${FORWARD_PORT}:localhost:${HTTP_PORT}" > /tmp/goncat-portfwd-master.log 2>&1 &
 MASTER_PID=$!
 
 if ! poll_for_pattern /tmp/goncat-portfwd-master.log "Listening on" 5; then
@@ -115,19 +116,21 @@ sleep 2
 
 # Test 1: Fetch through tunnel and verify token (decisive test)
 echo -e "${YELLOW}Test 1: Fetch through tunnel and verify token${NC}"
-RESULT=$(timeout 5 curl -s "http://localhost:${FORWARD_PORT}/" 2>&1 || true)
+RESULT=$(timeout 5 curl -s "http://localhost:${FORWARD_PORT}/" 2>&1)
 if echo "$RESULT" | grep -q "$TOKEN"; then
     echo -e "${GREEN}✓ Token verified (data went through goncat tunnel)${NC}"
 else
     echo -e "${RED}✗ Token not found in response${NC}"
     echo "Expected: $TOKEN"
     echo "Got: $RESULT"
+    echo "Master log:"
+    cat /tmp/goncat-portfwd-master.log
     exit 1
 fi
 
 # Test 2: Second request to verify persistence
 echo -e "${YELLOW}Test 2: Second request to verify forward persistence${NC}"
-RESULT2=$(timeout 5 curl -s "http://localhost:${FORWARD_PORT}/" 2>&1 || true)
+RESULT2=$(timeout 5 curl -s "http://localhost:${FORWARD_PORT}/" 2>&1)
 if echo "$RESULT2" | grep -q "$TOKEN"; then
     echo -e "${GREEN}✓ Second request succeeded (forward persists)${NC}"
 else
@@ -138,23 +141,35 @@ fi
 # Test 3: Kill slave, verify forward tears down
 echo -e "${YELLOW}Test 3: Verify forward teardown after slave exit${NC}"
 kill "$SLAVE_PID" 2>/dev/null
-wait "$SLAVE_PID" 2>/dev/null
+wait "$SLAVE_PID" 2>/dev/null || true
 SLAVE_PID=""
 
-# Give it a moment to tear down
-sleep 2
+# Poll for session closed message
+if poll_for_pattern /tmp/goncat-portfwd-master.log "Session with .* closed" 5; then
+    echo -e "${GREEN}✓ Session closed detected${NC}"
+fi
 
-# Attempt to connect - should fail
+# Give it a moment to tear down
+sleep 1
+
+# Attempt to connect - should fail since tunnel is gone
 if timeout 3 curl -s "http://localhost:${FORWARD_PORT}/" > /dev/null 2>&1; then
-    echo -e "${YELLOW}⚠ Forward still active after slave exit (may be expected)${NC}"
+    echo -e "${YELLOW}⚠ Forward still active after slave exit (unexpected)${NC}"
 else
     echo -e "${GREEN}✓ Forward torn down after slave exit${NC}"
 fi
 
+# Verify master listener is still up (should be waiting for next connection)
+if kill -0 "$MASTER_PID" 2>/dev/null; then
+    echo -e "${GREEN}✓ Master listener still active (correct behavior)${NC}"
+else
+    echo -e "${YELLOW}⚠ Master listener exited${NC}"
+fi
+
 # Clean up
-kill "$MASTER_PID" 2>/dev/null && wait "$MASTER_PID" 2>/dev/null
+kill "$MASTER_PID" 2>/dev/null && wait "$MASTER_PID" 2>/dev/null || true
 MASTER_PID=""
-kill "$HTTP_PID" 2>/dev/null && wait "$HTTP_PID" 2>/dev/null
+kill "$HTTP_PID" 2>/dev/null && wait "$HTTP_PID" 2>/dev/null || true
 HTTP_PID=""
 
 echo -e "${GREEN}✓ Local TCP port forwarding validation PASSED${NC}"
